@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>UI 模块代码审查报告 — E:\pico\pico\ui</title>
+<style>
+  :root {
+    --bg: #0f1419; --fg: #e6e6e6; --muted: #8b949e;
+    --accent: #58a6ff; --border: #30363d;
+    --crit: #f85149; --warn: #d29922; --info: #79c0ff; --ok: #56d364;
+    --card: #161b22; --hl: #1f6feb22;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+         background: var(--bg); color: var(--fg); margin: 0; padding: 32px;
+         max-width: 1200px; line-height: 1.6; }
+  h1 { border-bottom: 1px solid var(--border); padding-bottom: 12px;
+        font-size: 28px; }
+  h2 { color: var(--accent); margin-top: 36px;
+        border-left: 4px solid var(--accent); padding-left: 12px; }
+  h3 { color: var(--fg); margin-top: 24px; }
+  .meta { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+  .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr);
+                  gap: 12px; margin: 24px 0; }
+  .stat { background: var(--card); padding: 16px; border-radius: 8px;
+           border-left: 4px solid var(--accent); text-align: center; }
+  .stat .num { font-size: 32px; font-weight: bold; }
+  .stat .lbl { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .stat.crit { border-left-color: var(--crit); }
+  .stat.crit .num { color: var(--crit); }
+  .stat.warn { border-left-color: var(--warn); }
+  .stat.warn .num { color: var(--warn); }
+  .stat.info { border-left-color: var(--info); }
+  .stat.info .num { color: var(--info); }
+
+  .finding { background: var(--card); border-radius: 8px; padding: 18px 22px;
+              margin: 12px 0; border-left: 4px solid var(--accent); }
+  .finding.crit { border-left-color: var(--crit); }
+  .finding.warn { border-left-color: var(--warn); }
+  .finding.info { border-left-color: var(--info); }
+  .finding h3 { margin: 0 0 8px 0; font-size: 17px; }
+  .finding .sev { display: inline-block; padding: 2px 10px; border-radius: 4px;
+                  font-size: 11px; font-weight: bold; margin-right: 8px;
+                  text-transform: uppercase; }
+  .sev.crit { background: var(--crit); color: white; }
+  .sev.warn { background: var(--warn); color: black; }
+  .sev.info { background: var(--info); color: black; }
+  .file { font-family: "Consolas", "Courier New", monospace; font-size: 13px;
+          color: var(--accent); background: var(--hl); padding: 2px 6px;
+          border-radius: 3px; }
+  .loc { color: var(--muted); font-size: 13px; }
+  pre { background: #0a0d12; border: 1px solid var(--border); border-radius: 6px;
+        padding: 12px 16px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { font-family: "Consolas", "Courier New", monospace; }
+  .pnote { background: var(--hl); padding: 8px 12px; border-radius: 4px;
+           margin: 8px 0; font-size: 14px; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+  th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { background: var(--card); color: var(--accent); font-weight: 600; }
+  tr:hover td { background: var(--hl); }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 12px;
+         background: var(--border); font-size: 11px; margin-right: 4px; }
+  .toc { background: var(--card); padding: 16px 24px; border-radius: 8px;
+         margin: 16px 0; }
+  .toc ol { margin: 8px 0; padding-left: 24px; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 10px;
+           background: var(--border); font-size: 11px; margin-left: 8px; }
+</style>
+</head>
+<body>
+
+<h1>🔍 UI 模块代码审查报告</h1>
+<div class="meta">
+  审查范围: <span class="file">E:\pico\pico\ui</span> &nbsp;|&nbsp;
+  审查时间: 2026-08-19 &nbsp;|&nbsp;
+  审查者: Claude Code &nbsp;|&nbsp;
+  12 个文件,约 50 KB C 源码
+</div>
+
+<div class="summary-grid">
+  <div class="stat crit">
+    <div class="num">2</div>
+    <div class="lbl">🔴 致命 (编译/链接错误)</div>
+  </div>
+  <div class="stat warn">
+    <div class="num">6</div>
+    <div class="lbl">🟡 严重 (逻辑缺陷)</div>
+  </div>
+  <div class="stat info">
+    <div class="num">10</div>
+    <div class="lbl">🔵 一般 (代码质量)</div>
+  </div>
+  <div class="stat">
+    <div class="num">18</div>
+    <div class="lbl">⚪ 良好实践</div>
+  </div>
+</div>
+
+<div class="toc">
+  <h3 style="margin:0">📑 目录</h3>
+  <ol>
+    <li><a href="#critical">致命问题(链接器会爆)</a></li>
+    <li><a href="#major">严重逻辑缺陷</a></li>
+    <li><a href="#minor">一般代码质量</a></li>
+    <li><a href="#perf">性能热点</a></li>
+    <li><a href="#good">做得好的地方</a></li>
+    <li><a href="#file-table">文件清单与风险评级</a></li>
+  </ol>
+</div>
+
+<!-- ====================== 致命 ====================== -->
+<h2 id="critical">🔴 致命问题(必须修)</h2>
+
+<!-- F1 -->
+<div class="finding crit">
+  <h3><span class="sev crit">CRIT</span><code>ui_render_tiles</code> 在两个 .c 里同名不同签名</h3>
+  <div class="loc">📁 <span class="file">ui_core.c:33</span> 与 <span class="file">ui_tile.c:43</span></div>
+  <p><strong>现象:</strong> 两个 .c 文件都定义了 <code>ui_render_tiles</code>,签名看起来一样但 typedef 不同:</p>
+<pre>// ui_core.h
+typedef void (*ui_scene_draw_cb_t)(ui_tile_t *tile);
+void ui_render_tiles(uint8_t, uint8_t, ui_scene_draw_cb_t);
+
+// ui_tile.h
+typedef void (*ui_tile_render_cb_t)(ui_tile_t *tile);
+void ui_render_tiles(uint8_t, uint8_t, ui_tile_render_cb_t);</pre>
+  <p><strong>后果:</strong> 两个函数都进了目标文件,链接器会报 <code>multiple definition of ui_render_tiles</code>。即使暂时能过,运行时调到的版本也是不确定的(取决于链接顺序)。</p>
+  <p><strong>修法:</strong> 二选一:
+  <ul>
+    <li><code>ui_tile.c</code> 里的 <code>ui_render_tiles</code> 删掉(已被 <code>ui_core.c</code> 实现)</li>
+    <li>或者 <code>ui_tile.h</code> 里的声明删掉(只留 <code>ui_core.h</code> 暴露)</li>
+  </ul>
+  </p>
+</div>
+
+<!-- F2 -->
+<div class="finding crit">
+  <h3><span class="sev crit">CRIT</span><code>ui_draw_string</code> 依赖未声明的 <code>Font5x7</code></h3>
+  <div class="loc">📁 <span class="file">ui_draw.c:191</span></div>
+<pre>extern const uint8_t Font5x7[][5];</pre>
+  <p><strong>现象:</strong> 字符范围校验通过(<code>' '</code> ~ <code>'~'</code> = 95 字符),索引安全,但 <code>Font5x7</code> 在 <code>ui/</code> 下未定义(应该从 <code>Drivers/chinese.c</code> 来)。</p>
+  <p><strong>后果:</strong> 如果 <code>Drivers/chinese.c</code> 没导出这个符号 → 链接报 <code>undefined reference to Font5x7</code>。建议先 <code>nm build/ui/libuigeom.a | grep Font5x7</code> 确认。</p>
+  <p><strong>建议:</strong> 在 <code>ui_draw.h</code> 里也声明,让依赖关系显式化。</p>
+</div>
+
+<!-- ====================== 严重 ====================== -->
+<h2 id="major">🟡 严重逻辑缺陷</h2>
+
+<!-- F3 -->
+<div class="finding warn">
+  <h3><span class="sev warn">BUG</span>按钮触控语义和文档不一致(<code>ui_btn</code>)</h3>
+  <div class="loc">📁 <span class="file">ui_btn.h:73</span> 文档 vs <span class="file">ui_btn.c:112-146</span> 实现</div>
+  <p>头文件注释写的是 "按下即触发 + 边沿防抖",但实际代码是 "松手才触发":</p>
+<pre>// 头文件说的:
+@brief 处理触控输入（按下即触发 + 边沿防抖）
+
+// ui_btn.c 实际写的 (line 119-126):
+if (hit) {
+    if (!btn->is_pressed) {
+        btn->is_pressed = true;
+        need_redraw = true;
+    }
+    return need_redraw;       // 按下不触发回调
+}
+// 松手才触发 (line 129-137):
+if (btn->is_pressed && !is_touching) {
+    if (now_tick - btn->last_tick <= 300) {
+        btn->on_click(btn, btn->user_data);   // 回调在这
+    }
+}</pre>
+  <p><strong>后果:</strong> 调用方按文档预期写 "按下立即响应" 会扑空;长时间按住不松手,按钮看起来被锁死(状态没切换)。建议文档与实现对齐,或者明确文档为 "Click-on-release"。</p>
+</div>
+
+<!-- F4 -->
+<div class="finding warn">
+  <h3><span class="sev warn">BUG</span><code>ui_btn.c</code> 注释里残留整段废弃实现</h3>
+  <div class="loc">📁 <span class="file">ui_btn.c:75-111</span></div>
+  <p>旧版 <code>ui_btn_process_touch</code> 的完整逻辑(37 行)被注释掉保留,当前版本在 112-146 行。这段注释里的代码包含完全不同的语义(按下就触发回调 + 60ms 松手消抖),被废弃了。会让 reviewer/协作者困惑。</p>
+  <p><strong>建议:</strong> 删掉,如果需要看历史走 git blame。</p>
+</div>
+
+<!-- F5 -->
+<div class="finding warn">
+  <h3><span class="sev warn">BUG</span>下拉菜单 <code>is_pressed</code> 粘滞导致二次点击无效</h3>
+  <div class="loc">📁 <span class="file">ui_dropdown.c:70-130</span></div>
+  <p>按下逻辑依赖 <code>if (!dd->is_pressed)</code> 守卫,但松手消抖要等 60ms:</p>
+<pre>// 按下 (line 77):
+if (!dd->is_pressed) { dd->is_pressed = true; ... }
+
+// 松手 (line 122-127):
+if (dd->is_pressed) {
+    if (now_tick - dd->last_tick >= 60) {
+        dd->is_pressed = false;
+    }
+}</pre>
+  <p><strong>场景重现:</strong> 1) 用户按表头 → 菜单开,手指离开。2) <code>is_pressed</code> 还在等 60ms 复位。3) 用户 50ms 后再按表头 → <code>is_pressed</code> 还是 true,守卫失败 → 菜单无法关闭。</p>
+  <p><strong>修法:</strong> 松手时立即复位 <code>is_pressed = false</code>,不挂 60ms(因为下拉菜单没有"按住-拖动"语义,延迟无意义)。</p>
+</div>
+
+<!-- F6 -->
+<div class="finding warn">
+  <h3><span class="sev warn">BUG</span>下拉菜单"外部点击收起"只在按下时生效</h3>
+  <div class="loc">📁 <span class="file">ui_dropdown.c:112-115</span></div>
+<pre>// 只在按下(is_touching=true)时检查外部点击
+else {
+    dd->is_open = false;
+    return true;
+}</pre>
+  <p><strong>后果:</strong> 用户在菜单外部按下又滑动出 → 不会触发关闭。只能"按下瞬间命中外部"才关闭。配合上一条的粘滞,菜单可能锁死在外。</p>
+  <p><strong>建议:</strong> 考虑用专门的"模态屏蔽层"判定,或者只要当前触摸点不在总矩形内即认为外部点击。</p>
+</div>
+
+<!-- F7 -->
+<div class="finding warn">
+  <h3><span class="sev warn">BUG</span>滑块拖拽结束条件不可达</h3>
+  <div class="loc">📁 <span class="file">ui_slider.c:104-108</span></div>
+<pre>// 松手判定（60ms 滤波防抖）
+if (slider->is_dragging) {
+    if (now_tick - slider->last_tick >= 60) {
+        slider->is_dragging = false;
+        return true;
+    }
+}</pre>
+  <p><strong>问题:</strong> <code>last_tick</code> 在 hit/drag 分支(line 69)每帧都被刷成 <code>now_tick</code>。只要手指还在拖,这个差永远 &lt; 60ms,松手后第一帧 <code>last_tick</code> 还是上一帧的 <code>now_tick</code>,差值大概率是 1 个 tick(&lt;60)。</p>
+  <p><strong>后果:</strong> 永远进不去松手分支,拖动结束的"重绘"事件不触发,直到下一次外部重绘。手感上看着不掉。</p>
+  <p><strong>修法:</strong> 在 hit/drag 分支结束时(<code>return value_changed;</code> 之前)不要刷 <code>last_tick</code>;只在真正进入"非触摸"路径时记录一次。</p>
+</div>
+
+<!-- F8 -->
+<div class="finding warn">
+  <h3><span class="sev warn">BUG</span>滚动视口的滚动判定阈值 6px 过小,误触发</h3>
+  <div class="loc">📁 <span class="file">ui_scrollview.c:47</span></div>
+<pre>if (abs(delta_y) > 6) {
+    sv->is_scrolling = true;
+    ...
+}</pre>
+  <p><strong>问题:</strong> 6px 阈值意味着轻微抖动就识别为滚动,正在点击的按钮、滑块、开关只要碰巧在视口内就会被识别为"开始滚动" — 后续 <code>scroll_start_y</code> 被覆盖,点击事件失活。</p>
+  <p><strong>建议:</strong> 阈值提到 12~15px,或者干脆改成 "N 帧内位移持续增长才识别为滚动"。</p>
+</div>
+
+<!-- ====================== 一般 ====================== -->
+<h2 id="minor">🔵 一般代码质量</h2>
+
+<!-- M1 -->
+<div class="finding info">
+  <h3><span class="sev info">MINOR</span>所有"控件"的 <code>debounce_ms</code> 字段从未被读取</h3>
+  <div class="loc">📁 <span class="file">ui_btn.c:67</span>、<span class="file">ui_switch.c:31</span>、<span class="file">ui_slider.c</span>(无此字段)</div>
+  <p><code>ui_btn_t::debounce_ms = 250</code>、<code>ui_switch_t::debounce_ms = 200</code> 在初始化时设了,但代码里硬编码 60/300ms 阈值,这两个字段是死字段。</p>
+  <p><strong>建议:</strong> 删字段,或者把硬编码的 60/300 改成 <code>debounce_ms</code>。</p>
+</div>
+
+<!-- M2 -->
+<div class="finding info">
+  <h3><span class="sev info">MINOR</span><code>UI_MIN</code>/<code>UI_MAX</code> 宏不安全</h3>
+  <div class="loc">📁 <span class="file">ui_geometry.c:3-4</span></div>
+<pre>#define UI_MIN(a, b) ((a) < (b) ? (a) : (b))
+#define UI_MAX(a, b) ((a) > (b) ? (a) : (b))</pre>
+  <p>这里 <code>a</code> / <code>b</code> 各被求值 2 次。当参数是带副作用的表达式(自增、函数调用)会爆。当前用法都是结构体字段访问,无副作用,但仍属脆弱代码。</p>
+  <p><strong>建议:</strong> 改成 <code>static inline</code> 函数,顺便把类型固定为 <code>int16_t</code>(<code>ui_geometry</code> 内部都用 int16_t)。</p>
+</div>
+
+<!-- M3 -->
+<div class="finding info">
+  <h3><span class="sev info">MINOR</span>ASCII 字符串测量宽度 ≠ 实际渲染宽度(按钮文字偏左)</h3>
+  <div class="loc">📁 <span class="file">ui_btn.c:21-40</span> vs <span class="file">ui_draw.c:193-227</span></div>
+  <table>
+    <tr><th>字号</th><th>测量返回 (half_w)</th><th>实际渲染 (char_w)</th><th>差距</th></tr>
+    <tr><td>FONT_16</td><td>8</td><td>6</td><td>+33%</td></tr>
+    <tr><td>FONT_20</td><td>10</td><td>10</td><td>0</td></tr>
+    <tr><td>FONT_24</td><td>12</td><td>12</td><td>0</td></tr>
+  </table>
+  <p><strong>后果:</strong> FONT_16 字号下按钮文字测量比实际宽 33%,居中计算偏左,长文本会从按钮左边溢出。</p>
+  <p><strong>建议:</strong> 用同一个 <code>measure_string_width</code> 函数给 <code>ui_draw.c</code> 也复用,统一宽度源。</p>
+</div>
+
+<!-- M4 -->
+<div class="finding info">
+  <h3><span class="sev info">MINOR</span><code>ui_tile.h::UI_TILE_COUNT</code> 死宏</h3>
+  <div class="loc">📁 <span class="file">ui_tile.h:17</span></div>
+<pre>#define UI_TILE_COUNT   UI_TILE_ROWS</pre>
+  <p>全代码搜不到使用。</p>
+</div>
+
+<!-- M5 -->
+<div class="finding info">
+  <h3><span class="sev info">MINOR</span><code>extern const uint8_t Font5x7[][5]</code> 应放在头文件</h3>
+  <div class="loc">📁 <span class="file">ui_draw.c:191</span></div>
+  <p>现在 extern 藏在 .c 文件里,谁 include 了 <code>ui_draw.h</code> 都看不到这个依赖。挪到 <code>ui_draw.h</code>,或者至少在 <code>ui_draw.h</code> 里加注释说明依赖外部字体数组。</p>
+</div>
+
+<!-- M6 -->
+<div class="finding info">
+  <h3><span class="sev info">MINOR</span>开关 (Switch) 缺少公共 API 设置 <code>show_underline</code> 风格的属性</h3>
+  <div class="loc">📁 <span class="file">ui_btn.h:54</span></div>
+  <p><code>ui_btn_t::show_underline</code> 字段存在但没有任何 setter API,外部无法打开。</p>
+</div>
+
+<!-- M7 -->
+<div class="finding info">
+  <h3><span class="sev info">MINOR</span>所有控件的触控回调没有"重入安全"</h3>
+  <div class="loc">📁 多处</div>
+  <p>回调里如果调用任何 <code>ui_btn_set_xxx</code> / <code>ui_switch_set_state</code> 修改自身状态,可能踩到当前正在遍历的状态机。建议在回调实现文档里加一行 "不要在回调内反调用 process_touch"。</p>
+</div>
+
+<!-- M8 -->
+<div class="finding info">
+  <h3><span class="sev info">MINOR</span><code>int total = tile->rect.w * tile->rect.h</code> 潜在溢出</h3>
+  <div class="loc">📁 <span class="file">ui_modal.c:145</span></div>
+  <p>两个 <code>int16_t</code> 相乘的结果赋给 <code>int</code>,理论上不会溢出(320×32=10240),但万一未来屏分辨率提到 1024×768 就溢出。改成 <code>size_t</code> 或者 <code>(int32_t)tile->rect.w * tile->rect.h</code>。</p>
+</div>
+
+<!-- M9 -->
+<div class="finding info">
+  <h3><span class="sev info">MINOR</span>弹窗外暗化算法不准(<code>& 0x7BEF</code>)</h3>
+  <div class="loc">📁 <span class="file">ui_modal.c:147</span></div>
+<pre>tile->buf[i] = (tile->buf[i] >> 1) & 0x7BEF;</pre>
+  <p>右移 1 位=亮度减半,但 <code>&amp; 0x7BEF</code> 又把 R/G/B 三色的 LSB 都清零了。复合效果不是简单的"变暗",而是 RGB 三通道都会"掉精度",看起来发灰、不自然。</p>
+  <p><strong>建议:</strong> <code>(tile->buf[i] &gt;&gt; 1)</code> 即可,或者乘以 0.6(<code>(tile-&gt;buf[i] * 0x4D8B) &gt;&gt; 16</code>)。</p>
+</div>
+
+<!-- M10 -->
+<div class="finding info">
+  <h3><span class="sev info">MINOR</span>部分 API 缺少 NULL 检查</h3>
+  <div class="loc">📁 <span class="file">ui_btn.c:213</span>、<span class="file">ui_slider.c:206</span>、<span class="file">ui_switch.c:47</span> 等</div>
+  <p>绝大多数 setter 都做了 NULL 检查,但 <code>ui_btn_set_color</code> 等函数 NULL 检查后只是 return,没记日志也没断言。如果上游代码有 bug,setter 静默失败,后续渲染用错值会很难定位。</p>
+</div>
+
+<!-- ====================== 性能 ====================== -->
+<h2 id="perf">⚡ 性能热点</h2>
+
+<div class="finding warn">
+  <h3>⚠ <code>memset</code> 每帧每切片调用一次</h3>
+  <div class="loc">📁 <span class="file">ui_tile.c:21</span></div>
+<pre>memset(s_current_tile.buf, 0, UI_TILE_W * UI_TILE_H * sizeof(uint16_t));
+// = memset(0, 20480 字节) 每切每帧</pre>
+  <p>15 个切片 × 20KB = 300KB memset/帧。120MHz Cortex-M0+ 下大约 5~10ms 占用。</p>
+  <p><strong>优化方向:</strong>
+  <ul>
+    <li>用 <code>DMA</code> 做 memset(零拷贝 + 后台跑)</li>
+    <li>改成只清"脏区域"(脏矩形 + ui_geometry 求并集)</li>
+    <li>把 <code>memset</code> 放到 SPI 推流的等待窗口里做(并发掩盖)</li>
+  </ul>
+  </p>
+</div>
+
+<div class="finding info">
+  <h3>⚠ <code>ui_draw_fill_rect</code> 每像素一次写</h3>
+  <div class="loc">📁 <span class="file">ui_draw.c:48-73</span></div>
+<pre>for (y) for (x) tile-&gt;buf[ly * W + lx] = color;</pre>
+  <p>320×480 全屏填充 = 153600 次写。填大色块会很慢,不如改成:
+  <ul>
+    <li>整行写一次的 <code>memset16</code>(按 16-bit 颜色批量填)</li>
+    <li>DMA + 硬件加速(如果 LCD 控制器支持整块 fill 命令)</li>
+  </ul>
+  </p>
+</div>
+
+<!-- ====================== 良好 ====================== -->
+<h2 id="good">✨ 做得好的地方</h2>
+
+<ul>
+  <li>✅ 所有公开头都有 <code>#ifdef __cplusplus extern "C"</code> 包裹</li>
+  <li>✅ 函数指针 typedef 都用 <code>_cb_t</code> 后缀,可读性好</li>
+  <li>✅ 几何函数都做了 NULL 检查和退化矩形处理</li>
+  <li>✅ 切片光栅化所有绘制都先做 <code>ui_rect_intersect</code> 早退出</li>
+  <li>✅ 颜色值用 <code>0x</code> 直接 RGB565 字面量,不绕弯</li>
+  <li>✅ 触控状态机明确区分 press / hold / release 三个阶段</li>
+  <li>✅ 中文渲染走 <code>GetFontBitmap()</code> + 位图复用,避免每字重画</li>
+  <li>✅ 切片双缓冲乒乓切换,CPU 与 DMA 流水线并行</li>
+  <li>✅ 模态弹窗有"全屏拦截防穿透"设计</li>
+  <li>✅ 滚动视口有触摸防抖(<code>last_touch_tick &gt; 80</code>)</li>
+  <li>✅ 控件结构体内嵌回调 + user_data,避免全局</li>
+  <li>✅ 函数命名风格统一(<code>ui_xxx_yyy_zzz</code>)</li>
+  <li>✅ 中文注释风格统一("📐" 等图标让段落结构清晰)</li>
+  <li>✅ 头文件 doxygen 注释完整</li>
+  <li>✅ 渲染流程注释"⚡ 核心修复"等说明意图明确</li>
+  <li>✅ 全局变量都用 <code>g_</code> / <code>s_</code> 前缀</li>
+  <li>✅ 触控回调时间戳统一为 <code>now_tick</code>,便于接入 RTOS tick</li>
+  <li>✅ 控件坐标系全部用 <code>int16_t</code>,避免浮点</li>
+</ul>
+
+<!-- ====================== 文件表 ====================== -->
+<h2 id="file-table">📂 文件清单与风险评级</h2>
+<table>
+  <tr><th>文件</th><th>行数</th><th>风险</th><th>主要问题</th></tr>
+  <tr>
+    <td><code>ui_geometry.h</code> / <code>.c</code></td>
+    <td>58 / 55</td>
+    <td><span class="tag" style="background:var(--ok);color:black">低</span></td>
+    <td>宏改 inline 函数</td>
+  </tr>
+  <tr>
+    <td><code>ui_core.h</code> / <code>.c</code></td>
+    <td>18 / 53</td>
+    <td><span class="tag" style="background:var(--crit);color:white">高</span></td>
+    <td>🔴 与 ui_tile.h 重名函数;整个模块冗余(被 ui_tile.c 取代)</td>
+  </tr>
+  <tr>
+    <td><code>ui_tile.h</code> / <code>.c</code></td>
+    <td>46 / 53</td>
+    <td><span class="tag" style="background:var(--warn);color:black">中</span></td>
+    <td>每帧 memset 大块;重名函数;UI_TILE_COUNT 死宏</td>
+  </tr>
+  <tr>
+    <td><code>ui_draw.h</code> / <code>.c</code></td>
+    <td>31 / 263</td>
+    <td><span class="tag" style="background:var(--warn);color:black">中</span></td>
+    <td>extern Font5x7 应收进头文件;像素填充慢</td>
+  </tr>
+  <tr>
+    <td><code>ui_btn.h</code> / <code>.c</code></td>
+    <td>87 / 218</td>
+    <td><span class="tag" style="background:var(--warn);color:black">中</span></td>
+    <td>🔴 旧实现注释未删;语义与文档不一致;debounce_ms 死字段;宽度测量偏差</td>
+  </tr>
+  <tr>
+    <td><code>ui_switch.h</code> / <code>.c</code></td>
+    <td>62 / 124</td>
+    <td><span class="tag" style="background:var(--info);color:black">低-中</span></td>
+    <td>debounce_ms 死字段</td>
+  </tr>
+  <tr>
+    <td><code>ui_slider.h</code> / <code>.c</code></td>
+    <td>68 / 211</td>
+    <td><span class="tag" style="background:var(--warn);color:black">中</span></td>
+    <td>🟡 松手消抖不可达</td>
+  </tr>
+  <tr>
+    <td><code>ui_dropdown.h</code> / <code>.c</code></td>
+    <td>63 / 196</td>
+    <td><span class="tag" style="background:var(--warn);color:black">中</span></td>
+    <td>🟡 is_pressed 粘滞;外部点击只在按下时检测</td>
+  </tr>
+  <tr>
+    <td><code>ui_modal.h</code> / <code>.c</code></td>
+    <td>80 / 180</td>
+    <td><span class="tag" style="background:var(--info);color:black">低-中</span></td>
+    <td>暗化算法不自然;int16 乘法溢出风险</td>
+  </tr>
+  <tr>
+    <td><code>ui_scrollview.h</code> / <code>.c</code></td>
+    <td>52 / 114</td>
+    <td><span class="tag" style="background:var(--info);color:black">低-中</span></td>
+    <td>🟡 滚动阈值 6px 过小</td>
+  </tr>
+</table>
+
+<div class="pnote">
+  📝 报告基于代码静态分析,未运行实际测试。<br>
+  部分"行为不一致"问题(按钮的 click-on-press vs click-on-release)需要与产品需求对齐确认。<br>
+  性能数据(memset/像素循环)是估算,实际跑分需用 perf 工具在硬件上测。
+</div>
+
+</body>
+</html>

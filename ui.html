@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RP2040 UI 组件设计工作台 (RGB565 硬件色彩仿真版)</title>
+<style>
+  :root {
+    --bg-dark: #090d16;
+    --panel-bg: #111827;
+    --panel-border: #1f2937;
+    --accent: #38bdf8;
+    --accent-hover: #0ea5e9;
+    --text: #f3f4f6;
+    --text-muted: #9ca3af;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+  body {
+    background: var(--bg-dark);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace, sans-serif;
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* 3 栏布局 */
+  .col-palette {
+    width: 230px;
+    background: var(--panel-bg);
+    border-right: 1px solid var(--panel-border);
+    display: flex;
+    flex-direction: column;
+  }
+  .col-stage {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(circle at center, #1e293b 0%, #090d16 100%);
+    padding: 16px;
+    position: relative;
+    overflow: hidden;
+  }
+  .col-inspector {
+    width: 390px;
+    background: var(--panel-bg);
+    border-left: 1px solid var(--panel-border);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .panel-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--panel-border);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .panel-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .stage-toolbar {
+    margin-bottom: 12px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    background: rgba(15, 23, 42, 0.85);
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--panel-border);
+    backdrop-filter: blur(8px);
+  }
+
+  .mode-switch {
+    display: flex;
+    background: #020617;
+    border-radius: 6px;
+    padding: 2px;
+    border: 1px solid var(--panel-border);
+  }
+  .mode-btn {
+    padding: 5px 12px;
+    border-radius: 4px;
+    border: none;
+    font-size: 12px;
+    font-weight: bold;
+    cursor: pointer;
+    background: transparent;
+    color: var(--text-muted);
+    transition: all 0.2s;
+  }
+  .mode-btn.active {
+    background: var(--accent);
+    color: #000;
+  }
+
+  .category-title {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: bold;
+    text-transform: uppercase;
+    margin: 8px 0 2px 0;
+  }
+  .comp-item {
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: var(--text);
+    padding: 7px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.15s;
+  }
+  .comp-item:hover {
+    background: #334155;
+    border-color: var(--accent);
+    transform: translateX(3px);
+  }
+
+  /* 480x320 物理仿真屏幕 */
+  .screen-bezel {
+    background: #020408;
+    padding: 12px;
+    border-radius: 12px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.9), 0 0 35px rgba(56, 189, 248, 0.15);
+    border: 2px solid #334155;
+    position: relative;
+  }
+  .screen {
+    width: 480px;
+    height: 320px;
+    background: #ffffff; /* 默认纯白 */
+    position: relative;
+    overflow: hidden;
+    font-family: "Consolas", monospace;
+    transition: background 0.2s;
+  }
+  .screen.mode-design { cursor: default; }
+  .screen.mode-run { cursor: pointer; }
+
+  /* 切片网格辅助线 */
+  .tile-grid {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none;
+    display: none;
+    z-index: 900;
+  }
+  .tile-grid.show { display: block; }
+  .tile-line {
+    position: absolute;
+    left: 0; width: 100%; height: 1px;
+    background: rgba(56, 189, 248, 0.3);
+  }
+
+  /* 局部推流微矩形指示器 */
+  .dirty-indicator {
+    position: absolute;
+    border: 2px solid #ff0055;
+    background: rgba(255, 0, 85, 0.25);
+    pointer-events: none;
+    z-index: 999;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .dirty-indicator.flash { opacity: 1; }
+
+  .ui-node {
+    position: absolute;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+  }
+  .mode-design .ui-node { cursor: move; }
+  .mode-design .ui-node.selected {
+    outline: 2px dashed var(--accent) !important;
+    outline-offset: 2px;
+    z-index: 800 !important;
+  }
+
+  .prop-group {
+    background: #090d16;
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .prop-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+  }
+  .prop-row input, .prop-row select {
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #fff;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    outline: none;
+    width: 140px;
+  }
+  .prop-row input[type="color"] { width: 36px; height: 24px; padding: 0; cursor: pointer; }
+  .prop-row input[type="number"] { width: 65px; }
+
+  .color-badge {
+    font-family: monospace;
+    font-size: 10px;
+    color: var(--accent);
+    margin-left: 4px;
+  }
+
+  .btn-action {
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #fff;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+    font-weight: 500;
+  }
+  .btn-action:hover { background: var(--accent); color: #000; }
+  .btn-danger { border-color: #ef4444; color: #ef4444; }
+  .btn-danger:hover { background: #ef4444; color: #fff; }
+
+  pre.c-code {
+    background: #020617;
+    border: 1px solid var(--panel-border);
+    padding: 8px;
+    border-radius: 4px;
+    font-size: 10.5px;
+    color: #7dd3fc;
+    line-height: 1.45;
+    max-height: 160px;
+    overflow: auto;
+    white-space: pre;
+  }
+</style>
+</head>
+<body>
+
+<!-- 1. 左侧组件托盘 -->
+<div class="col-palette">
+  <div class="panel-header">
+    <span>📦 19组 UI 组件库</span>
+  </div>
+  <div class="panel-body">
+    <div class="category-title">基础交互控件</div>
+    <div class="comp-item" onclick="addComponent('btn')">🔘 按钮 (ui_btn)</div>
+    <div class="comp-item" onclick="addComponent('switch')">🔀 开关 (ui_switch)</div>
+    <div class="comp-item" onclick="addComponent('slider')">🎚️ 滑块 (ui_slider)</div>
+    <div class="comp-item" onclick="addComponent('stepper')">🔢 步进器 (ui_stepper)</div>
+    <div class="comp-item" onclick="addComponent('checkbox')">☑️ 单选/多选组 (ui_check)</div>
+    <div class="comp-item" onclick="addComponent('dropdown')">🔻 下拉菜单 (ui_dropdown)</div>
+
+    <div class="category-title">数据流与仪器控件</div>
+    <div class="comp-item" onclick="addComponent('waveform')">📈 逻辑示波器 (ui_waveform)</div>
+    <div class="comp-item" onclick="addComponent('packet')">📋 报文表格 (ui_packet_table)</div>
+    <div class="comp-item" onclick="addComponent('terminal')">💻 串口终端 (ui_terminal)</div>
+    <div class="comp-item" onclick="addComponent('hexview')">📑 16进制内存 (ui_hex_view)</div>
+    <div class="comp-item" onclick="addComponent('progress')">⏳ 烧录进度条 (ui_progress)</div>
+    <div class="comp-item" onclick="addComponent('filebrowser')">📁 文件浏览器 (ui_file_browser)</div>
+
+    <div class="category-title">容器与模态层</div>
+    <div class="comp-item" onclick="addComponent('tabview')">📑 侧边栏分页 (ui_tabview)</div>
+    <div class="comp-item" onclick="addComponent('scroll')">📜 滚动视口 (ui_scrollview)</div>
+    <div class="comp-item" onclick="addComponent('drawer')">📖 侧边抽屉 (ui_drawer)</div>
+    <div class="comp-item" onclick="addComponent('modal')">🪟 模态对话框 (ui_modal)</div>
+
+    <div class="category-title">输入与状态反馈</div>
+    <div class="comp-item" onclick="addComponent('input')">⌨️ 文本输入框 (ui_input)</div>
+    <div class="comp-item" onclick="addComponent('numpad')">🔢 数字小键盘 (ui_numpad)</div>
+    <div class="comp-item" onclick="addComponent('keyboard')">⌨️ QWERTY 全键盘 (ui_kb)</div>
+    <div class="comp-item" onclick="addComponent('statusbar')">🏷️ 状态栏 (ui_status_bar)</div>
+    <div class="comp-item" onclick="addComponent('toast')">💬 提示气泡 (ui_toast)</div>
+  </div>
+</div>
+
+<!-- 2. 中间仿真屏与操作台 -->
+<div class="col-stage">
+  <div class="stage-toolbar">
+    <div class="mode-switch">
+      <button class="mode-btn active" id="btnModeDesign" onclick="setMode('design')">🛠️ 设计模式</button>
+      <button class="mode-btn" id="btnModeRun" onclick="setMode('run')">▶️ 运行交互模式</button>
+    </div>
+    <button class="btn-action" onclick="toggleTileGrid()">📐 32px 切片网格</button>
+    <button class="btn-action" onclick="loadWhiteThemePreset()">⚪ 纯白主题预设</button>
+    <button class="btn-action" onclick="clearScreen()">🗑️ 清空</button>
+    <button class="btn-action" onclick="exportFullCCode()">📋 导出整屏 C 代码</button>
+  </div>
+
+  <div class="screen-bezel">
+    <div class="screen mode-design" id="screen" onclick="deselectAll(event)">
+      <!-- 局部推流微矩形指示器 -->
+      <div class="dirty-indicator" id="dirtyBox"></div>
+      <!-- 切片网格 -->
+      <div class="tile-grid" id="tileGrid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 3. 右侧属性检视器 -->
+<div class="col-inspector">
+  <div class="panel-header">
+    <span>⚙️ 属性设置 & RGB565 物理仿真</span>
+    <button class="btn-action btn-danger" onclick="deleteSelected()">删除组件</button>
+  </div>
+  <div class="panel-body" id="inspectorBody"></div>
+</div>
+
+<script>
+  let currentMode = 'design';
+  let nodes = [];
+  let selectedId = null;
+  let nextId = 1;
+  let screenBgColor = '#ffffff'; // 默认纯白背景
+
+  // 10 行 32px 切片网格
+  const tileGrid = document.getElementById('tileGrid');
+  for (let i = 1; i < 10; i++) {
+    const line = document.createElement('div');
+    line.className = 'tile-line';
+    line.style.top = (i * 32) + 'px';
+    tileGrid.appendChild(line);
+  }
+
+  /* ================= 核心：RGB888 <-> RGB565 硬件量化引擎 ================= */
+
+  // 24-bit Web HEX -> 16-bit RGB565 (例: "#007AFF" -> 0x03DF)
+  function hexToRgb565Num(hex) {
+    if (!hex || hex.length < 7) return 0xFFFF;
+    const r = parseInt(hex.slice(1,3), 16);
+    const g = parseInt(hex.slice(3,5), 16);
+    const b = parseInt(hex.slice(5,7), 16);
+    const r5 = (r >> 3) & 0x1F;
+    const g6 = (g >> 2) & 0x3F;
+    const b5 = (b >> 3) & 0x1F;
+    return (r5 << 11) | (g6 << 5) | b5;
+  }
+
+  function hexToRgb565Str(hex) {
+    return "0x" + hexToRgb565Num(hex).toString(16).toUpperCase().padStart(4, '0');
+  }
+
+  // 16-bit RGB565 -> 24-bit 硬件截断色 (仿真真机实际显示的颜色)
+  function rgb565NumToHex(num) {
+    const r5 = (num >> 11) & 0x1F;
+    const g6 = (num >> 5) & 0x3F;
+    const b5 = num & 0x1F;
+    // 扩展回 8 位
+    const r = Math.round((r5 * 255) / 31);
+    const g = Math.round((g6 * 255) / 63);
+    const b = Math.round((b5 * 255) / 31);
+    return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+  }
+
+  function quantizeColor(hex) {
+    return rgb565NumToHex(hexToRgb565Num(hex));
+  }
+
+  function setMode(mode) {
+    currentMode = mode;
+    document.getElementById('btnModeDesign').classList.toggle('active', mode === 'design');
+    document.getElementById('btnModeRun').classList.toggle('active', mode === 'run');
+    const screen = document.getElementById('screen');
+    screen.className = `screen mode-${mode}`;
+    if (mode === 'run') {
+      selectedId = null;
+    }
+    renderScreen();
+    renderInspector();
+  }
+
+  function toggleTileGrid() {
+    tileGrid.classList.toggle('show');
+  }
+
+  function triggerDirtyRect(x, y, w, h) {
+    const box = document.getElementById('dirtyBox');
+    box.style.left = x + 'px';
+    box.style.top = y + 'px';
+    box.style.width = w + 'px';
+    box.style.height = h + 'px';
+    box.classList.add('flash');
+    setTimeout(() => box.classList.remove('flash'), 160);
+  }
+
+  // 19 组组件模板
+  const COMP_TEMPLATES = {
+    btn: {
+      type: 'btn', name: '按钮 (ui_btn)', w: 130, h: 36, x: 30, y: 35,
+      props: { text: '点按测试', style: 'ROUND', mode: 'PUSH', color_bg: '#e5e7eb', color_active: '#007aff', color_text: '#000000', is_checked: false, click_count: 0 }
+    },
+    switch: {
+      type: 'switch', name: '滑动开关 (ui_switch)', w: 60, h: 28, x: 200, y: 39,
+      props: { is_checked: true, color_off: '#d1d5db', color_on: '#007aff', color_knob: '#ffffff' }
+    },
+    slider: {
+      type: 'slider', name: '滑块 (ui_slider)', w: 200, h: 26, x: 30, y: 90,
+      props: { min_val: 0, max_val: 100, cur_val: 50, color_track: '#e5e7eb', color_fill: '#007aff', color_knob: '#ffffff' }
+    },
+    stepper: {
+      type: 'stepper', name: '步进微调器 (ui_stepper)', w: 180, h: 36, x: 30, y: 130,
+      props: { cur_val: 10000, step: 100, prefix: 'Freq:', unit: 'Hz', color_bg: '#f3f4f6', color_btn_bg: '#e5e7eb', color_text: '#000000' }
+    },
+    checkbox: {
+      type: 'checkbox', name: '单/复选组 (ui_checkbox)', w: 180, h: 110, x: 30, y: 180,
+      props: { mode: 'MULTI', item_h: 32, items: 'DMA双缓冲,240MHz超频,持久化存储', checked_mask: [true, true, false], color_bg: '#f3f4f6', color_checked: '#007aff' }
+    },
+    dropdown: {
+      type: 'dropdown', name: '下拉菜单 (ui_dropdown)', w: 140, h: 28, x: 280, y: 90,
+      props: { items: '正弦波,方波,三角波', selected_idx: 0, is_open: false, color_bg: '#f3f4f6', color_border: '#007aff', color_text: '#000000' }
+    },
+    waveform: {
+      type: 'waveform', name: '逻辑示波器 (ui_waveform)', w: 420, h: 110, x: 30, y: 40,
+      props: { mode: 'DIGITAL_8CH', channels: 4, cursor_a: 100, cursor_b: 260, color_bg: '#000000', color_cursor_a: '#ffea00', color_cursor_b: '#f43f5e' }
+    },
+    packet: {
+      type: 'packet', name: '报文表格 (ui_packet_table)', w: 320, h: 110, x: 30, y: 160,
+      props: { color_bg: '#f8fafc', color_header_bg: '#e2e8f0', color_border: '#007aff' }
+    },
+    terminal: {
+      type: 'terminal', name: '串口控制台 (ui_terminal)', w: 420, h: 160, x: 30, y: 40,
+      props: { logs: ['> RP2040 UART Shell Ready.', '> Baud: 115200 8-N-1'], color_bg: '#020617', color_border: '#334155', color_text: '#00ff66' }
+    },
+    hexview: {
+      type: 'hexview', name: '16进制内存 (ui_hex_view)', w: 260, h: 120, x: 190, y: 40,
+      props: { base_addr: '0x10000000', color_bg: '#020617', color_addr: '#f59e0b', color_hex: '#ffffff' }
+    },
+    progress: {
+      type: 'progress', name: '烧录进度条 (ui_progressbar)', w: 320, h: 54, x: 30, y: 220,
+      props: { stage: 'PROGRAM', progress: 75, color_track_bg: '#e5e7eb', color_bar: '#007aff' }
+    },
+    filebrowser: {
+      type: 'filebrowser', name: '文件浏览器 (ui_file_browser)', w: 170, h: 150, x: 30, y: 40,
+      props: { files: 'firmware.bin,boot.hex,app.uf2', selected_idx: 0, color_bg: '#f8fafc', color_active_bg: '#007aff' }
+    },
+    tabview: {
+      type: 'tabview', name: '侧边栏分页 (ui_tabview)', w: 420, h: 220, x: 30, y: 40,
+      props: { bar_w: 100, tab_names: '通用,显示,总线', active_tab: 0, color_bar_bg: '#f1f5f9', color_indicator: '#007aff' }
+    },
+    scroll: {
+      type: 'scroll', name: '滚动视口 (ui_scrollview)', w: 180, h: 110, x: 30, y: 50,
+      props: { content_h: 220, scroll_y: 20, color_bg: '#f8fafc', color_scrollbar: '#007aff' }
+    },
+    drawer: {
+      type: 'drawer', name: '侧边抽屉 (ui_drawer)', w: 130, h: 288, x: 0, y: 32,
+      props: { is_open: true, color_bg: '#0f172a', color_border: '#007aff' }
+    },
+    modal: {
+      type: 'modal', name: '模态对话框 (ui_modal)', w: 300, h: 150, x: 90, y: 80,
+      props: { title: '参数配置确认', is_open: true, color_bg: '#ffffff', color_border: '#007aff', color_title: '#007aff' }
+    },
+    input: {
+      type: 'input', name: '文本输入框 (ui_input)', w: 260, h: 36, x: 30, y: 50,
+      props: { placeholder: '点击输入指令...', text: '', is_focused: false, color_bg: '#f8fafc', color_border: '#cbd5e1', color_focus: '#007aff' }
+    },
+    numpad: {
+      type: 'numpad', name: '数字小键盘 (ui_numpad)', w: 340, h: 230, x: 70, y: 45,
+      props: { title: '设置频率', val_str: '10.0', units: 'Hz,kHz,MHz,V', is_open: true, color_bg: '#0f172a', color_border: '#007aff' }
+    },
+    keyboard: {
+      type: 'keyboard', name: '全功能键盘 (ui_keyboard)', w: 480, h: 170, x: 0, y: 150,
+      props: { buffer: '', is_open: true, color_bg: '#0f172a', color_border: '#007aff' }
+    },
+    statusbar: {
+      type: 'statusbar', name: '状态栏 (ui_status_bar)', w: 480, h: 32, x: 0, y: 0,
+      props: { title: 'RP2040 Workstation', cpu_usage: 8, fps: 60, color_bg: '#007aff', color_border: '#007aff' }
+    },
+    toast: {
+      type: 'toast', name: '提示气泡 (ui_toast)', w: 230, h: 34, x: 240, y: 276,
+      props: { message: '操作已成功完成', type: 'SUCCESS', is_active: true, color_bg: '#0f172a' }
+    }
+  };
+
+  function addComponent(type) {
+    const tmpl = COMP_TEMPLATES[type];
+    if (!tmpl) return;
+    const nodeData = JSON.parse(JSON.stringify(tmpl));
+    nodeData.id = nextId++;
+    nodes.push(nodeData);
+    renderScreen();
+    selectNode(nodeData.id);
+  }
+
+  function selectNode(id) {
+    if (currentMode !== 'design') return;
+    selectedId = id;
+    renderScreen();
+    renderInspector();
+  }
+
+  function deselectAll(e) {
+    if (currentMode === 'design' && (e.target.id === 'screen' || e.target.id === 'tileGrid')) {
+      selectedId = null;
+      renderScreen();
+      renderInspector();
+    }
+  }
+
+  function deleteSelected() {
+    if (!selectedId) return;
+    nodes = nodes.filter(n => n.id !== selectedId);
+    selectedId = null;
+    renderScreen();
+    renderInspector();
+  }
+
+  function clearScreen() {
+    nodes = [];
+    selectedId = null;
+    renderScreen();
+    renderInspector();
+  }
+
+  function renderScreen() {
+    const screen = document.getElementById('screen');
+    screen.style.background = quantizeColor(screenBgColor);
+
+    const hasGrid = tileGrid.classList.contains('show');
+    screen.innerHTML = `
+      <div class="dirty-indicator" id="dirtyBox"></div>
+      <div class="tile-grid${hasGrid ? ' show' : ''}" id="tileGrid"></div>
+    `;
+
+    const grid = screen.querySelector('#tileGrid');
+    for (let i = 1; i < 10; i++) {
+      const line = document.createElement('div');
+      line.className = 'tile-line';
+      line.style.top = (i * 32) + 'px';
+      grid.appendChild(line);
+    }
+
+    nodes.forEach(n => {
+      if (n.props.is_open === false || n.props.is_active === false) return;
+
+      const el = document.createElement('div');
+      el.className = 'ui-node' + (n.id === selectedId ? ' selected' : '');
+      el.style.left = n.x + 'px';
+      el.style.top = n.y + 'px';
+      el.style.width = n.w + 'px';
+      el.style.height = n.h + 'px';
+
+      if (currentMode === 'design') {
+        el.onmousedown = (e) => {
+          e.stopPropagation();
+          selectNode(n.id);
+          let startX = e.clientX - n.x;
+          let startY = e.clientY - n.y;
+          document.onmousemove = (ev) => {
+            n.x = Math.max(0, Math.min(480 - n.w, ev.clientX - startX));
+            n.y = Math.max(0, Math.min(320 - n.h, ev.clientY - startY));
+            renderScreen();
+            renderInspector();
+          };
+          document.onmouseup = () => { document.onmousemove = null; document.onmouseup = null; };
+        };
+      }
+
+      el.innerHTML = generateNodeHTML(n);
+      screen.appendChild(el);
+    });
+  }
+
+  function generateNodeHTML(n) {
+    const p = n.props;
+    switch(n.type) {
+      case 'btn': {
+        let br = p.style === 'ROUND' ? (n.h / 2) + 'px' : '0px';
+        let bg = p.style === 'TEXT' ? 'transparent' : quantizeColor(p.is_checked ? p.color_active : p.color_bg);
+        let bdr = p.style === 'TEXT' ? 'none' : '1px solid ' + quantizeColor(p.is_checked ? p.color_active : '#94a3b8');
+        let fg = quantizeColor((p.style === 'TEXT' && p.is_checked) ? p.color_active : p.color_text);
+        return `<div onclick="handleBtnClick(${n.id}, event)" style="width:100%;height:100%;background:${bg};border:${bdr};border-radius:${br};color:${fg};display:flex;align-items:center;justify-content:center;font-weight:bold;text-decoration:${p.is_checked?'underline':'none'};cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.1);">${p.text} ${p.click_count > 0 ? '('+p.click_count+')' : ''}</div>`;
+      }
+      case 'switch': {
+        let swBg = quantizeColor(p.is_checked ? p.color_on : p.color_off);
+        let knobX = p.is_checked ? (n.w - n.h + 3) : 3;
+        let knobBg = quantizeColor(p.color_knob);
+        return `<div onclick="handleSwitchClick(${n.id}, event)" style="width:100%;height:100%;background:${swBg};border-radius:${n.h/2}px;position:relative;cursor:pointer;transition:background 0.2s;box-shadow:inset 0 1px 2px rgba(0,0,0,0.2);"><div style="width:${n.h-6}px;height:${n.h-6}px;background:${knobBg};border-radius:50%;position:absolute;top:3px;left:${knobX}px;transition:left 0.2s;box-shadow:0 1px 3px rgba(0,0,0,0.3);"></div></div>`;
+      }
+      case 'slider': {
+        let fillW = ((p.cur_val - p.min_val)/(p.max_val - p.min_val))*100;
+        return `<div onclick="handleSliderClick(${n.id}, event, this)" style="width:100%;height:100%;display:flex;align-items:center;position:relative;cursor:pointer;"><div style="width:100%;height:6px;background:${quantizeColor(p.color_track)};position:relative;border-radius:3px;"><div style="width:${fillW}%;height:100%;background:${quantizeColor(p.color_fill)};border-radius:3px;"></div><div style="width:16px;height:16px;background:${quantizeColor(p.color_knob)};border-radius:50%;position:absolute;top:50%;left:${fillW}%;transform:translate(-50%,-50%);border:2px solid #000;box-shadow:0 1px 3px rgba(0,0,0,0.3);"></div></div></div>`;
+      }
+      case 'stepper': {
+        return `<div style="width:100%;height:100%;display:flex;background:${quantizeColor(p.color_bg)};border:1px solid #cbd5e1;"><div onclick="handleStepperClick(${n.id}, -1, event)" style="width:${n.h}px;background:${quantizeColor(p.color_btn_bg)};color:#000;display:flex;align-items:center;justify-content:center;cursor:pointer;font-weight:bold;">-</div><div style="flex:1;color:${quantizeColor(p.color_text)};display:flex;align-items:center;justify-content:center;font-size:11px;">${p.prefix} ${p.cur_val} ${p.unit}</div><div onclick="handleStepperClick(${n.id}, 1, event)" style="width:${n.h}px;background:${quantizeColor(p.color_btn_bg)};color:#000;display:flex;align-items:center;justify-content:center;cursor:pointer;font-weight:bold;">+</div></div>`;
+      }
+      case 'dropdown': {
+        const list = p.items.split(',');
+        let cur = list[p.selected_idx] || '';
+        let listHtml = list.map((item, idx) => `<div onclick="handleDDSelect(${n.id}, ${idx}, event)" style="padding:4px 6px;cursor:pointer;border-bottom:1px solid #e2e8f0;background:${idx===p.selected_idx?quantizeColor(p.color_border):'#ffffff'};color:${idx===p.selected_idx?'#ffffff':'#000000'};font-size:11px;">${item}</div>`).join('');
+        return `<div style="width:100%;height:100%;position:relative;"><div onclick="handleDDToggle(${n.id}, event)" style="width:100%;height:100%;background:${quantizeColor(p.color_bg)};border:1px solid ${quantizeColor(p.color_border)};color:${quantizeColor(p.color_text)};display:flex;align-items:center;justify-content:space-between;padding:0 6px;cursor:pointer;font-size:11px;"><span>${cur}</span><span>▼</span></div>${p.is_open ? `<div style="position:absolute;top:${n.h}px;left:0;width:100%;background:#ffffff;border:1px solid ${quantizeColor(p.color_border)};z-index:999;box-shadow:0 4px 10px rgba(0,0,0,0.15);">${listHtml}</div>`:''}</div>`;
+      }
+      case 'statusbar': {
+        return `<div style="width:100%;height:100%;background:${quantizeColor(p.color_bg)};color:#ffffff;display:flex;align-items:center;justify-content:space-between;padding:0 8px;font-size:11px;"><span>${p.title}</span><span style="color:#fef08a">CPU:${p.cpu_usage}% FPS:${p.fps}</span><span>[W25 SD USB]</span></div>`;
+      }
+      case 'progress': {
+        return `<div style="width:100%;height:100%;background:#f8fafc;border:1px solid #e2e8f0;padding:4px 8px;display:flex;flex-direction:column;justify-content:center;gap:4px;"><div style="display:flex;justify-content:space-between;color:${quantizeColor(p.color_bar)};font-size:10px;font-weight:bold;"><span>[${p.stage}]</span><span>${p.progress}%</span></div><div style="width:100%;height:14px;background:${quantizeColor(p.color_track_bg)};position:relative;border-radius:2px;"><div style="width:${p.progress}%;height:100%;background:${quantizeColor(p.color_bar)};transition:width 0.2s;"></div></div></div>`;
+      }
+      default:
+        return `<div style="width:100%;height:100%;background:#f1f5f9;color:#007aff;border:1px solid #007aff;display:flex;align-items:center;justify-content:center;">${n.name}</div>`;
+    }
+  }
+
+  /* ================= 交互事件 ================= */
+
+  function handleBtnClick(id, e) {
+    if (currentMode !== 'run') return;
+    e.stopPropagation();
+    const n = nodes.find(item => item.id === id);
+    if (!n) return;
+    if (n.props.mode === 'TOGGLE') n.props.is_checked = !n.props.is_checked;
+    n.props.click_count++;
+    triggerDirtyRect(n.x, n.y, n.w, n.h);
+    renderScreen();
+  }
+
+  function handleSwitchClick(id, e) {
+    if (currentMode !== 'run') return;
+    e.stopPropagation();
+    const n = nodes.find(item => item.id === id);
+    if (!n) return;
+    n.props.is_checked = !n.props.is_checked;
+    triggerDirtyRect(n.x, n.y, n.w, n.h);
+    renderScreen();
+  }
+
+  function handleSliderClick(id, e, el) {
+    if (currentMode !== 'run') return;
+    e.stopPropagation();
+    const n = nodes.find(item => item.id === id);
+    if (!n) return;
+    const rect = el.getBoundingClientRect();
+    let pct = Math.round(((e.clientX - rect.left) / rect.width) * 100);
+    pct = Math.max(0, Math.min(100, pct));
+    n.props.cur_val = pct;
+    triggerDirtyRect(n.x, n.y, n.w, n.h);
+    renderScreen();
+  }
+
+  function handleStepperClick(id, dir, e) {
+    if (currentMode !== 'run') return;
+    e.stopPropagation();
+    const n = nodes.find(item => item.id === id);
+    if (!n) return;
+    n.props.cur_val += dir * n.props.step;
+    if (n.props.cur_val < 0) n.props.cur_val = 0;
+    triggerDirtyRect(n.x, n.y, n.w, n.h);
+    renderScreen();
+  }
+
+  function handleDDToggle(id, e) {
+    if (currentMode !== 'run') return;
+    e.stopPropagation();
+    const n = nodes.find(item => item.id === id);
+    if (!n) return;
+    n.props.is_open = !n.props.is_open;
+    triggerDirtyRect(n.x, n.y, n.w, n.h + (n.props.is_open ? 80 : 0));
+    renderScreen();
+  }
+
+  function handleDDSelect(id, idx, e) {
+    if (currentMode !== 'run') return;
+    e.stopPropagation();
+    const n = nodes.find(item => item.id === id);
+    if (!n) return;
+    n.props.selected_idx = idx;
+    n.props.is_open = false;
+    triggerDirtyRect(n.x, n.y, n.w, n.h + 80);
+    renderScreen();
+  }
+
+  /* ================= 属性面板与 C 代码生成 ================= */
+
+  function renderInspector() {
+    const body = document.getElementById('inspectorBody');
+    if (currentMode === 'run') {
+      body.innerHTML = `<div style="color: var(--text-muted); font-size: 12px; text-align: center; margin-top: 40px;">▶️ 当前处于「运行交互模式」，直接在屏幕上点按测试效果！</div>`;
+      return;
+    }
+
+    let html = `
+      <!-- 全局画布背景色设置 -->
+      <div class="prop-group">
+        <div style="font-size: 12px; font-weight: bold; color: var(--accent);">🌐 全局画布设置 (Screen Background)</div>
+        <div class="prop-row">
+          <span>屏幕背景颜色:</span>
+          <div style="display:flex;align-items:center;">
+            <input type="color" value="${screenBgColor}" onchange="updateScreenBg(this.value)">
+            <span class="color-badge">${hexToRgb565Str(screenBgColor)}</span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    if (!selectedId) {
+      html += `<div style="color: var(--text-muted); font-size: 12px; text-align: center; margin-top: 20px;">👈 在屏幕上点击选中组件，以调整具体属性与颜色</div>`;
+      body.innerHTML = html;
+      return;
+    }
+
+    const n = nodes.find(item => item.id === selectedId);
+    if (!n) { body.innerHTML = html; return; }
+
+    html += `
+      <div class="prop-group">
+        <div style="font-size: 13px; font-weight: bold; color: var(--accent);">${n.name} (ID: ${n.id})</div>
+        <div class="prop-row"><span>坐标 X:</span><input type="number" value="${n.x}" onchange="updateGeometry(${n.id}, 'x', this.value)"></div>
+        <div class="prop-row"><span>坐标 Y:</span><input type="number" value="${n.y}" onchange="updateGeometry(${n.id}, 'y', this.value)"></div>
+        <div class="prop-row"><span>宽度 W:</span><input type="number" value="${n.w}" onchange="updateGeometry(${n.id}, 'w', this.value)"></div>
+        <div class="prop-row"><span>高度 H:</span><input type="number" value="${n.h}" onchange="updateGeometry(${n.id}, 'h', this.value)"></div>
+      </div>
+      <div class="prop-group">
+        <div style="font-size: 11px; font-weight: bold; color: var(--text-muted); text-transform: uppercase;">组件属性与 RGB565 颜色</div>
+    `;
+
+    for (let key in n.props) {
+      if (['click_count', 'checked_mask', 'logs', 'is_focused', 'buffer', 'val_str', 'is_open'].includes(key)) continue;
+      const val = n.props[key];
+      if (key.startsWith('color_')) {
+        html += `
+          <div class="prop-row">
+            <span>${key}:</span>
+            <div style="display:flex;align-items:center;">
+              <input type="color" value="${val}" onchange="updateProp(${n.id}, '${key}', this.value)">
+              <span class="color-badge">${hexToRgb565Str(val)}</span>
+            </div>
+          </div>`;
+      } else if (typeof val === 'boolean') {
+        html += `<div class="prop-row"><span>${key}:</span><select onchange="updateProp(${n.id}, '${key}', this.value === 'true')"><option value="true" ${val?'selected':''}>true</option><option value="false" ${!val?'selected':''}>false</option></select></div>`;
+      } else if (key === 'style' && n.type === 'btn') {
+        html += `<div class="prop-row"><span>style:</span><select onchange="updateProp(${n.id}, '${key}', this.value)"><option value="RECT" ${val==='RECT'?'selected':''}>RECT (矩形)</option><option value="ROUND" ${val==='ROUND'?'selected':''}>ROUND (胶囊圆角)</option><option value="TEXT" ${val==='TEXT'?'selected':''}>TEXT (无框文本)</option></select></div>`;
+      } else if (key === 'mode' && n.type === 'btn') {
+        html += `<div class="prop-row"><span>mode:</span><select onchange="updateProp(${n.id}, '${key}', this.value)"><option value="PUSH" ${val==='PUSH'?'selected':''}>PUSH (普通点按)</option><option value="TOGGLE" ${val==='TOGGLE'?'selected':''}>TOGGLE (自锁切换)</option></select></div>`;
+      } else {
+        html += `<div class="prop-row"><span>${key}:</span><input type="text" value="${val}" onchange="updateProp(${n.id}, '${key}', this.value)"></div>`;
+      }
+    }
+
+    html += `</div>
+      <div class="prop-group">
+        <div style="font-size: 11px; font-weight: bold; color: var(--text-muted); text-transform: uppercase;">自动生成 C 初始化代码</div>
+        <pre class="c-code">${generateNodeCCode(n)}</pre>
+      </div>
+    `;
+
+    body.innerHTML = html;
+  }
+
+  function updateScreenBg(val) {
+    screenBgColor = val;
+    renderScreen();
+    renderInspector();
+  }
+
+  function updateGeometry(id, prop, val) {
+    const n = nodes.find(item => item.id === id);
+    if (n) {
+      n[prop] = parseInt(val) || 0;
+      renderScreen();
+      renderInspector();
+    }
+  }
+
+  function updateProp(id, key, val) {
+    const n = nodes.find(item => item.id === id);
+    if (n) {
+      n.props[key] = val;
+      renderScreen();
+      renderInspector();
+    }
+  }
+
+  function generateNodeCCode(n) {
+    const p = n.props;
+    let code = `// --- ${n.name} ---\n`;
+    switch(n.type) {
+      case 'btn':
+        code += `ui_btn_t btn_${n.id};\n`;
+        code += `ui_btn_init(&btn_${n.id}, ${n.x}, ${n.y}, ${n.w}, ${n.h}, "${p.text}", on_btn_click);\n`;
+        code += `btn_${n.id}.style = UI_BTN_STYLE_${p.style};\n`;
+        code += `btn_${n.id}.mode = UI_BTN_MODE_${p.mode};\n`;
+        code += `ui_btn_set_color(&btn_${n.id}, ${hexToRgb565Str(p.color_bg)}, ${hexToRgb565Str(p.color_active)}, ${hexToRgb565Str(p.color_text)});\n`;
+        break;
+      case 'switch':
+        code += `ui_switch_t sw_${n.id};\n`;
+        code += `ui_switch_init(&sw_${n.id}, ${n.x}, ${n.y}, ${n.w}, ${n.h}, ${p.is_checked}, on_switch_change);\n`;
+        code += `ui_switch_set_color(&sw_${n.id}, ${hexToRgb565Str(p.color_off)}, ${hexToRgb565Str(p.color_on)}, ${hexToRgb565Str(p.color_knob)});\n`;
+        break;
+      case 'slider':
+        code += `ui_slider_t slider_${n.id};\n`;
+        code += `ui_slider_init(&slider_${n.id}, ${n.x}, ${n.y}, ${n.w}, ${n.h}, ${p.min_val}, ${p.max_val}, ${p.cur_val}, on_slider_change);\n`;
+        code += `ui_slider_set_color(&slider_${n.id}, ${hexToRgb565Str(p.color_track)}, ${hexToRgb565Str(p.color_fill)}, ${hexToRgb565Str(p.color_knob)});\n`;
+        break;
+      case 'stepper':
+        code += `ui_stepper_t sp_${n.id};\n`;
+        code += `ui_stepper_init(&sp_${n.id}, ${n.x}, ${n.y}, ${n.w}, ${n.h}, 0, 1000000, ${p.cur_val}, ${p.step}, "${p.unit}", on_stepper_change);\n`;
+        code += `ui_stepper_set_prefix(&sp_${n.id}, "${p.prefix}");\n`;
+        break;
+      case 'statusbar':
+        code += `ui_status_bar_t sb;\nui_status_bar_init(&sb, ${n.x}, ${n.y}, ${n.w}, ${n.h}, "${p.title}", on_sb_click);\n`;
+        break;
+      default:
+        code += `ui_${n.type}_init(&${n.type}_${n.id}, ${n.x}, ${n.y}, ${n.w}, ${n.h});\n`;
+    }
+    return code;
+  }
+
+  function exportFullCCode() {
+    let full = `/* 自动生成的 RP2040 UI 布局定义 (480x320) */\n\n`;
+    full += `// 屏幕物理背景色: ${hexToRgb565Str(screenBgColor)}\n`;
+    full += `#define SCREEN_BG_COLOR ${hexToRgb565Str(screenBgColor)}\n\n`;
+    full += `void app_ui_custom_init(void) {\n`;
+    nodes.forEach(n => {
+      full += "    " + generateNodeCCode(n).replace(/\n/g, "\n    ") + "\n";
+    });
+    full += `}\n\n`;
+    full += `static void render_custom_scene(ui_tile_t *tile) {\n`;
+    full += `    // 填充底色\n`;
+    full += `    ui_draw_fill_rect(tile, &tile->rect, SCREEN_BG_COLOR);\n`;
+    full += `    // 依次绘制各组件\n`;
+    nodes.forEach(n => {
+      full += `    ui_${n.type}_draw(tile, &${n.type}_${n.id});\n`;
+    });
+    full += `}\n`;
+
+    navigator.clipboard.writeText(full);
+    alert("包含完整纯白背景与准确 RGB565 色彩的 C 代码已复制到剪贴板！");
+  }
+
+  function loadWhiteThemePreset() {
+    nodes = [];
+    nextId = 1;
+    screenBgColor = '#ffffff';
+
+    // 1. 胶囊按钮 (高级浅灰底 + 纯蓝激活 + 黑字)
+    const btn = COMP_TEMPLATES.btn;
+    nodes.push({
+      ...JSON.parse(JSON.stringify(btn)),
+      id: nextId++, x: 32, y: 33, w: 140, h: 38,
+      props: { text: '点按测试', style: 'ROUND', mode: 'PUSH', color_bg: '#e5e7eb', color_active: '#007aff', color_text: '#000000', is_checked: false, click_count: 0 }
+    });
+
+    // 2. 纯蓝滑动开关 (浅灰底槽 + 纯正科技蓝 #007AFF 开启槽 + 纯白滑块)
+    const sw = COMP_TEMPLATES.switch;
+    nodes.push({
+      ...JSON.parse(JSON.stringify(sw)),
+      id: nextId++, x: 215, y: 33, w: 64, h: 32,
+      props: { is_checked: true, color_off: '#d1d5db', color_on: '#007aff', color_knob: '#ffffff' }
+    });
+
+    renderScreen();
+    renderInspector();
+  }
+
+  // 默认载入白底预设
+  loadWhiteThemePreset();
+</script>
+</body>
+</html>

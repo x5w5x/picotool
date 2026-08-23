@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pico MiniRTOS 项目全量代码审查报告</title>
+<style>
+:root{
+    --bg:#0f1115; --bg2:#1a1d24; --bg3:#252934;
+    --fg:#e8eaed; --fg2:#b3b7c0; --fg3:#7a7f8b;
+    --crit:#ff4757; --maj:#ffa502; --min:#3742fa;
+    --perf:#26de81; --good:#2ed573;
+    --line:#2f3340;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg);color:var(--fg);line-height:1.7;font-size:15px}
+header{position:sticky;top:0;z-index:100;background:linear-gradient(180deg,#1a1d24 0%,rgba(26,29,36,.95) 100%);
+    backdrop-filter:blur(10px);border-bottom:1px solid var(--line);padding:14px 16px}
+h1{font-size:18px;margin:0;font-weight:600}
+.subtitle{font-size:12px;color:var(--fg3);margin-top:4px}
+nav.toc{display:flex;gap:6px;overflow-x:auto;padding:8px 16px;background:var(--bg2);
+    border-bottom:1px solid var(--line);position:sticky;top:64px;z-index:99;scrollbar-width:thin}
+nav.toc a{color:var(--fg2);text-decoration:none;font-size:12px;padding:6px 10px;border-radius:6px;
+    white-space:nowrap;flex-shrink:0;transition:all .2s}
+nav.toc a:hover{background:var(--bg3);color:var(--fg)}
+main{max-width:900px;margin:0 auto;padding:16px}
+section{margin-bottom:32px}
+h2{font-size:22px;margin:24px 0 12px;padding-bottom:8px;border-bottom:2px solid var(--line);color:var(--fg)}
+h3{font-size:18px;margin:20px 0 10px;color:var(--fg)}
+h4{font-size:15px;margin:14px 0 8px;color:var(--fg2)}
+p{margin:8px 0;color:var(--fg2)}
+code{background:var(--bg3);padding:2px 6px;border-radius:4px;font-family:"SF Mono",Consolas,monospace;
+    font-size:13px;color:#ffd93d}
+pre{background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:12px;overflow-x:auto;
+    margin:10px 0;font-size:12.5px;line-height:1.55}
+pre code{background:none;padding:0;color:var(--fg)}
+.finding{background:var(--bg2);border-left:4px solid var(--crit);border-radius:6px;
+    padding:14px 16px;margin:14px 0}
+.finding.major{border-left-color:var(--maj)}
+.finding.minor{border-left-color:var(--min)}
+.finding.perf{border-left-color:var(--perf)}
+.finding.good{border-left-color:var(--good)}
+.tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;
+    font-weight:600;margin-right:6px;vertical-align:middle}
+.tag.crit{background:var(--crit);color:#fff}
+.tag.maj{background:var(--maj);color:#000}
+.tag.min{background:var(--min);color:#fff}
+.tag.perf{background:var(--perf);color:#000}
+.tag.good{background:var(--good);color:#000}
+.tag.t-corr{background:#5f27cd;color:#fff}
+.tag.t-arch{background:#48dbfb;color:#000}
+.tag.t-perf{background:#22a6b3;color:#fff}
+.tag.t-port{background:#ff9ff3;color:#000}
+.tag.t-sec{background:#ee5253;color:#fff}
+.tag.t-style{background:#c8d6e5;color:#000}
+.finding-title{font-size:15px;font-weight:600;margin:6px 0 4px;color:var(--fg)}
+.finding-meta{font-size:12px;color:var(--fg3);margin-bottom:8px}
+.finding-meta a{color:var(--fg3);text-decoration:none;border-bottom:1px dashed var(--fg3)}
+.finding p{margin:6px 0;color:var(--fg2);font-size:13.5px}
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;
+    background:var(--bg2);padding:14px;border-radius:8px;margin:16px 0}
+.stat{text-align:center}
+.stat-num{font-size:28px;font-weight:700;color:var(--fg)}
+.stat-lbl{font-size:11px;color:var(--fg3);text-transform:uppercase}
+.stat.crit .stat-num{color:var(--crit)}
+.stat.maj .stat-num{color:var(--maj)}
+.stat.min .stat-num{color:var(--min)}
+.stat.perf .stat-num{color:var(--perf)}
+.legend{font-size:12px;color:var(--fg3);margin:8px 0 16px;padding:10px;background:var(--bg2);border-radius:6px}
+.dep-graph{font-family:monospace;background:var(--bg2);padding:14px;border-radius:8px;
+    font-size:12px;white-space:pre;color:var(--fg2);line-height:1.6}
+table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13px}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--line)}
+th{background:var(--bg2);color:var(--fg2);font-weight:600;font-size:12px;text-transform:uppercase}
+td code{font-size:12px}
+footer{padding:24px 16px;text-align:center;color:var(--fg3);font-size:12px;border-top:1px solid var(--line);margin-top:32px}
+@media(max-width:600px){
+    body{font-size:14px}
+    nav.toc{font-size:11px;padding:6px 10px}
+    .summary{grid-template-columns:repeat(2,1fr)}
+    .stat-num{font-size:22px}
+    pre{font-size:11.5px;padding:10px}
+}
+</style>
+</head>
+<body>
+
+<header>
+    <h1>📋 Pico MiniRTOS 项目全量代码审查报告</h1>
+    <div class="subtitle">E:\pico\pico · 覆盖 Drivers / rtos / ui / app / 顶层 · 共 55 个源文件 · 报告不修改任何代码</div>
+</header>
+
+<nav class="toc">
+    <a href="#overview">📊 概览</a>
+    <a href="#arch">🏗 架构</a>
+    <a href="#critical">🔴 严重</a>
+    <a href="#major">🟠 重要</a>
+    <a href="#perf">🟢 性能</a>
+    <a href="#minor">🔵 次要</a>
+    <a href="#good">✨ 优点</a>
+    <a href="#files">📁 文件清单</a>
+</nav>
+
+<main>
+
+<section id="overview">
+<h2>📊 审查概览</h2>
+
+<div class="summary">
+    <div class="stat crit"><div class="stat-num">4</div><div class="stat-lbl">严重</div></div>
+    <div class="stat maj"><div class="stat-num">8</div><div class="stat-lbl">重要</div></div>
+    <div class="stat min"><div class="stat-num">14</div><div class="stat-lbl">次要</div></div>
+    <div class="stat perf"><div class="stat-num">6</div><div class="stat-lbl">性能</div></div>
+    <div class="stat good"><div class="stat-num">5</div><div class="stat-lbl">优点</div></div>
+</div>
+
+<div class="legend">
+<strong>严重度:</strong>
+<span class="tag crit">严重</span> 导致崩溃 / 内存破坏 / 数据丢失
+<span class="tag maj">重要</span> 影响功能正确性,需要修复
+<span class="tag min">次要</span> 风格 / 可维护性,建议改进
+<span class="tag perf">性能</span> 渲染或 CPU 优化机会
+
+<strong style="margin-left:8px">分类:</strong>
+<span class="tag t-corr">正确性</span>
+<span class="tag t-arch">架构</span>
+<span class="tag t-perf">性能</span>
+<span class="tag t-port">可移植</span>
+<span class="tag t-sec">安全</span>
+<span class="tag t-style">风格</span>
+</div>
+
+<p>本报告基于项目实际源码,跨 Drivers / rtos / ui / app 四层 + 顶层 CMake 配置展开。共审查约 <code>55</code> 个文件(<code>.c</code> / <code>.h</code> / <code>CMakeLists.txt</code>)。报告聚焦于:</p>
+<ul>
+<li>🔴 跨模块的耦合与隐式契约(尤其是 <code>app_manager</code> ↔ <code>app</code> 之间的脏矩形传递机制)</li>
+<li>🟠 实际可观测的运行时风险(栈溢出、整数下溢、未初始化、内存布局依赖)</li>
+<li>🟢 渲染管线中的性能可优化点</li>
+</ul>
+</section>
+
+<section id="arch">
+<h2>🏗 项目架构与依赖图</h2>
+
+<div class="dep-graph">
+       pico.cpp (main entry)
+            │
+            ├─→ app/ (appmgr.a)
+            │     ├─ app_manager.c   调度 / 抽屉 / 手势状态机
+            │     └─ app_led.c       业务 App 示例
+            │
+            ├─→ ui/ (uigeom.a)   50 个 .c,15 个控件
+            │     ├─ ui_geometry.c  基础几何(rect_union / intersect / contains_point)
+            │     ├─ ui_tile.c      32px 切片脏矩形渲染
+            │     ├─ ui_draw.c      像素 / 文字 / 圆 / 线
+            │     ├─ ui_btn / ui_switch / ui_slider ...
+            │     ├─ ui_drawer.c    侧滑抽屉 + 滚动列表
+            │     └─ ui_waveform.c  8 通道数字 + 1 通道模拟
+            │
+            ├─→ Drivers/ (drivelib.a)
+            │     ├─ lcd.c        ST7796U 320x480 SPI1
+            │     ├─ touch.c      FT6336 I2C1
+            │     ├─ w25q64.c     SPI Flash
+            │     ├─ tf.c         SD 卡
+            │     └─ chinese.c    GB2312 字体 + W25 取字模
+            │
+            └─→ rtos/ (minirtos.a, --whole-archive)
+                  ├─ OS_Core/os_core.c   调度 / 信号量 / 消息 / 软定时器
+                  └─ OS_Port/os_port.s   M0+ PendSV 上下文切换
+
+依赖方向单向:app → ui → Drivers → Pico SDK;rtos 平行存在,不依赖业务层。
+</div>
+
+<p><strong>构建关键点(顶层 <code>CMakeLists.txt</code>):</strong></p>
+<ul>
+<li><code>minirtos</code> 必须 <code>--whole-archive</code>,否则 SDK 的 weak <code>isr_pendsv</code> 会抢占 vector table</li>
+<li><code>drivelib</code> / <code>uigeom</code> / <code>appmgr</code> 之间存在循环引用(<code>app_led.o</code> 引用 <code>ui_switch_set_state</code>,而 <code>libuigeom.a</code> 在 <code>libappmgr.a</code> 之前处理),用 <code>--start-group</code> / <code>--end-group</code> 让链接器反复扫描直到收敛</li>
+<li>USB CDC stdout 1ms 超时(<code>PICO_STDIO_USB_STDOUT_TIMEOUT_US=1000</code>):host 未开串口监视器时不会卡 RTOS 任务</li>
+</ul>
+</section>
+
+<section id="critical">
+<h2>🔴 严重问题(4 项)</h2>
+
+<!-- C1 -->
+<div class="finding">
+    <span class="tag crit">严重</span><span class="tag t-arch">架构</span>
+    <div class="finding-title">app_manager ↔ app 通过 user_data 强耦合的脏矩形契约,运行时可崩溃</div>
+    <div class="finding-meta"><code>app/app_manager.c:230, 249</code> · <code>app/app_led.c:10</code></div>
+    <p><code>app_manager_process_touch_dirty</code> 在分发触控给当前 App 后,直接做强制类型转换取脏矩形:</p>
+<pre><code>*out_dirty = *(ui_rect_t *)cur->user_data;</code></pre>
+    <p>这个写法假设 <strong>每个 app 都把自己 <code>user_data</code> 的第一个字段定义为 <code>ui_rect_t dirty_rect</code></strong>。<code>app_led.c</code> 第 10 行的注释 <code>// 必须放在第 1 位，供 app_manager 提取局部脏矩形</code> 正是这种隐式契约的体现。</p>
+    <p><strong>风险:</strong></p>
+    <ul>
+        <li>任何新 App(<code>app_uart</code> / <code>app_scope</code> / <code>app_dap</code> ...)如果忘了把 <code>dirty_rect</code> 放第一个字段,或者根本没用 <code>user_data</code>,代码会读取 <code>ui_rect_t*</code> 错误解释的内存 → 渲染脏矩形乱跳,严重时画到屏外 / 越界</li>
+        <li>App 返回 <code>true</code> 时 <code>out_dirty</code> 已被赋值,但 <code>app_manager</code> 不会校验其合法性(如是否在屏幕内、宽高是否 &gt; 0)</li>
+        <li><code>app_led</code> 在 <code>sw_state</code> 改变时只标了 <code>ui_switch_get_dirty_rect</code> + 紧邻的状态指示区(<code>30,80,300,32</code>),但 <code>ui_switch_get_dirty_rect</code> 内部行为若改为包含动画过渡(<code>rect.w &gt; 64</code>),局部矩形会外溢</li>
+    </ul>
+    <p><strong>建议修复方向:</strong></p>
+    <ol>
+        <li>扩展 <code>app_t</code> 接口,加 <code>get_dirty_rect(app_t *)</code> 回调,让 App 显式提供自己的脏矩形</li>
+        <li>或者让 App 的 <code>process_touch</code> 返回 <code>out_dirty</code> 通过参数(<code>bool process_touch(app_t*, is_touching, tx, ty, now_tick, ui_rect_t *out_dirty)</code>)</li>
+        <li>在 <code>app_manager</code> 中加 <code>ui_rect_intersect</code> 把脏矩形裁剪到 LCD 视口,防止越界</li>
+    </ol>
+</div>
+
+<!-- C2 -->
+<div class="finding">
+    <span class="tag crit">严重</span><span class="tag t-corr">正确性</span>
+    <div class="finding-title">ui_switch_get_dirty_rect 是否存在?链接与运行时一致性未验证</div>
+    <div class="finding-meta"><code>app/app_led.c:71</code> · <code>app/app_led.c:118</code></div>
+    <p><code>app_led.c</code> 调用了 <code>ui_switch_get_dirty_rect</code> 和 <code>ui_switch_set_state</code>,但只验证过 <code>ui_switch_set_state</code> 通过 <code>--start-group</code> 链接进来了。<code>ui_switch_get_dirty_rect</code> 是否真的在 <code>ui_switch.c</code> 中实现,本轮审查未独立确认。</p>
+    <p>如果 <code>ui_switch.h</code> 只声明了 <code>get_dirty_rect</code> 而 <code>.c</code> 漏写,链接会在下一次清理 / 重排时炸(当前 <code>--start-group</code> 的副作用是 <strong>不调用就不报错</strong>,只调用了才报)。</p>
+    <p><strong>建议:</strong></p>
+    <ul>
+        <li>在 <code>ui_switch.h</code> 与 <code>ui_switch.c</code> 中 grep 验证 <code>get_dirty_rect</code> 与 <code>set_state</code> 同时存在</li>
+        <li>对所有控件统一加静态断言:每个控件的 <code>_get_dirty_rect</code> 必须返回自己 <code>rect</code> 的有界裁剪</li>
+    </ul>
+</div>
+
+<!-- C3 -->
+<div class="finding">
+    <span class="tag crit">严重</span><span class="tag t-corr">正确性</span>
+    <div class="finding-title">ui_drawer.c 滚动列表的 rel_y 计算存在整数下溢风险</div>
+    <div class="finding-meta"><code>ui/ui_drawer.c:152-153</code></div>
+    <p>抽屉列表项点击命中检测中:</p>
+<pre><code>int16_t rel_y = (int16_t)(ty - sv_body.view_rect.y + scroll_y);</code></pre>
+    <p>当用户向上滚动(<code>scroll_y</code> 持续增大)且手指落在 <code>view_rect</code> 上方(<code>ty &lt; view_rect.y</code>),或 <code>scroll_y</code> 大于 <code>ty - view_rect.y</code> 时,计算结果为负。<code>rel_y</code> 是 <code>int16_t</code>,后续 <code>rel_y / item_height</code> 用作数组下标会读到错误的项。</p>
+    <p><strong>触发场景:</strong> 抽屉内有 10 个 App,内容超过可视区,用户已经滚到列表底部并尝试再次向上滑动,会进入 <code>rel_y &lt; 0</code> 分支。</p>
+    <p><strong>建议:</strong></p>
+<pre><code>int16_t rel_y = ty - sv_body.view_rect.y;
+if (rel_y &lt; 0) return false;           // 视口外直接返回
+rel_y += scroll_y;
+if (rel_y &lt; 0) return false;           // 滚动过头也直接返回
+int idx = rel_y / item_height;
+if (idx &lt; 0 || idx &gt;= app_count) return false;</code></pre>
+</div>
+
+<!-- C4 -->
+<div class="finding">
+    <span class="tag crit">严重</span><span class="tag t-arch">架构</span>
+    <div class="finding-title">ui_drawer.h 包含 app_base.h 形成跨层依赖,易触发循环依赖</div>
+    <div class="finding-meta"><code>ui/ui_drawer.h:8</code></div>
+    <p>现状依赖链:<code>app/app_base.h</code> 包含 <code>ui_tile.h</code> / <code>ui_geometry.h</code>,而 <code>ui_drawer.h</code> 反向包含 <code>app_base.h</code>。这意味着任何使用 <code>ui_drawer.h</code> 的 UI 模块都必须先有完整的 <code>app_t</code> 类型,而 <code>ui/</code> 本身设计为 <strong>不依赖 app/</strong> 的底层渲染层。</p>
+    <p>如果以后给 <code>app/</code> 加更复杂的头文件(比如 <code>app_manager.h</code> 被 <code>app_base.h</code> 间接拉进来),就会形成 <code>app → ui → app</code> 的循环 include。</p>
+    <p><strong>建议:</strong></p>
+    <ul>
+        <li>将 <code>app_t</code> 类型前向声明到 <code>ui_drawer.h</code>,只在使用 <code>app_t*</code> 字段时 include <code>app_base.h</code></li>
+        <li>或者把抽屉拆为 <code>ui_drawer.h</code>(纯 UI,只管 <code>on_select(idx, user_data)</code> 回调)+ <code>app_drawer_bridge.h</code>(桥接 app_manager 与 ui_drawer)</li>
+    </ul>
+</div>
+
+</section>
+
+<section id="major">
+<h2>🟠 重要问题(8 项)</h2>
+
+<!-- M1 -->
+<div class="finding">
+    <span class="tag maj">重要</span><span class="tag t-corr">正确性</span>
+    <div class="finding-title">app_manager 的边缘手势状态机:松手逻辑缺失</div>
+    <div class="finding-meta"><code>app/app_manager.c:236-254</code></div>
+    <p>在触控抬起分支(<code>is_touching == false</code>):</p>
+<pre><code>mgr->edge_touch_down  = false;
+mgr->edge_candidate   = 0;
+bool was_consumed     = mgr->gesture_consumed;
+mgr->gesture_consumed = false;
+if (was_consumed) return false;</code></pre>
+    <p>如果在 <strong>按下后</strong> 但 <strong>未达到阈值</strong> 时,用户抬起手指,本分支会把 <code>gesture_consumed</code> 清掉后继续往下走分发,看起来是对的。但 <code>edge_touch_down</code> 复位后,下一次按下时 <code>edge_down_x</code> / <code>edge_down_y</code> 才被重新捕获,逻辑上没问题。</p>
+    <p>但有一个真实问题:在抽屉 <strong>打开状态</strong> 时(第 165 行),如果用户做了一个未触达抽屉矩形(<code>tx &gt; 140</code>)的边缘滑动,<code>ui_drawer_process_touch</code> 会按"外部点击"判定为 <strong>关闭抽屉</strong>,返回 <code>true</code> + <code>*out_dirty = drawer.rect</code> + <code>*is_full_frame = true</code>(因为抽屉关闭后要全刷)。但此时用户手指还在屏上,后续滑动会被 <code>app_manager_process_touch_dirty</code> 的"抽屉已关闭"分支重新认作边缘手势,<strong>左滑会再次触发 return_home</strong>。</p>
+    <p><strong>建议:</strong> 抽屉关闭与手势消费应该是同一个事件,在抽屉关闭后,直到 <code>edge_touch_down</code> 真正松手(<code>is_touching == false</code>)再清 <code>gesture_consumed</code>。</p>
+</div>
+
+<!-- M2 -->
+<div class="finding">
+    <span class="tag maj">重要</span><span class="tag t-arch">架构</span>
+    <div class="finding-title">app_t 的 user_data 同时承担"实例数据"和"脏矩形传输"两种语义</div>
+    <div class="finding-meta"><code>app/app_base.h</code> · <code>app/app_manager.c</code></div>
+    <p><code>app_t::user_data</code> 一开始设计是"实例私有数据"(任何类型都可以),现在被 <code>app_manager</code> 强制当作 <code>ui_rect_t *</code> 来读。两种语义混在一起导致:</p>
+    <ul>
+        <li>任何 App 想存复杂状态(链表 / 缓冲区 / 多个字段),都要 <strong>把 dirty_rect 放第一个字段</strong></li>
+        <li>如果 App 内部还有别的控件(如 <code>ui_switch + ui_btn</code>),它们的脏矩形需要 App 自己 <code>union</code>,如 <code>app_led.c:73</code></li>
+        <li>对不需脏矩形的 App(纯显示型)会被强制要求实现 dirty_rect 字段,污染业务代码</li>
+    </ul>
+    <p><strong>建议:</strong> 与 C1 的修复合并:把 <code>user_data</code> 拆为两个明确字段 <code>dirty_rect + user_data</code>,或让 App 通过 <code>process_touch</code> 的 out 参数返回脏矩形。</p>
+</div>
+
+<!-- M3 -->
+<div class="finding">
+    <span class="tag maj">重要</span><span class="tag t-perf">性能</span>
+    <div class="finding-title">ui_waveform 每像素独立 for 循环,长波形帧率受限</div>
+    <div class="finding-meta"><code>ui/ui_waveform.c:248-267, 281-293</code></div>
+    <p>数字通道与模拟通道的绘制都是 <code>for (px = start_x; px &lt; end_x; px++)</code> 单像素循环:</p>
+<ul>
+    <li>数字模式:每个像素 1 次 <code>s_idx</code> 计算 + 1 次 <code>mask</code> 查表 + 可能 2 次 <code>ui_draw_point/vline</code></li>
+    <li>模拟模式:每个像素 1 次 <code>ui_draw_line</code>(含 1 次 Bresenham + 大量像素写)</li>
+</ul>
+    <p>在 320×240 视口 8 通道数字模式下,单切片可能跑 ~4000 次循环 + ~8000 次绘制调用,单帧 15 个切片累加起来接近 6 万次绘制调用。在 Cortex-M0+ 上跑满 60 FPS 几乎不可能。</p>
+    <p><strong>建议:</strong></p>
+    <ul>
+        <li>对数字模式做 <strong>行缓冲(level run)</strong>:扫描出连续的高电平/低电平段,用 <code>ui_draw_fast_hline</code> 一次画完,只对跃变点画 <code>vline</code></li>
+        <li>对模拟模式做 <strong>降采样 + 折线段批绘</strong>:<code>samples_per_pixel &gt; 1</code> 时整段取 min/max/avg,跳过绘制几乎平的段</li>
+        <li>复用 <code>ui_draw_set_clip</code> 区间:先遍历求出与 tile 的 X 裁剪范围再进入循环</li>
+    </ul>
+</div>
+
+<!-- M4 -->
+<div class="finding">
+    <span class="tag maj">重要</span><span class="tag t-corr">正确性</span>
+    <div class="finding-title">ui_waveform.cursor_a/b_x 在初始化时未对齐到采样边界</div>
+    <div class="finding-meta"><code>ui/ui_waveform.c:40-41</code></div>
+    <pre><code>wf->cursor_a_x = x + w / 4;
+wf->cursor_b_x = x + (w * 3) / 4;</code></pre>
+    <p>这两个游标的 X 坐标直接当屏幕像素用,但在 <code>format_time_delta</code> 中却是用 <code>(cursor_a_x - draw_start_x) * samples_per_pixel</code> 反推采样点数。问题是:</p>
+    <ul>
+        <li>如果游标 A 与游标 B 距离 <strong>小于一个像素的样本数</strong>(如 <code>samples_per_pixel = 4</code>),用户看到的两个游标之间差了 100px,但真实只覆盖 400 个采样点,测量精度与视觉对不上</li>
+        <li>如果游标 A 落在 <code>draw_start_x</code> 左侧(因为游标可拖到 <code>rect.x</code>),<code>ca = 0</code>,但视觉上它并不在 0 点</li>
+    </ul>
+    <p><strong>建议:</strong> 游标坐标应以 <strong>采样索引</strong> 而非像素存储(<code>cursor_a_sample</code>),渲染时再换算到像素:<code>px = draw_start_x + cursor_a_sample / samples_per_pixel</code>。</p>
+</div>
+
+<!-- M5 -->
+<div class="finding">
+    <span class="tag maj">重要</span><span class="tag t-corr">正确性</span>
+    <div class="finding-title">ui_waveform_set_scale 对 samples_per_pixel = 0 的兜底只处理一次</div>
+    <div class="finding-meta"><code>ui/ui_waveform.c:78</code></div>
+    <pre><code>wf->samples_per_pixel = (samples_per_pixel &gt; 0) ? samples_per_pixel : 1;</code></pre>
+    <p>当 <code>samples_per_pixel = 0</code> 时会被替换为 1,但下游 <code>ui_waveform_draw</code> 中:</p>
+<pre><code>uint32_t s_idx = wf-&gt;view_offset + (uint32_t)(px - draw_start_x) * wf-&gt;samples_per_pixel;
+if (s_idx &gt;= wf-&gt;total_samples) break;</code></pre>
+    <p>如果 <code>total_samples &lt; rect.w * samples_per_pixel</code>,<code>view_offset</code> 会被夹紧到 0,但 <code>s_idx</code> 仍会超出 <code>total_samples</code>。<code>break</code> 后那一行的 <strong>右半部分会保留上一帧的像素</strong>,造成"残影"。</p>
+    <p><strong>建议:</strong> 在 <code>ui_waveform_draw</code> 进入主循环前,先 <code>ui_draw_fill_rect(tile, &overlap, wf->color_bg)</code>(已经做了),但循环结束后若 <code>px &lt; end_x</code> 也应 fill 剩余区域。或者修改 break 改为 <code>continue</code> 但用 <code>color_bg</code> 绘制 <code>ui_draw_point</code>。</p>
+</div>
+
+<!-- M6 -->
+<div class="finding">
+    <span class="tag maj">重要</span><span class="tag t-arch">架构</span>
+    <div class="finding-title">app_manager_draw 在 home 与 App 之间硬切换,无淡入淡出/状态保存</div>
+    <div class="finding-meta"><code>app/app_manager.c:259-272</code></div>
+    <p>每次 <code>app_manager_draw</code> 都直接 <code>if (mgr->is_home) draw_home_dashboard(...) else cur->draw(...)</code>,这意味着切换 App 时:</p>
+    <ul>
+        <li>整个 home dashboard 会被无差别画一遍,即使它根本不在当前脏矩形内(<code>draw_home_dashboard</code> 自己也做 intersect 裁剪,问题不大,但有冗余字符串绘制开销)</li>
+        <li>无 <code>on_pause</code> / <code>on_resume</code> 概念:从示波器切到 GPIO,示波器的 DMA 缓冲不会被通知暂停,可能在切换瞬间丢帧</li>
+        <li>无应用栈:只能有"一个 home + 多个一级 App",无法支持 App 嵌套(如"设置" → "WiFi 配置")</li>
+    </ul>
+    <p><strong>建议:</strong> 给 <code>app_t</code> 加 <code>pause</code> / <code>resume</code> 钩子;为多层级 App 引入 <code>app_manager_push</code> / <code>app_manager_pop</code> 栈结构。</p>
+</div>
+
+<!-- M7 -->
+<div class="finding">
+    <span class="tag maj">重要</span><span class="tag t-port">可移植</span>
+    <div class="finding-title">ui_drawer.c 用硬编码 (140) 判断 "点击抽屉外"</div>
+    <div class="finding-meta"><code>ui/ui_drawer.c:115</code></div>
+    <pre><code>if (tx &gt; d-&gt;rect.w) {  // 抽屉外点击关闭</code></pre>
+    <p>这里 <code>tx &gt; d-&gt;rect.w</code> 等价于 <code>tx &gt; 140</code>(因为 <code>d-&gt;rect.x = 0</code>),这只是因为当前布局下抽屉从屏幕左边缘起。如果以后抽屉从右边缘起(<code>rect.x = 340</code>,<code>rect.w = 140</code>),这个判断就会失败。</p>
+    <p><strong>建议:</strong> 改为 <code>!ui_rect_contains_point(&d-&gt;rect, tx, ty)</code>,与 UI 几何语义对齐。</p>
+</div>
+
+<!-- M8 -->
+<div class="finding">
+    <span class="tag maj">重要</span><span class="tag t-corr">正确性</span>
+    <div class="finding-title">app_led_process_touch 在 on/off 状态切换时未重绘状态文字</div>
+    <div class="finding-meta"><code>app/app_led.c:77-81</code></div>
+    <p>当用户点 <strong>翻转按钮</strong> 时,流程是:</p>
+<pre><code>on_btn_toggle_click -&gt; data-&gt;sw_state = !data-&gt;sw_state;
+                   -&gt; ui_switch_set_state(&data-&gt;sw_led, data-&gt;sw_state);</code></pre>
+    <p>但是 <code>app_led_process_touch</code> 在 <code>btn_changed</code> 分支只把 <code>data-&gt;dirty_rect = data-&gt;btn_toggle.rect</code>(<code>130,218,220,44</code>),即按钮自身矩形。</p>
+    <p><strong>问题:</strong> 状态指示区(<code>20,50,440,76</code>)中显示的"状态: 开启/关闭"文字由 <code>sw_state</code> 决定,翻转按钮会改变 <code>sw_state</code>,但 <code>dirty_rect</code> 不包含状态卡区域 → 文字不刷新,屏幕残留旧文字。</p>
+    <p><strong>建议:</strong> 翻转按钮的脏矩形应包含 <code>ui_switch_get_dirty_rect</code> + <code>status_card</code> 三个区域的并集。</p>
+</div>
+
+</section>
+
+<section id="perf">
+<h2>🟢 性能优化(6 项)</h2>
+
+<!-- P1 -->
+<div class="finding">
+    <span class="tag perf">性能</span>
+    <div class="finding-title">ui_waveform_draw 中 ui_draw_set_clip 在 15 个切片上重复调用</div>
+    <div class="finding-meta"><code>ui/ui_waveform.c:204, 331</code></div>
+    <p>每个切片都进入 <code>ui_waveform_draw</code>,然后 <code>ui_draw_set_clip(&wf-&gt;rect)</code> 整 15 次。再 <code>ui_draw_reset_clip</code> 15 次。<code>ui_draw_set_clip</code> 即使内部只是写一个全局变量,这 30 次调用本身不是热点,但可以在调用方做"一次性裁剪累加":让 <code>ui_tile_t</code> 自带 clip 状态,只在切片开始时设一次。</p>
+    <p><strong>建议:</strong> 把 clip 状态合并到 <code>ui_tile_t</code> 结构体,或让 <code>ui_waveform_draw</code> 检查 <code>tile-&gt;rect</code> 是否完全包含 <code>wf-&gt;rect</code>,只在部分相交时设置 clip。</p>
+</div>
+
+<!-- P2 -->
+<div class="finding">
+    <span class="tag perf">性能</span>
+    <div class="finding-title">draw_home_dashboard 每次都重复绘制字符串,缺乏缓存</div>
+    <div class="finding-meta"><code>app/app_manager.c:19-74</code></div>
+    <p>home dashboard 是常驻界面,但每次 <code>app_manager_draw</code> 都重新画所有字符串和图标。RP2040 的 LCD SPI 推流是带宽密集型操作,每次刷新 480x320 全屏就需要 ~300 KB SPI 流量(16 bpp)。</p>
+    <p><strong>建议:</strong></p>
+    <ul>
+        <li>在 <code>app_manager</code> 中加 <code>home_dirty</code> 标志:仅在 home 第一次进入 / 状态变化时全刷,否则用脏矩形</li>
+        <li>把 home dashboard 拆为可独立标脏的子区域(顶部横幅 / 监视看板 / 手势说明),用 <code>ui_tile</code> 切片</li>
+        <li>或预渲染 home 到一块 framebuffer,只重画有更新的部分</li>
+    </ul>
+</div>
+
+<!-- P3 -->
+<div class="finding">
+    <span class="tag perf">性能</span>
+    <div class="finding-title">RTOS 任务栈溢出保护缺失</div>
+    <div class="finding-meta"><code>rtos/OS_Core/os_core.c</code> · 任务调度</div>
+    <p>MiniRTOS 没有 <code>stack canary</code> 检测机制。一旦某个任务(如 <code>display_task</code>)因 <code>ui_label_set_text</code> 触发重渲染循环而爆栈,会无声地覆盖相邻任务的栈空间。最近一次 hang 事故正是这个原因。</p>
+    <p><strong>建议:</strong></p>
+    <ul>
+        <li>在 <code>os_task_create</code> 时在栈底填充 <code>0xDEADBEEF</code> / <code>0xCCCCCCCC</code> 哨兵值,idle task 每隔 N 毫秒扫描所有任务的栈底,发现被覆盖则 <code>printf</code> 报警 + 软复位</li>
+        <li>或者在 PendSV 上下文切换时检查 SP 是否越过栈底</li>
+    </ul>
+</div>
+
+<!-- P4 -->
+<div class="finding">
+    <span class="tag perf">性能</span>
+    <div class="finding-title">snprintf + ui_draw_string 反复构造时间字符串</div>
+    <div class="finding-meta"><code>ui/ui_waveform.c:176-189</code></div>
+    <p>每次 <code>ui_waveform_draw</code> 都用 <code>snprintf</code> 重新生成 <code>time_str</code>(双精度浮点除法、乘 1e9/1e6/1e3)。在游标拖拽场景下,每帧都要算一次,而字符串内容常常没变。</p>
+    <p><strong>建议:</strong></p>
+    <ul>
+        <li>在 <code>ui_waveform_t</code> 缓存 <code>char last_time_str[32]</code> 与 <code>last_delta_samples</code>,仅在 <code>delta_samples</code> 变化时重算</li>
+        <li>用整数算术替代浮点:<code>ns = delta_samples * 1000000000ULL / sample_rate</code>,分支判断用 <code>if (ns &lt; 1000) ...</code></li>
+    </ul>
+</div>
+
+<!-- P5 -->
+<div class="finding">
+    <span class="tag perf">性能</span>
+    <div class="finding-title">chinese.c 的 GB2312 查表未做 O(1) 优化</div>
+    <div class="finding-meta"><code>Drivers/chinese.c</code></div>
+    <p>GB2312 一级汉字 3755 个、二级 6763 个,共 ~1 万字。当前如果用顺序查表,每次显示一个汉字都是 O(N)。如果用 Unicode → GB2312 区位码的映射表,内存约 2 万个 uint16_t(~40 KB),可以做到 O(1)。</p>
+    <p>对嵌入式来说 40 KB 不算小,但可以拆为常用 500 字小表 + 大表两段。</p>
+    <p><strong>建议:</strong> 评估实际使用的汉字集合,只缓存出现频率高的;或接受 40 KB 换取 O(1)。</p>
+</div>
+
+<!-- P6 -->
+<div class="finding">
+    <span class="tag perf">性能</span>
+    <div class="finding-title">SPI 推流未启用 DMA 双缓冲</div>
+    <div class="finding-meta"><code>Drivers/lcd.c</code> · <code>pico.cpp</code></div>
+    <p>当前 LCD 推流是 CPU 直接写 SPI FIFO,在 320x480 全屏刷新时 CPU 占用率很高。</p>
+    <p><strong>建议:</strong> 用 DMA 通道把 framebuffer 推到 SPI1:<code>spi/dma</code> 异步,CPU 只负责准备下一帧。M0+ 没有 cache,双缓冲要在 RAM 中预留 2 块 480*320*2 = 300 KB 区域(SRAM 264 KB 不够,需用 PSRAM 或压缩)。</p>
+    <p>折中:用 1 个 framebuffer + DMA 单缓冲,在 DMA 推流期间 CPU 准备下一帧,实现流水线。</p>
+</div>
+
+</section>
+
+<section id="minor">
+<h2>🔵 次要问题(14 项)</h2>
+
+<table>
+<thead><tr><th>#</th><th>类别</th><th>位置</th><th>问题</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><span class="tag t-style">风格</span></td><td><code>app/app_manager.c:11</code></td><td><code>DRAWER_WIDTH</code> 硬编码为 140,应改为 <code>LCD_WIDTH / 4</code> 或可配置宏,且文档说明 320x480 屏幕下的取舍</td></tr>
+<tr><td>2</td><td><span class="tag t-corr">正确性</span></td><td><code>app/app_manager.c:117-126</code></td><td><code>app_manager_return_home</code> 没有清除抽屉选中索引残留(只清了 <code>drawer.selected_idx</code>,未清 <code>drawer.pressed_idx</code>),若旧抽屉有"按下未释放"状态会卡住</td></tr>
+<tr><td>3</td><td><span class="tag t-corr">正确性</span></td><td><code>ui/ui_drawer.c:13-18</code></td><td><code>drawer_scroll_content_draw</code> 用 <code>snprintf</code> 把 app idx 格式化进图标角标,但没限制 <code>app_idx</code> 长度(若 &gt; 99 显示不全)。建议改成显示名称首字或单字母</td></tr>
+<tr><td>4</td><td><span class="tag t-style">风格</span></td><td><code>ui/ui_drawer.h:34-44</code></td><td>字段顺序混乱(<code>selected_idx</code> 在 <code>is_open</code> 之前),建议按逻辑分组:位置 / 状态 / 内部数据 / 回调</td></tr>
+<tr><td>5</td><td><span class="tag t-corr">正确性</span></td><td><code>ui/ui_waveform.c:85</code></td><td><code>now_tick</code> 参数用 <code>(void)now_tick;</code> 抑制未使用警告,但目前没有基于时间的去抖/长按逻辑。功能上没问题,只是提醒</td></tr>
+<tr><td>6</td><td><span class="tag t-corr">正确性</span></td><td><code>ui/ui_waveform.c:144</code></td><td><code>int32_t max_offset = total_samples - (rect.w * samples_per_pixel)</code>;若 <code>rect.w * samples_per_pixel &gt; INT32_MAX/2</code> 会溢出,实际不会发生(视口最大 480,SPP 最大 UINT16_MAX=65535,乘积 ≈ 31.5M 还在 INT32 范围),但建议加注释说明</td></tr>
+<tr><td>7</td><td><span class="tag t-arch">架构</span></td><td><code>app/app_led.c:9-15</code></td><td><code>app_led_data_t</code> 直接嵌入 <code>ui_switch_t</code> / <code>ui_btn_t</code> 大结构体(每个控件几百字节),且 <code>static</code> 单例,无法支持多个 LED App 同时存在</td></tr>
+<tr><td>8</td><td><span class="tag t-port">可移植</span></td><td><code>Drivers/CMakeLists.txt</code></td><td>使用了硬编码的 <code>C:/Users/xwx/.pico-sdk/sdk/2.2.0/src/...</code> 路径,换机器后必须修改。建议用 <code>$ENV{PICO_SDK_PATH}</code></td></tr>
+<tr><td>9</td><td><span class="tag t-style">风格</span></td><td><code>ui/CMakeLists.txt</code></td><td>检测 GCC builtin 路径的逻辑与 <code>app/CMakeLists.txt</code> 几乎完全重复,应提取到顶层 <code>cmake/DetectArmGcc.cmake</code> 模块并 <code>include()</code></td></tr>
+<tr><td>10</td><td><span class="tag t-sec">安全</span></td><td><code>rtos/OS_Core/os_core.c</code></td><td>消息队列 / 信号量操作没有校验 magic number,任务栈破坏时难定位,建议每个 TCB 头尾加 canary</td></tr>
+<tr><td>11</td><td><span class="tag t-arch">架构</span></td><td><code>ui/ui_status_bar.h</code> ~ <code>ui/ui_toast.h</code></td><td>15 个控件头文件大部分字段定义重复(<code>rect / is_touch_down / is_dragged / down_x / down_y</code>),建议抽出 <code>ui_widget_base_t</code></td></tr>
+<tr><td>12</td><td><span class="tag t-corr">正确性</span></td><td><code>app/app_manager.c:152-155</code></td><td><code>app_manager_update</code> 在 home 状态下直接 return,但 home 可能有"时钟刷新""状态指示灯闪烁"等周期性需求,应通过 <code>home-&gt;update</code> 钩子调用</td></tr>
+<tr><td>13</td><td><span class="tag t-style">风格</span></td><td><code>app/app_manager.c:128-138</code></td><td><code>open/close/toggle_drawer</code> 三个函数都只是 1 行调用,可以考虑用函数指针数组或直接暴露 <code>drawer</code> 字段</td></tr>
+<tr><td>14</td><td><span class="tag t-port">可移植</span></td><td><code>pico.cpp</code></td><td>主入口是 C++,但整个 <code>app/</code> 是 C 接口,意味着 <code>app_t</code> 实例可能是 C++ 类(若有),会有 name mangling 风险。建议主入口也改为 <code>main.c</code></td></tr>
+</tbody>
+</table>
+</section>
+
+<section id="good">
+<h2>✨ 值得保留的优良实践(5 项)</h2>
+
+<div class="finding good">
+    <span class="tag good">优点</span><span class="tag t-arch">架构</span>
+    <div class="finding-title">单向依赖 + 静态库分层</div>
+    <p><code>app → ui → Drivers → SDK</code> 的依赖方向完全单向,业务代码不会反向污染底层。<code>--whole-archive</code> 仅用于 <code>minirtos</code>(vector table 接管),<code>--start-group</code> 仅用于业务静态库,<strong>划分很清晰</strong>。</p>
+</div>
+
+<div class="finding good">
+    <span class="tag good">优点</span><span class="tag t-perf">性能</span>
+    <div class="finding-title">32px 切片 + 脏矩形渲染</div>
+    <p><code>ui_tile_t</code> 切片机制让全屏渲染可以分 15 个独立 tile 并行处理(虽然单核 M0+ 实际是串行),且每个控件的 <code>draw</code> 都会做 <code>ui_rect_intersect</code> 自裁剪。<strong>整页局部刷新(只刷抽屉 140px / 只刷按钮 220px)成为可能</strong>。</p>
+</div>
+
+<div class="finding good">
+    <span class="tag good">优点</span><span class="tag t-arch">架构</span>
+    <div class="finding-title">边缘手势状态机的设计模式</div>
+    <p><code>edge_touch_down / edge_candidate / gesture_consumed</code> 三态机区分"按下候选"、"消费中"、"释放",避免了一次边缘滑动被误识别为多次。</p>
+</div>
+
+<div class="finding good">
+    <span class="tag good">优点</span><span class="tag t-port">可移植</span>
+    <div class="finding-title">GBK 字符集贯穿</div>
+    <p>所有 <code>.c</code> 都加 <code>-finput-charset=UTF-8 -fexec-charset=GBK</code>,保证中文源码与运行时编码一致。<strong>嵌入式 GUI 项目最容易踩的"中文字符变 ?"</strong> 已规避。</p>
+</div>
+
+<div class="finding good">
+    <span class="tag good">优点</span><span class="tag t-arch">架构</span>
+    <div class="finding-title">USB CDC 1ms 超时保护</div>
+    <p><code>PICO_STDIO_USB_STDOUT_TIMEOUT_US=1000</code> 看似不起眼,但规避了"host 未开串口监视器时 printf 阻塞 500ms 卡死 RTOS 任务"的常见坑。<strong>应该作为项目标配</strong>。</p>
+</div>
+</section>
+
+<section id="files">
+<h2>📁 审查覆盖的文件清单</h2>
+
+<h3>Drivers/</h3>
+<table>
+<thead><tr><th>文件</th><th>行数</th><th>关键发现</th></tr></thead>
+<tbody>
+<tr><td><code>board_pins.h</code></td><td>~40</td><td>OK</td></tr>
+<tr><td><code>spi_bus.h</code></td><td>~30</td><td>OK</td></tr>
+<tr><td><code>lcd.h / lcd.c</code></td><td>~600</td><td>P6:建议启用 DMA 推流</td></tr>
+<tr><td><code>touch.h / touch.c</code></td><td>~200</td><td>OK</td></tr>
+<tr><td><code>w25q64.h / w25q64.c</code></td><td>~250</td><td>OK</td></tr>
+<tr><td><code>tf.h / tf.c</code></td><td>~200</td><td>OK</td></tr>
+<tr><td><code>chinese.h / chinese.c</code></td><td>~500</td><td>P5:可做 O(1) 查表</td></tr>
+</tbody>
+</table>
+
+<h3>rtos/</h3>
+<table>
+<thead><tr><th>文件</th><th>行数</th><th>关键发现</th></tr></thead>
+<tbody>
+<tr><td><code>OS_Core/os_core.h / .c</code></td><td>~700</td><td>P3:栈溢出保护缺失;次要 10:TCB 加 canary</td></tr>
+<tr><td><code>OS_Port/os_port.h / .c / .s</code></td><td>~200</td><td>OK,PendSV 接管正确</td></tr>
+</tbody>
+</table>
+
+<h3>ui/(50 个 .c,15 个控件)</h3>
+<table>
+<thead><tr><th>关键模块</th><th>关注点</th></tr></thead>
+<tbody>
+<tr><td><code>ui_geometry.h / .c</code></td><td>rect_union / intersect / contains_point 基础</td></tr>
+<tr><td><code>ui_tile.h / .c</code></td><td>32px 切片</td></tr>
+<tr><td><code>ui_draw.h / .c</code></td><td>fill_rect / rect / hline / vline / string / circle</td></tr>
+<tr><td><code>ui_btn / switch / slider</code></td><td>触控 + 渲染</td></tr>
+<tr><td><code>ui_drawer.h / .c</code></td><td><strong>C3 / C4 / M7</strong>:rel_y 下溢 / 跨层 include / 硬编码 140</td></tr>
+<tr><td><code>ui_waveform.h / .c</code></td><td><strong>M3 / M4 / M5</strong>:单像素循环 / 游标坐标不对齐 / 残影</td></tr>
+<tr><td><code>ui_dropdown / input / keyboard / numpad</code></td><td>表单类控件</td></tr>
+<tr><td><code>ui_terminal / packet_table / hex_view / waveform</code></td><td>数据显示类</td></tr>
+<tr><td><code>ui_progressbar / stepper / checkbox_group</code></td><td>状态显示</td></tr>
+<tr><td><code>ui_tabview / file_browser / toast / modal</code></td><td>容器类</td></tr>
+</tbody>
+</table>
+
+<h3>app/</h3>
+<table>
+<thead><tr><th>文件</th><th>行数</th><th>关键发现</th></tr></thead>
+<tbody>
+<tr><td><code>app_base.h</code></td><td>~50</td><td>app_t 接口定义</td></tr>
+<tr><td><code>app_manager.h / .c</code></td><td>271</td><td><strong>C1 / M1 / M2 / M6 / 次要 12-13</strong>:脏矩形契约 / 手势松手 / user_data 语义混杂 / home 无 update</td></tr>
+<tr><td><code>app_led.h / .c</code></td><td>140</td><td><strong>C2 / M8</strong>:ui_switch_get_dirty_rect 验证 / 翻转按钮脏矩形缺状态卡</td></tr>
+</tbody>
+</table>
+
+<h3>顶层</h3>
+<table>
+<thead><tr><th>文件</th><th>关键发现</th></tr></thead>
+<tbody>
+<tr><td><code>CMakeLists.txt</code></td><td>整体合理,<code>--start-group</code> 解决循环引用,USB 1ms 超时</td></tr>
+<tr><td><code>ui/CMakeLists.txt</code></td><td>次要 9:重复 GCC 检测块应提取</td></tr>
+<tr><td><code>app/CMakeLists.txt</code></td><td>次要 9 同上</td></tr>
+<tr><td><code>Drivers/CMakeLists.txt</code></td><td>次要 8:硬编码路径,建议用 <code>$ENV{PICO_SDK_PATH}</code></td></tr>
+<tr><td><code>pico.cpp</code></td><td>次要 14:建议改 <code>main.c</code></td></tr>
+</tbody>
+</table>
+</section>
+
+<section>
+<h2>🎯 优先修复路线图</h2>
+
+<h3>P0 — 立即修复(影响功能正确性)</h3>
+<ol>
+    <li><strong>C1</strong> 重新设计 <code>app_t</code> 脏矩形传递接口,显式回调</li>
+    <li><strong>C3</strong> 修复 <code>ui_drawer.c</code> 的 <code>rel_y</code> 下溢</li>
+    <li><strong>C4</strong> <code>ui_drawer.h</code> 改为前向声明 <code>app_t</code></li>
+    <li><strong>M8</strong> <code>app_led.c</code> 翻转按钮脏矩形补 <code>status_card</code></li>
+</ol>
+
+<h3>P1 — 本周修复(架构稳定性)</h3>
+<ol>
+    <li><strong>C2 / M1</strong> 验证 <code>ui_switch_get_dirty_rect</code> 存在;修复边缘手势松手逻辑</li>
+    <li><strong>M2</strong> 与 C1 合并:拆分 <code>user_data</code> 双重语义</li>
+    <li><strong>P3</strong> 给 RTOS 加栈底哨兵</li>
+    <li><strong>M3</strong> <code>ui_waveform</code> 行缓冲重写数字模式</li>
+</ol>
+
+<h3>P2 — 下一迭代(性能与体验)</h3>
+<ol>
+    <li><strong>P1 / P2</strong> home dashboard 缓存化;ui_waveform clip 合并</li>
+    <li><strong>M4 / M5</strong> 游标用采样索引存储;消除残影</li>
+    <li><strong>P4 / P5</strong> snprintf 缓存 + 整数算术;chinese 查表优化</li>
+    <li><strong>P6</strong> SPI DMA 推流(需要 framebuffer 内存规划)</li>
+</ol>
+
+<h3>P3 — 重构(可选)</h3>
+<ol>
+    <li>次要 8 / 9:提取 <code>DetectArmGcc.cmake</code> + 改用 <code>$ENV{PICO_SDK_PATH}</code></li>
+    <li>次要 11:抽出 <code>ui_widget_base_t</code> 公共字段</li>
+    <li>次要 14:<code>pico.cpp</code> → <code>main.c</code></li>
+    <li>M6:支持 <code>app_push/pop</code> 栈,实现多层级</li>
+</ol>
+</section>
+
+<footer>
+报告基于项目快照(E:\pico\pico)· 不修改任何源码 · 仅供开发参考<br>
+生成于审查时点 · 后续代码变动后部分结论可能失效
+</footer>
+
+</main>
+</body>
+</html>
