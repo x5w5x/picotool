@@ -61,6 +61,8 @@ void ui_picture_draw(ui_tile_t *tile, const ui_picture_t *pic);
 void ui_picture_play(ui_picture_t *pic);
 void ui_picture_pause(ui_picture_t *pic);
 void ui_picture_set_frame(ui_picture_t *pic, uint8_t frame_idx);
+// Set animation loop mode. When loop=false, animation plays once and stops (CPU drops to 0).
+void ui_picture_set_loop(ui_picture_t *pic, bool loop);
 
 #ifdef __cplusplus
 }

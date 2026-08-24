@@ -121,3 +121,7 @@ void ui_picture_pause(ui_picture_t *pic) {
 void ui_picture_set_frame(ui_picture_t *pic, uint8_t frame_idx) {
     if (pic && frame_idx < pic->frame_count) pic->cur_frame = frame_idx;
 }
+
+void ui_picture_set_loop(ui_picture_t *pic, bool loop) {
+    if (pic) pic->loop = loop;
+}
