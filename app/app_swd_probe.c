@@ -13,20 +13,20 @@
 #include <stdio.h>
 #include <string.h>
 
-#define PIN_SWCLK           2
-#define PIN_SWDIO           3
+#define PIN_SWCLK           2//e: 17]
+#define PIN_SWDIO           3//e: 17]
 
-#define REG_CPUID           0xE000ED00
-#define REG_DBGMCU_IDCODE   0xE0042000
-#define REG_STM32F0_DBGMCU  0x40015800
-#define REG_STM32F1_FLASH   0x1FFFF7E0
-#define REG_STM32F4_FLASH   0x1FFF7A22
+#define REG_CPUID           0xE000ED00//e: 17]
+#define REG_DBGMCU_IDCODE   0xE0042000//e: 17]
+#define REG_STM32F0_DBGMCU  0x40015800//e: 17]
+#define REG_STM32F1_FLASH   0x1FFFF7E0//e: 17]
+#define REG_STM32F4_FLASH   0x1FFF7A22//e: 17]
 
-#define F103_FLASH_KEYR     0x40022004
-#define F103_FLASH_SR       0x4002200C
-#define F103_FLASH_CR       0x40022010
-#define FLASH_KEY1          0x45670123
-#define FLASH_KEY2          0xCDEF89AB
+#define F103_FLASH_KEYR     0x40022004//e: 17]
+#define F103_FLASH_SR       0x4002200C//e: 17]
+#define F103_FLASH_CR       0x40022010//e: 17]
+#define FLASH_KEY1          0x45670123//e: 17]
+#define FLASH_KEY2          0xCDEF89AB//e: 17]
 
 typedef enum {
     TAB_PROBE = 0,
@@ -35,625 +35,659 @@ typedef enum {
     TAB_DAP   = 3,
     TAB_HELP  = 4,
     TAB_COUNT = 5
-} swd_tab_idx_t;
+} swd_tab_idx_t;//e: 17]
 
 typedef struct {
-    uint32_t dp_idcode;
-    uint32_t cpuid;
-    uint32_t dbgmcu_id;
-    uint16_t flash_kb;
-    char     core_name[24];
-    char     chip_model[32];
-    bool     target_connected;
-    char     diag_msg[48];
+    uint32_t dp_idcode;//e: 17]
+    uint32_t cpuid;//e: 17]
+    uint32_t dbgmcu_id;//e: 17]
+    uint16_t flash_kb;//e: 17]
+    char     core_name[24];//e: 17]
+    char     chip_model[32];//e: 17]
+    bool     target_connected;//e: 17]
+    char     diag_msg[48];//e: 17]
 
-    uint32_t current_pc;
-    bool     is_halted;
-    bool     flash_unlocked;
-    char     flash_msg[32];
-} swd_dev_state_t;
+    uint32_t current_pc;//e: 17]
+    bool     is_halted;//e: 17]
+    bool     flash_unlocked;//e: 17]
+    char     flash_msg[32];//e: 17]
+} swd_dev_state_t;//e: 17]
 
 typedef struct {
-    ui_rect_t       dirty_rect;
-    ui_tabview_t    tabview;
-    swd_dev_state_t state;
+    ui_rect_t       dirty_rect;//e: 17]
+    ui_tabview_t    tabview;//e: 17]
+    swd_dev_state_t state;//e: 17]
 
-    ui_btn_t        btn_probe;
-    ui_btn_t        btn_halt;
-    ui_btn_t        btn_run;
-    ui_btn_t        btn_step;
-    ui_btn_t        btn_reset;
-    ui_btn_t        btn_unlock;
-    ui_btn_t        btn_erase;
-    ui_btn_t        btn_toggle_dap;
-} app_swd_data_t;
+    // ⚡ 时钟变更监控缓存
+    uint32_t        last_dap_clock_hz;
 
-static app_swd_data_t s_swd_data;
-static app_t          s_app_swd;
-static volatile uint32_t s_swd_delay_cnt = 25;
+    ui_btn_t        btn_probe;//e: 17]
+    ui_btn_t        btn_halt;//e: 17]
+    ui_btn_t        btn_run;//e: 17]
+    ui_btn_t        btn_step;//e: 17]
+    ui_btn_t        btn_reset;//e: 17]
+    ui_btn_t        btn_unlock;//e: 17]
+    ui_btn_t        btn_erase;//e: 17]
+    ui_btn_t        btn_toggle_dap;//e: 17]
+} app_swd_data_t;//e: 17]
 
-static inline ui_rect_t rect_union_box(ui_rect_t a, ui_rect_t b) {
-    if (a.w == 0 || a.h == 0) return b;
-    if (b.w == 0 || b.h == 0) return a;
-    int16_t x1 = (a.x < b.x) ? a.x : b.x;
-    int16_t y1 = (a.y < b.y) ? a.y : b.y;
-    int16_t x2 = ((a.x + a.w) > (b.x + b.w)) ? (a.x + a.w) : (b.x + b.w);
-    int16_t y2 = ((a.y + a.h) > (b.y + b.h)) ? (a.y + a.h) : (b.y + b.h);
-    return ui_rect_make(x1, y1, x2 - x1, y2 - y1);
+static app_swd_data_t s_swd_data;//e: 17]
+static app_t          s_app_swd;//e: 17]
+static volatile uint32_t s_swd_delay_cnt = 25;//e: 17]
+
+static inline ui_rect_t rect_union_box(ui_rect_t a, ui_rect_t b) {//e: 17]
+    if (a.w == 0 || a.h == 0) return b;//e: 17]
+    if (b.w == 0 || b.h == 0) return a;//e: 17]
+    int16_t x1 = (a.x < b.x) ? a.x : b.x;//e: 17]
+    int16_t y1 = (a.y < b.y) ? a.y : b.y;//e: 17]
+    int16_t x2 = ((a.x + a.w) > (b.x + b.w)) ? (a.x + a.w) : (b.x + b.w);//e: 17]
+    int16_t y2 = ((a.y + a.h) > (b.y + b.h)) ? (a.y + a.h) : (b.y + b.h);//e: 17]
+    return ui_rect_make(x1, y1, x2 - x1, y2 - y1);//e: 17]
 }
 
-#define SWCLK_HIGH()        gpio_put(PIN_SWCLK, 1)
-#define SWCLK_LOW()         gpio_put(PIN_SWCLK, 0)
-#define SWDIO_HIGH()        gpio_put(PIN_SWDIO, 1)
-#define SWDIO_LOW()         gpio_put(PIN_SWDIO, 0)
-#define SWDIO_READ()        gpio_get(PIN_SWDIO)
+#define SWCLK_HIGH()        gpio_put(PIN_SWCLK, 1)//e: 17]
+#define SWCLK_LOW()         gpio_put(PIN_SWCLK, 0)//e: 17]
+#define SWDIO_HIGH()        gpio_put(PIN_SWDIO, 1)//e: 17]
+#define SWDIO_LOW()         gpio_put(PIN_SWDIO, 0)//e: 17]
+#define SWDIO_READ()        gpio_get(PIN_SWDIO)//e: 17]
 
-static inline void SWD_Delay(void) {
-    for (volatile uint32_t i = 0; i < s_swd_delay_cnt; i++) {
-        __asm volatile("nop");
+static inline void SWD_Delay(void) {//e: 17]
+    for (volatile uint32_t i = 0; i < s_swd_delay_cnt; i++) {//e: 17]
+        __asm volatile("nop");//e: 17]
     }
 }
 
-static inline void SWDIO_OUT(void) { gpio_set_dir(PIN_SWDIO, GPIO_OUT); }
-static inline void SWDIO_IN(void)  { gpio_set_dir(PIN_SWDIO, GPIO_IN); gpio_pull_up(PIN_SWDIO); }
+static inline void SWDIO_OUT(void) { gpio_set_dir(PIN_SWDIO, GPIO_OUT); }//e: 17]
+static inline void SWDIO_IN(void)  { gpio_set_dir(PIN_SWDIO, GPIO_IN); gpio_pull_up(PIN_SWDIO); }//e: 17]
 
-// ⚡ 恢复原始标准的 SWD 写位时序
-static void SWD_WriteBit(uint8_t bit) {
-    if (bit) SWDIO_HIGH(); else SWDIO_LOW();
-    SWD_Delay();
-    SWCLK_LOW();
-    SWD_Delay();
-    SWCLK_HIGH();
+// ⚡ 原始标准 SWD 写位时序//e: 17]
+static void SWD_WriteBit(uint8_t bit) {//e: 17]
+    if (bit) SWDIO_HIGH(); else SWDIO_LOW();//e: 17]
+    SWD_Delay();//e: 17]
+    SWCLK_LOW();//e: 17]
+    SWD_Delay();//e: 17]
+    SWCLK_HIGH();//e: 17]
 }
 
-// ⚡ 恢复原始标准的 SWD 读位时序（低电平采样）
-static uint8_t SWD_ReadBit(void) {
-    uint8_t bit;
-    SWCLK_LOW();
-    SWD_Delay();
-    bit = SWDIO_READ() ? 1 : 0;
-    SWCLK_HIGH();
-    SWD_Delay();
-    return bit;
+// ⚡ 原始标准 SWD 读位时序 (低电平采样)//e: 17]
+static uint8_t SWD_ReadBit(void) {//e: 17]
+    uint8_t bit;//e: 17]
+    SWCLK_LOW();//e: 17]
+    SWD_Delay();//e: 17]
+    bit = SWDIO_READ() ? 1 : 0;//e: 17]
+    SWCLK_HIGH();//e: 17]
+    SWD_Delay();//e: 17]
+    return bit;//e: 17]
 }
 
-static void SWD_WriteBits(uint32_t data, uint8_t len) {
-    for (uint8_t i = 0; i < len; i++) SWD_WriteBit((data >> i) & 0x01);
+static void SWD_WriteBits(uint32_t data, uint8_t len) {//e: 17]
+    for (uint8_t i = 0; i < len; i++) SWD_WriteBit((data >> i) & 0x01);//e: 17]
 }
 
-static void SWD_LineReset(void) {
-    SWDIO_OUT();
-    for (int i = 0; i < 64; i++) SWD_WriteBit(1);
-    SWD_WriteBits(0xE79E, 16);
-    for (int i = 0; i < 64; i++) SWD_WriteBit(1);
-    SWD_WriteBits(0, 16);
+static void SWD_LineReset(void) {//e: 17]
+    SWDIO_OUT();//e: 17]
+    for (int i = 0; i < 64; i++) SWD_WriteBit(1);//e: 17]
+    SWD_WriteBits(0xE79E, 16);//e: 17]
+    for (int i = 0; i < 64; i++) SWD_WriteBit(1);//e: 17]
+    SWD_WriteBits(0, 16);//e: 17]
 }
 
-static uint8_t Cal_Parity(uint32_t val) {
-    uint8_t p = 0;
-    for (int i = 0; i < 32; i++) if (val & (1U << i)) p++;
-    return p & 1;
+static uint8_t Cal_Parity(uint32_t val) {//e: 17]
+    uint8_t p = 0;//e: 17]
+    for (int i = 0; i < 32; i++) if (val & (1U << i)) p++;//e: 17]
+    return p & 1;//e: 17]
 }
 
-static uint8_t Gen_Req(uint8_t is_ap, uint8_t is_read, uint8_t addr_2_3) {
-    uint8_t req = 0x81;
-    if (is_ap)   req |= (1 << 1);
-    if (is_read) req |= (1 << 2);
-    req |= (addr_2_3 & 0x0C) << 1;
-    uint8_t p = 0;
-    for (int i = 1; i <= 4; i++) if (req & (1 << i)) p++;
-    if (p & 1) req |= (1 << 5);
-    return req;
+static uint8_t Gen_Req(uint8_t is_ap, uint8_t is_read, uint8_t addr_2_3) {//e: 17]
+    uint8_t req = 0x81;//e: 17]
+    if (is_ap)   req |= (1 << 1);//e: 17]
+    if (is_read) req |= (1 << 2);//e: 17]
+    req |= (addr_2_3 & 0x0C) << 1;//e: 17]
+    uint8_t p = 0;//e: 17]
+    for (int i = 1; i <= 4; i++) if (req & (1 << i)) p++;//e: 17]
+    if (p & 1) req |= (1 << 5);//e: 17]
+    return req;//e: 17]
 }
 
-static uint8_t SWD_Trans(uint8_t req, uint32_t *dat, uint8_t rd) {
-    uint8_t ack = 0, p = 0;
-    for (int i = 0; i < 8; i++) SWD_WriteBit((req >> i) & 1);
+static uint8_t SWD_Trans(uint8_t req, uint32_t *dat, uint8_t rd) {//e: 17]
+    uint8_t ack = 0, p = 0;//e: 17]
+    for (int i = 0; i < 8; i++) SWD_WriteBit((req >> i) & 1);//e: 17]
 
-    SWDIO_IN();
-    SWD_Delay(); SWCLK_LOW(); SWD_Delay(); SWCLK_HIGH();
-    ack |= SWD_ReadBit() << 0;
-    ack |= SWD_ReadBit() << 1;
-    ack |= SWD_ReadBit() << 2;
+    SWDIO_IN();//e: 17]
+    SWD_Delay(); SWCLK_LOW(); SWD_Delay(); SWCLK_HIGH();//e: 17]
+    ack |= SWD_ReadBit() << 0;//e: 17]
+    ack |= SWD_ReadBit() << 1;//e: 17]
+    ack |= SWD_ReadBit() << 2;//e: 17]
 
-    if (ack != 1) { SWDIO_OUT(); return ack; }
+    if (ack != 1) { SWDIO_OUT(); return ack; }//e: 17]
 
-    if (rd) {
-        uint32_t v = 0;
-        for (int i = 0; i < 32; i++) {
-            uint8_t b = SWD_ReadBit();
-            if (b) v |= (1U << i);
-            p ^= b;
+    if (rd) {//e: 17]
+        uint32_t v = 0;//e: 17]
+        for (int i = 0; i < 32; i++) {//e: 17]
+            uint8_t b = SWD_ReadBit();//e: 17]
+            if (b) v |= (1U << i);//e: 17]
+            p ^= b;//e: 17]
         }
-        SWD_ReadBit();
-        *dat = v;
-        SWD_Delay(); SWCLK_LOW(); SWD_Delay(); SWCLK_HIGH();
-        SWDIO_OUT();
+        SWD_ReadBit();//e: 17]
+        *dat = v;//e: 17]
+        SWD_Delay(); SWCLK_LOW(); SWD_Delay(); SWCLK_HIGH();//e: 17]
+        SWDIO_OUT();//e: 17]
     } else {
-        SWD_Delay(); SWCLK_LOW(); SWD_Delay(); SWCLK_HIGH();
-        SWDIO_OUT();
-        p = Cal_Parity(*dat);
-        for (int i = 0; i < 32; i++) SWD_WriteBit((*dat >> i) & 1);
-        SWD_WriteBit(p);
+        SWD_Delay(); SWCLK_LOW(); SWD_Delay(); SWCLK_HIGH();//e: 17]
+        SWDIO_OUT();//e: 17]
+        p = Cal_Parity(*dat);//e: 17]
+        for (int i = 0; i < 32; i++) SWD_WriteBit((*dat >> i) & 1);//e: 17]
+        SWD_WriteBit(p);//e: 17]
     }
 
-    SWDIO_LOW();
-    for (int i = 0; i < 12; i++) {
-        SWCLK_LOW(); SWD_Delay(); SWCLK_HIGH(); SWD_Delay();
+    SWDIO_LOW();//e: 17]
+    for (int i = 0; i < 12; i++) {//e: 17]
+        SWCLK_LOW(); SWD_Delay(); SWCLK_HIGH(); SWD_Delay();//e: 17]
     }
-    return ack;
+    return ack;//e: 17]
 }
 
-static void Target_Abort(void) {
-    uint32_t val = 0x1E;
-    SWD_Trans(Gen_Req(0, 0, 0x00), &val, 0);
+static void Target_Abort(void) {//e: 17]
+    uint32_t val = 0x1E;//e: 17]
+    SWD_Trans(Gen_Req(0, 0, 0x00), &val, 0);//e: 17]
 }
 
-static uint8_t SWD_Trans_Robust(uint8_t req, uint32_t *dat, uint8_t rd) {
-    uint8_t ack = 0;
-    for (int retry = 0; retry < 50; retry++) {
-        ack = SWD_Trans(req, dat, rd);
-        if (ack == 1) return 1;
-        if (ack == 2) continue;
-        if (ack == 4) { Target_Abort(); continue; }
-        break;
+static uint8_t SWD_Trans_Robust(uint8_t req, uint32_t *dat, uint8_t rd) {//e: 17]
+    uint8_t ack = 0;//e: 17]
+    for (int retry = 0; retry < 50; retry++) {//e: 17]
+        ack = SWD_Trans(req, dat, rd);//e: 17]
+        if (ack == 1) return 1;//e: 17]
+        if (ack == 2) continue;//e: 17]
+        if (ack == 4) { Target_Abort(); continue; }//e: 17]
+        break;//e: 17]
     }
-    return ack;
+    return ack;//e: 17]
 }
 
-static uint8_t Target_PowerUp(void) {
-    uint32_t status = 0;
-    uint32_t req = (1U << 28) | (1U << 30);
-    Target_Abort();
-    if (SWD_Trans_Robust(Gen_Req(0, 0, 0x04), &req, 0) != 1) return 0;
-    for (int i = 0; i < 500; i++) {
-        if (SWD_Trans_Robust(Gen_Req(0, 1, 0x04), &status, 1) == 1) {
-            if ((status & (1U << 29)) && (status & (1U << 31))) return 1;
+static uint8_t Target_PowerUp(void) {//e: 17]
+    uint32_t status = 0;//e: 17]
+    uint32_t req = (1U << 28) | (1U << 30);//e: 17]
+    Target_Abort();//e: 17]
+    if (SWD_Trans_Robust(Gen_Req(0, 0, 0x04), &req, 0) != 1) return 0;//e: 17]
+    for (int i = 0; i < 500; i++) {//e: 17]
+        if (SWD_Trans_Robust(Gen_Req(0, 1, 0x04), &status, 1) == 1) {//e: 17]
+            if ((status & (1U << 29)) && (status & (1U << 31))) return 1;//e: 17]
         }
     }
-    return 0;
+    return 0;//e: 17]
 }
 
-static void Target_Write(uint32_t addr, uint32_t val) {
-    uint32_t tmp = 0;
-    tmp = 0x00000000; SWD_Trans_Robust(Gen_Req(0, 0, 0x08), &tmp, 0);
-    tmp = 0x23000002; SWD_Trans_Robust(Gen_Req(1, 0, 0x00), &tmp, 0);
-    tmp = addr;       SWD_Trans_Robust(Gen_Req(1, 0, 0x04), &tmp, 0);
-    SWD_Trans_Robust(Gen_Req(1, 0, 0x0C), &val, 0);
+static void Target_Write(uint32_t addr, uint32_t val) {//e: 17]
+    uint32_t tmp = 0;//e: 17]
+    tmp = 0x00000000; SWD_Trans_Robust(Gen_Req(0, 0, 0x08), &tmp, 0);//e: 17]
+    tmp = 0x23000002; SWD_Trans_Robust(Gen_Req(1, 0, 0x00), &tmp, 0);//e: 17]
+    tmp = addr;       SWD_Trans_Robust(Gen_Req(1, 0, 0x04), &tmp, 0);//e: 17]
+    SWD_Trans_Robust(Gen_Req(1, 0, 0x0C), &val, 0);//e: 17]
 }
 
-static uint32_t Target_Read(uint32_t addr) {
-    uint32_t tmp = 0, val = 0;
-    tmp = 0x00000000; SWD_Trans_Robust(Gen_Req(0, 0, 0x08), &tmp, 0);
-    tmp = 0x23000002; SWD_Trans_Robust(Gen_Req(1, 0, 0x00), &tmp, 0);
-    tmp = addr;       SWD_Trans_Robust(Gen_Req(1, 0, 0x04), &tmp, 0);
-    SWD_Trans_Robust(Gen_Req(1, 1, 0x0C), &val, 1);
-    SWD_Trans_Robust(Gen_Req(0, 1, 0x0C), &val, 1);
-    return val;
+static uint32_t Target_Read(uint32_t addr) {//e: 17]
+    uint32_t tmp = 0, val = 0;//e: 17]
+    tmp = 0x00000000; SWD_Trans_Robust(Gen_Req(0, 0, 0x08), &tmp, 0);//e: 17]
+    tmp = 0x23000002; SWD_Trans_Robust(Gen_Req(1, 0, 0x00), &tmp, 0);//e: 17]
+    tmp = addr;       SWD_Trans_Robust(Gen_Req(1, 0, 0x04), &tmp, 0);//e: 17]
+    SWD_Trans_Robust(Gen_Req(1, 1, 0x0C), &val, 1);//e: 17]
+    SWD_Trans_Robust(Gen_Req(0, 1, 0x0C), &val, 1);//e: 17]
+    return val;//e: 17]
 }
 
-static uint32_t SWD_Read_PC(void) {
-    Target_Write(0xE000EDF4, 0x0F);
-    return Target_Read(0xE000EDF8);
+static uint32_t SWD_Read_PC(void) {//e: 17]
+    Target_Write(0xE000EDF4, 0x0F);//e: 17]
+    return Target_Read(0xE000EDF8);//e: 17]
 }
 
-static void swd_decode_target(swd_dev_state_t *t) {
-    uint16_t part_no = (t->cpuid >> 4) & 0xFFF;
-    switch (part_no) {
-        case 0xC20: strcpy(t->core_name, "Cortex-M0"); break;
-        case 0xC60: strcpy(t->core_name, "Cortex-M0+"); break;
-        case 0xC23: strcpy(t->core_name, "Cortex-M3"); break;
-        case 0xC24: strcpy(t->core_name, "Cortex-M4"); break;
-        case 0xC27: strcpy(t->core_name, "Cortex-M7"); break;
-        case 0xD21: strcpy(t->core_name, "Cortex-M33"); break;
-        default:    snprintf(t->core_name, sizeof(t->core_name), "ARM Part 0x%03X", part_no); break;
+static void swd_decode_target(swd_dev_state_t *t) {//e: 17]
+    uint16_t part_no = (t->cpuid >> 4) & 0xFFF;//e: 17]
+    switch (part_no) {//e: 17]
+        case 0xC20: strcpy(t->core_name, "Cortex-M0"); break;//e: 17]
+        case 0xC60: strcpy(t->core_name, "Cortex-M0+"); break;//e: 17]
+        case 0xC23: strcpy(t->core_name, "Cortex-M3"); break;//e: 17]
+        case 0xC24: strcpy(t->core_name, "Cortex-M4"); break;//e: 17]
+        case 0xC27: strcpy(t->core_name, "Cortex-M7"); break;//e: 17]
+        case 0xD21: strcpy(t->core_name, "Cortex-M33"); break;//e: 17]
+        default:    snprintf(t->core_name, sizeof(t->core_name), "ARM Part 0x%03X", part_no); break;//e: 17]
     }
 
-    uint16_t dev_id = t->dbgmcu_id & 0xFFF;
-    t->flash_kb = 0;
+    uint16_t dev_id = t->dbgmcu_id & 0xFFF;//e: 17]
+    t->flash_kb = 0;//e: 17]
 
-    switch (dev_id) {
-        case 0x412: case 0x410: case 0x414:
-            strcpy(t->chip_model, "STM32F103/F10x 系列");
-            t->flash_kb = (uint16_t)(Target_Read(REG_STM32F1_FLASH) & 0xFFFF);
-            break;
-        case 0x413: case 0x419: case 0x423: case 0x431:
-            snprintf(t->chip_model, sizeof(t->chip_model), "STM32F4xx (0x%03X)", dev_id);
-            t->flash_kb = (uint16_t)(Target_Read(REG_STM32F4_FLASH) & 0xFFFF);
-            break;
-        default:
-            snprintf(t->chip_model, sizeof(t->chip_model), "ARM 目标 (0x%03X)", dev_id);
-            break;
+    switch (dev_id) {//e: 17]
+        case 0x412: case 0x410: case 0x414://e: 17]
+            strcpy(t->chip_model, "STM32F103/F10x 系列");//e: 17]
+            t->flash_kb = (uint16_t)(Target_Read(REG_STM32F1_FLASH) & 0xFFFF);//e: 17]
+            break;//e: 17]
+        case 0x413: case 0x419: case 0x423: case 0x431://e: 17]
+            snprintf(t->chip_model, sizeof(t->chip_model), "STM32F4xx (0x%03X)", dev_id);//e: 17]
+            t->flash_kb = (uint16_t)(Target_Read(REG_STM32F4_FLASH) & 0xFFFF);//e: 17]
+            break;//e: 17]
+        default://e: 17]
+            snprintf(t->chip_model, sizeof(t->chip_model), "ARM 目标 (0x%03X)", dev_id);//e: 17]
+            break;//e: 17]
     }
 }
 
-static bool swd_probe_target(swd_dev_state_t *t) {
-    memset(t, 0, sizeof(swd_dev_state_t));
-    gpio_init(PIN_SWCLK); gpio_init(PIN_SWDIO);
-    gpio_set_dir(PIN_SWCLK, GPIO_OUT); gpio_set_dir(PIN_SWDIO, GPIO_OUT);
-    SWCLK_HIGH(); SWDIO_HIGH(); gpio_pull_up(PIN_SWDIO);
-    sleep_ms(20);
+static bool swd_probe_target(swd_dev_state_t *t) {//e: 17]
+    memset(t, 0, sizeof(swd_dev_state_t));//e: 17]
+    gpio_init(PIN_SWCLK); gpio_init(PIN_SWDIO);//e: 17]
+    gpio_set_dir(PIN_SWCLK, GPIO_OUT); gpio_set_dir(PIN_SWDIO, GPIO_OUT);//e: 17]
+    SWCLK_HIGH(); SWDIO_HIGH(); gpio_pull_up(PIN_SWDIO);//e: 17]
+    sleep_ms(20);//e: 17]
 
-    s_swd_delay_cnt = 25;
-    for (int i = 0; i < 5; i++) { SWD_LineReset(); sleep_ms(2); }
+    s_swd_delay_cnt = 25;//e: 17]
+    for (int i = 0; i < 5; i++) { SWD_LineReset(); sleep_ms(2); }//e: 17]
 
-    uint32_t target_id = 0;
-    if (SWD_Trans_Robust(Gen_Req(0, 1, 0x00), &target_id, 1) != 1 || target_id == 0) {
-        strcpy(t->diag_msg, "未收到 ACK 应答 / 未接通");
-        return false;
+    uint32_t target_id = 0;//e: 17]
+    if (SWD_Trans_Robust(Gen_Req(0, 1, 0x00), &target_id, 1) != 1 || target_id == 0) {//e: 17]
+        strcpy(t->diag_msg, "未收到 ACK 应答 / 未接通");//e: 17]
+        return false;//e: 17]
     }
 
-    t->dp_idcode = target_id;
-    if (!Target_PowerUp()) {
-        t->target_connected = true;
-        strcpy(t->chip_model, "DP在线 但 Power-Up 失败");
-        return true;
+    t->dp_idcode = target_id;//e: 17]
+    if (!Target_PowerUp()) {//e: 17]
+        t->target_connected = true;//e: 17]
+        strcpy(t->chip_model, "DP在线 但 Power-Up 失败");//e: 17]
+        return true;//e: 17]
     }
 
-    s_swd_delay_cnt = 2; // 提速至稳定读写
-    Target_Write(0xE000EDF0, 0xA05F0003);
-    sleep_ms(1);
-    t->cpuid = Target_Read(REG_CPUID);
-    t->dbgmcu_id = Target_Read(REG_DBGMCU_IDCODE);
-    if ((t->dbgmcu_id & 0xFFF) == 0) t->dbgmcu_id = Target_Read(REG_STM32F0_DBGMCU);
-    t->current_pc = SWD_Read_PC();
-    t->is_halted = true;
-    Target_Write(0xE000EDF0, 0xA05F0001);
-    t->is_halted = false;
+    s_swd_delay_cnt = 2; // 提速至稳定读写//e: 17]
+    Target_Write(0xE000EDF0, 0xA05F0003);//e: 17]
+    sleep_ms(1);//e: 17]
+    t->cpuid = Target_Read(REG_CPUID);//e: 17]
+    t->dbgmcu_id = Target_Read(REG_DBGMCU_IDCODE);//e: 17]
+    if ((t->dbgmcu_id & 0xFFF) == 0) t->dbgmcu_id = Target_Read(REG_STM32F0_DBGMCU);//e: 17]
+    t->current_pc = SWD_Read_PC();//e: 17]
+    t->is_halted = true;//e: 17]
+    Target_Write(0xE000EDF0, 0xA05F0001);//e: 17]
+    t->is_halted = false;//e: 17]
 
-    t->target_connected = true;
-    strcpy(t->diag_msg, "探测成功 | CoreSight 已就绪");
-    swd_decode_target(t);
-    return true;
+    t->target_connected = true;//e: 17]
+    strcpy(t->diag_msg, "探测成功 | CoreSight 已就绪");//e: 17]
+    swd_decode_target(t);//e: 17]
+    return true;//e: 17]
 }
 
-static void on_probe_click(ui_btn_t *btn, void *user_data) {
-    (void)btn;
-    app_swd_data_t *data = (app_swd_data_t *)user_data;
-    swd_probe_target(&data->state);
-    data->dirty_rect = data->tabview.content_rect;
+static void on_probe_click(ui_btn_t *btn, void *user_data) {//e: 17]
+    (void)btn;//e: 17]
+    app_swd_data_t *data = (app_swd_data_t *)user_data;//e: 17]
+    swd_probe_target(&data->state);//e: 17]
+    data->dirty_rect = data->tabview.content_rect;//e: 17]
 }
 
-static void on_halt_click(ui_btn_t *btn, void *user_data) {
-    (void)btn;
-    app_swd_data_t *data = (app_swd_data_t *)user_data;
-    Target_Write(0xE000EDF0, 0xA05F0003);
-    sleep_ms(5);
-    data->state.current_pc = SWD_Read_PC();
-    data->state.is_halted = true;
-    data->dirty_rect = data->tabview.content_rect;
+static void on_halt_click(ui_btn_t *btn, void *user_data) {//e: 17]
+    (void)btn;//e: 17]
+    app_swd_data_t *data = (app_swd_data_t *)user_data;//e: 17]
+    Target_Write(0xE000EDF0, 0xA05F0003);//e: 17]
+    sleep_ms(5);//e: 17]
+    data->state.current_pc = SWD_Read_PC();//e: 17]
+    data->state.is_halted = true;//e: 17]
+    data->dirty_rect = data->tabview.content_rect;//e: 17]
 }
 
-static void on_run_click(ui_btn_t *btn, void *user_data) {
-    (void)btn;
-    app_swd_data_t *data = (app_swd_data_t *)user_data;
-    Target_Write(0xE000EDF0, 0xA05F0001);
-    data->state.is_halted = false;
-    data->dirty_rect = data->tabview.content_rect;
+static void on_run_click(ui_btn_t *btn, void *user_data) {//e: 17]
+    (void)btn;//e: 17]
+    app_swd_data_t *data = (app_swd_data_t *)user_data;//e: 17]
+    Target_Write(0xE000EDF0, 0xA05F0001);//e: 17]
+    data->state.is_halted = false;//e: 17]
+    data->dirty_rect = data->tabview.content_rect;//e: 17]
 }
 
-static void on_step_click(ui_btn_t *btn, void *user_data) {
-    (void)btn;
-    app_swd_data_t *data = (app_swd_data_t *)user_data;
-    Target_Write(0xE000EDF0, 0xA05F0005);
-    sleep_ms(5);
-    Target_Write(0xE000EDF0, 0xA05F0003);
-    sleep_ms(5);
-    data->state.current_pc = SWD_Read_PC();
-    data->state.is_halted = true;
-    data->dirty_rect = data->tabview.content_rect;
+static void on_step_click(ui_btn_t *btn, void *user_data) {//e: 17]
+    (void)btn;//e: 17]
+    app_swd_data_t *data = (app_swd_data_t *)user_data;//e: 17]
+    Target_Write(0xE000EDF0, 0xA05F0005);//e: 17]
+    sleep_ms(5);//e: 17]
+    Target_Write(0xE000EDF0, 0xA05F0003);//e: 17]
+    sleep_ms(5);//e: 17]
+    data->state.current_pc = SWD_Read_PC();//e: 17]
+    data->state.is_halted = true;//e: 17]
+    data->dirty_rect = data->tabview.content_rect;//e: 17]
 }
 
-static void on_reset_click(ui_btn_t *btn, void *user_data) {
-    (void)btn;
-    app_swd_data_t *data = (app_swd_data_t *)user_data;
-    Target_Write(0xE000ED0C, 0x05FA0004);
-    Target_Write(0xE000EDF0, 0xA05F0000);
-    data->state.is_halted = false;
-    data->dirty_rect = data->tabview.content_rect;
+static void on_reset_click(ui_btn_t *btn, void *user_data) {//e: 17]
+    (void)btn;//e: 17]
+    app_swd_data_t *data = (app_swd_data_t *)user_data;//e: 17]
+    Target_Write(0xE000ED0C, 0x05FA0004);//e: 17]
+    Target_Write(0xE000EDF0, 0xA05F0000);//e: 17]
+    data->state.is_halted = false;//e: 17]
+    data->dirty_rect = data->tabview.content_rect;//e: 17]
 }
 
-static void on_unlock_click(ui_btn_t *btn, void *user_data) {
-    (void)btn;
-    app_swd_data_t *data = (app_swd_data_t *)user_data;
-    Target_Write(F103_FLASH_KEYR, FLASH_KEY1);
-    Target_Write(F103_FLASH_KEYR, FLASH_KEY2);
-    data->state.flash_unlocked = true;
-    strcpy(data->state.flash_msg, "FPEC 解锁成功 (可写入)");
-    data->dirty_rect = data->tabview.content_rect;
+static void on_unlock_click(ui_btn_t *btn, void *user_data) {//e: 17]
+    (void)btn;//e: 17]
+    app_swd_data_t *data = (app_swd_data_t *)user_data;//e: 17]
+    Target_Write(F103_FLASH_KEYR, FLASH_KEY1);//e: 17]
+    Target_Write(F103_FLASH_KEYR, FLASH_KEY2);//e: 17]
+    data->state.flash_unlocked = true;//e: 17]
+    strcpy(data->state.flash_msg, "FPEC 解锁成功 (可写入)");//e: 17]
+    data->dirty_rect = data->tabview.content_rect;//e: 17]
 }
 
-static void on_erase_click(ui_btn_t *btn, void *user_data) {
-    (void)btn;
-    app_swd_data_t *data = (app_swd_data_t *)user_data;
-    Target_Write(F103_FLASH_KEYR, FLASH_KEY1);
-    Target_Write(F103_FLASH_KEYR, FLASH_KEY2);
-    Target_Write(F103_FLASH_CR, (1 << 2) | (1 << 6));
+static void on_erase_click(ui_btn_t *btn, void *user_data) {//e: 17]
+    (void)btn;//e: 17]
+    app_swd_data_t *data = (app_swd_data_t *)user_data;//e: 17]
+    Target_Write(F103_FLASH_KEYR, FLASH_KEY1);//e: 17]
+    Target_Write(F103_FLASH_KEYR, FLASH_KEY2);//e: 17]
+    Target_Write(F103_FLASH_CR, (1 << 2) | (1 << 6));//e: 17]
 
-    uint32_t timeout = 0;
-    while ((Target_Read(F103_FLASH_SR) & 0x01) && timeout < 200) {
-        sleep_ms(5);
-        timeout++;
+    uint32_t timeout = 0;//e: 17]
+    while ((Target_Read(F103_FLASH_SR) & 0x01) && timeout < 200) {//e: 17]
+        sleep_ms(5);//e: 17]
+        timeout++;//e: 17]
     }
-    Target_Write(F103_FLASH_CR, 0x00);
-    strcpy(data->state.flash_msg, (timeout >= 200) ? "擦除超时" : "全片擦除完成");
-    data->dirty_rect = data->tabview.content_rect;
+    Target_Write(F103_FLASH_CR, 0x00);//e: 17]
+    strcpy(data->state.flash_msg, (timeout >= 200) ? "擦除超时" : "全片擦除完成");//e: 17]
+    data->dirty_rect = data->tabview.content_rect;//e: 17]
 }
 
-// ⚡ 安全开关：仅操作标志位与软插拔，不再复位 Core 1
+// ⚡ 核心优化：启动时硬件预加电 + 提前同步时钟，防止首包握手被打断
 static void on_toggle_dap_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_swd_data_t *data = (app_swd_data_t *)user_data;
-    g_dap_enabled = !g_dap_enabled;
+    g_dap_enabled = !g_dap_enabled;//e: 17]
 
-    if (g_dap_enabled) {
-        gpio_init(PIN_SWCLK);
-        gpio_init(PIN_SWDIO);
-        gpio_set_dir(PIN_SWCLK, GPIO_OUT);
-        gpio_set_dir(PIN_SWDIO, GPIO_OUT);
-        SWCLK_HIGH();
-        SWDIO_HIGH();
-        g_dap_packet_counter = 0;
+    if (g_dap_enabled) {//e: 17]
+        gpio_init(PIN_SWCLK);//e: 17]
+        gpio_init(PIN_SWDIO);//e: 17]
+        gpio_set_dir(PIN_SWCLK, GPIO_OUT);//e: 17]
+        gpio_set_dir(PIN_SWDIO, GPIO_OUT);//e: 17]
+        SWCLK_HIGH();//e: 17]
+        SWDIO_HIGH();//e: 17]
+        gpio_pull_up(PIN_SWDIO);//e: 17]
 
-        tud_connect();
+        // 1. 硬件预加电与 CoreSight 激活
+        s_swd_delay_cnt = 25;
+        for (int i = 0; i < 3; i++) {
+            SWD_LineReset();
+            sleep_ms(1);
+        }
+        Target_PowerUp();
 
-        data->btn_toggle_dap.text = "停止 DAP 联机";
-        ui_btn_set_color(&data->btn_toggle_dap, 0xF800, 0xB000, 0xFFFF);
+        // 2. 提前同步当前时钟基准
+        data->last_dap_clock_hz = g_dap_cur_clock_hz;
+
+        tud_connect();//e: 17]
+
+        data->btn_toggle_dap.text = "停止 DAP 联机";//e: 17]
+        ui_btn_set_color(&data->btn_toggle_dap, 0xF800, 0xB000, 0xFFFF);//e: 17]
     } else {
-        tud_disconnect();
+        tud_disconnect();//e: 17]
 
-        gpio_set_dir(PIN_SWCLK, GPIO_IN);
-        gpio_set_dir(PIN_SWDIO, GPIO_IN);
+        gpio_set_dir(PIN_SWCLK, GPIO_IN);//e: 17]
+        gpio_set_dir(PIN_SWDIO, GPIO_IN);//e: 17]
 
-        data->btn_toggle_dap.text = "启动 DAP 联机调试";
-        ui_btn_set_color(&data->btn_toggle_dap, 0x05E0, 0x03E0, 0xFFFF);
+        data->btn_toggle_dap.text = "启动 DAP 联机调试";//e: 17]
+        ui_btn_set_color(&data->btn_toggle_dap, 0x05E0, 0x03E0, 0xFFFF);//e: 17]
     }
-    data->dirty_rect = data->tabview.content_rect;
+    data->dirty_rect = data->tabview.content_rect;//e: 17]
 }
 
-static void on_tab_change(ui_tabview_t *tv, uint8_t old_tab, uint8_t new_tab, void *user_data) {
-    (void)old_tab; (void)new_tab;
-    app_swd_data_t *data = (app_swd_data_t *)user_data;
-    data->dirty_rect = tv->content_rect;
+static void on_tab_change(ui_tabview_t *tv, uint8_t old_tab, uint8_t new_tab, void *user_data) {//e: 17]
+    (void)old_tab; (void)new_tab;//e: 17]
+    app_swd_data_t *data = (app_swd_data_t *)user_data;//e: 17]
+    data->dirty_rect = tv->content_rect;//e: 17]
 }
 
-static const char *s_tab_titles[TAB_COUNT] = {
-    "芯片探测",
-    "内核控制",
-    "闪存管理",
-    "DAP联机",
-    "接线说明"
+static const char *s_tab_titles[TAB_COUNT] = {//e: 17]
+    "芯片探测",//e: 17]
+    "内核控制",//e: 17]
+    "闪存管理",//e: 17]
+    "DAP联机",//e: 17]
+    "接线说明"//e: 17]
 };
 
-static void app_swd_init(app_t *self) {
-    self->user_data = &s_swd_data;
-    app_swd_data_t *data = &s_swd_data;
+static void app_swd_init(app_t *self) {//e: 17]
+    self->user_data = &s_swd_data;//e: 17]
+    app_swd_data_t *data = &s_swd_data;//e: 17]
 
-    memset(&data->state, 0, sizeof(swd_dev_state_t));
-    data->dirty_rect = ui_rect_make(0, 0, 0, 0);
+    memset(&data->state, 0, sizeof(swd_dev_state_t));//e: 17]
+    data->dirty_rect        = ui_rect_make(0, 0, 0, 0);//e: 17]
+    data->last_dap_clock_hz = 0;
 
-    ui_tabview_init(&data->tabview, 0, 32, LCD_WIDTH, LCD_HEIGHT - 32, 
-                    108, 44, s_tab_titles, TAB_COUNT, TAB_PROBE, on_tab_change);
-    data->tabview.user_data = data;
+    ui_tabview_init(&data->tabview, 0, 32, LCD_WIDTH, LCD_HEIGHT - 32, //e: 17]
+                    108, 44, s_tab_titles, TAB_COUNT, TAB_PROBE, on_tab_change);//e: 17]
+    data->tabview.user_data = data;//e: 17]
 
-    ui_btn_init(&data->btn_probe, 140, 240, 310, 42, "一键探测目标芯片", on_probe_click);
-    data->btn_probe.user_data = data;
-    data->btn_probe.style = UI_BTN_STYLE_ROUND;
-    ui_btn_set_color(&data->btn_probe, 0x03DF, 0x0275, 0xFFFF);
+    ui_btn_init(&data->btn_probe, 140, 240, 310, 42, "一键探测目标芯片", on_probe_click);//e: 17]
+    data->btn_probe.user_data = data;//e: 17]
+    data->btn_probe.style = UI_BTN_STYLE_ROUND;//e: 17]
+    ui_btn_set_color(&data->btn_probe, 0x03DF, 0x0275, 0xFFFF);//e: 17]
 
-    ui_btn_init(&data->btn_halt, 130, 140, 150, 40, "暂停 (HALT)", on_halt_click);
-    data->btn_halt.user_data = data; data->btn_halt.style = UI_BTN_STYLE_ROUND;
-    ui_btn_set_color(&data->btn_halt, 0xFA00, 0xC800, 0xFFFF);
+    ui_btn_init(&data->btn_halt, 130, 140, 150, 40, "暂停 (HALT)", on_halt_click);//e: 17]
+    data->btn_halt.user_data = data; data->btn_halt.style = UI_BTN_STYLE_ROUND;//e: 17]
+    ui_btn_set_color(&data->btn_halt, 0xFA00, 0xC800, 0xFFFF);//e: 17]
 
-    ui_btn_init(&data->btn_run, 300, 140, 150, 40, "运行 (RUN)", on_run_click);
-    data->btn_run.user_data = data; data->btn_run.style = UI_BTN_STYLE_ROUND;
-    ui_btn_set_color(&data->btn_run, 0x05E0, 0x0400, 0xFFFF);
+    ui_btn_init(&data->btn_run, 300, 140, 150, 40, "运行 (RUN)", on_run_click);//e: 17]
+    data->btn_run.user_data = data; data->btn_run.style = UI_BTN_STYLE_ROUND;//e: 17]
+    ui_btn_set_color(&data->btn_run, 0x05E0, 0x0400, 0xFFFF);//e: 17]
 
-    ui_btn_init(&data->btn_step, 130, 200, 150, 40, "单步 (STEP)", on_step_click);
-    data->btn_step.user_data = data; data->btn_step.style = UI_BTN_STYLE_ROUND;
-    ui_btn_set_color(&data->btn_step, 0x03DF, 0x0275, 0xFFFF);
+    ui_btn_init(&data->btn_step, 130, 200, 150, 40, "单步 (STEP)", on_step_click);//e: 17]
+    data->btn_step.user_data = data; data->btn_step.style = UI_BTN_STYLE_ROUND;//e: 17]
+    ui_btn_set_color(&data->btn_step, 0x03DF, 0x0275, 0xFFFF);//e: 17]
 
-    ui_btn_init(&data->btn_reset, 300, 200, 150, 40, "复位 (RESET)", on_reset_click);
-    data->btn_reset.user_data = data; data->btn_reset.style = UI_BTN_STYLE_ROUND;
-    ui_btn_set_color(&data->btn_reset, 0x8410, 0x4208, 0xFFFF);
+    ui_btn_init(&data->btn_reset, 300, 200, 150, 40, "复位 (RESET)", on_reset_click);//e: 17]
+    data->btn_reset.user_data = data; data->btn_reset.style = UI_BTN_STYLE_ROUND;//e: 17]
+    ui_btn_set_color(&data->btn_reset, 0x8410, 0x4208, 0xFFFF);//e: 17]
 
-    ui_btn_init(&data->btn_unlock, 150, 150, 280, 44, "解锁 FPEC 闪存", on_unlock_click);
-    data->btn_unlock.user_data = data; data->btn_unlock.style = UI_BTN_STYLE_ROUND;
-    ui_btn_set_color(&data->btn_unlock, 0x03DF, 0x0275, 0xFFFF);
+    ui_btn_init(&data->btn_unlock, 150, 150, 280, 44, "解锁 FPEC 闪存", on_unlock_click);//e: 17]
+    data->btn_unlock.user_data = data; data->btn_unlock.style = UI_BTN_STYLE_ROUND;//e: 17]
+    ui_btn_set_color(&data->btn_unlock, 0x03DF, 0x0275, 0xFFFF);//e: 17]
 
-    ui_btn_init(&data->btn_erase, 150, 215, 280, 44, "全片擦除 (Mass Erase)", on_erase_click);
-    data->btn_erase.user_data = data; data->btn_erase.style = UI_BTN_STYLE_ROUND;
-    ui_btn_set_color(&data->btn_erase, 0xF800, 0xB000, 0xFFFF);
+    ui_btn_init(&data->btn_erase, 150, 215, 280, 44, "全片擦除 (Mass Erase)", on_erase_click);//e: 17]
+    data->btn_erase.user_data = data; data->btn_erase.style = UI_BTN_STYLE_ROUND;//e: 17]
+    ui_btn_set_color(&data->btn_erase, 0xF800, 0xB000, 0xFFFF);//e: 17]
 
-    ui_btn_init(&data->btn_toggle_dap, 140, 220, 310, 48, "启动 DAP 联机调试", on_toggle_dap_click);
-    data->btn_toggle_dap.user_data = data;
-    data->btn_toggle_dap.style = UI_BTN_STYLE_ROUND;
-    data->btn_toggle_dap.font_size = FONT_20;
-    ui_btn_set_color(&data->btn_toggle_dap, 0x05E0, 0x03E0, 0xFFFF);
+    ui_btn_init(&data->btn_toggle_dap, 140, 220, 310, 48, "启动 DAP 联机调试", on_toggle_dap_click);//e: 17]
+    data->btn_toggle_dap.user_data = data;//e: 17]
+    data->btn_toggle_dap.style = UI_BTN_STYLE_ROUND;//e: 17]
+    data->btn_toggle_dap.font_size = FONT_20;//e: 17]
+    ui_btn_set_color(&data->btn_toggle_dap, 0x05E0, 0x03E0, 0xFFFF);//e: 17]
 }
 
-static void app_swd_enter(app_t *self) {
-    app_swd_data_t *data = (app_swd_data_t *)self->user_data;
-    data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
+static void app_swd_enter(app_t *self) {//e: 17]
+    app_swd_data_t *data = (app_swd_data_t *)self->user_data;//e: 17]
+    data->dirty_rect        = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);//e: 17]
+    data->last_dap_clock_hz = g_dap_cur_clock_hz;
 }
 
-static void app_swd_exit(app_t *self) {
-    app_swd_data_t *data = (app_swd_data_t *)self->user_data;
-    if (g_dap_enabled) {
-        g_dap_enabled = false;
-        tud_disconnect();
-        gpio_set_dir(PIN_SWCLK, GPIO_IN);
-        gpio_set_dir(PIN_SWDIO, GPIO_IN);
-        data->btn_toggle_dap.text = "启动 DAP 联机调试";
-        ui_btn_set_color(&data->btn_toggle_dap, 0x05E0, 0x03E0, 0xFFFF);
+static void app_swd_exit(app_t *self) {//e: 17]
+    app_swd_data_t *data = (app_swd_data_t *)self->user_data;//e: 17]
+    if (g_dap_enabled) {//e: 17]
+        g_dap_enabled = false;//e: 17]
+        tud_disconnect();//e: 17]
+        gpio_set_dir(PIN_SWCLK, GPIO_IN);//e: 17]
+        gpio_set_dir(PIN_SWDIO, GPIO_IN);//e: 17]
+        data->btn_toggle_dap.text = "启动 DAP 联机调试";//e: 17]
+        ui_btn_set_color(&data->btn_toggle_dap, 0x05E0, 0x03E0, 0xFFFF);//e: 17]
     }
 }
+
+/* ================= 5. ⚡ 仅在时钟发生有效突变时刷新单行微区域 ================= */
 
 static void app_swd_update(app_t *self, uint32_t now_tick) {
     (void)now_tick;
     app_swd_data_t *data = (app_swd_data_t *)self->user_data;
 
-    static uint32_t s_last_cnt = 0;
+    data->dirty_rect = ui_rect_make(0, 0, 0, 0);
+
     if (data->tabview.active_tab_idx == TAB_DAP && g_dap_enabled) {
-        if (g_dap_packet_counter != s_last_cnt) {
-            s_last_cnt = g_dap_packet_counter;
-            data->dirty_rect = ui_rect_make(120, 44, 345, 160);
+        if (g_dap_cur_clock_hz != data->last_dap_clock_hz) {
+            data->last_dap_clock_hz = g_dap_cur_clock_hz;
+            // 仅标记频率显示单行 (X:130, Y:80, W:300, H:28)
+            data->dirty_rect = ui_rect_make(130, 80, 300, 28);
         }
     }
 }
 
-static bool app_swd_process_touch(app_t *self, bool is_touching, int16_t tx, int16_t ty, uint32_t now_tick) {
-    app_swd_data_t *data = (app_swd_data_t *)self->user_data;
+/* ================= 6. 触控分发与主动渲染触发 ================= */
 
-    if (ui_tabview_process_touch(&data->tabview, is_touching, tx, ty, now_tick)) {
-        data->dirty_rect = rect_union_box(data->dirty_rect, data->tabview.bar_rect);
+static bool app_swd_process_touch(app_t *self, bool is_touching, int16_t tx, int16_t ty, uint32_t now_tick) {//e: 17]
+    app_swd_data_t *data = (app_swd_data_t *)self->user_data;//e: 17]
+
+    // 1. 侧边栏触控
+    if (ui_tabview_process_touch(&data->tabview, is_touching, tx, ty, now_tick)) {//e: 17]
+        data->dirty_rect = rect_union_box(data->dirty_rect, ui_tabview_get_bar_dirty_rect(&data->tabview));//e: 17]
+        return true;//e: 17]
+    }
+
+    // 2. 当前 Tab 控件事件
+    bool handled = false;//e: 17]
+    switch (data->tabview.active_tab_idx) {//e: 17]
+        case TAB_PROBE://e: 17]
+            if (ui_btn_process_touch(&data->btn_probe, is_touching, tx, ty, now_tick)) handled = true;//e: 17]
+            break;//e: 17]
+        case TAB_CTRL://e: 17]
+            if (ui_btn_process_touch(&data->btn_halt, is_touching, tx, ty, now_tick)) handled = true;//e: 17]
+            if (ui_btn_process_touch(&data->btn_run, is_touching, tx, ty, now_tick)) handled = true;//e: 17]
+            if (ui_btn_process_touch(&data->btn_step, is_touching, tx, ty, now_tick)) handled = true;//e: 17]
+            if (ui_btn_process_touch(&data->btn_reset, is_touching, tx, ty, now_tick)) handled = true;//e: 17]
+            break;//e: 17]
+        case TAB_FLASH://e: 17]
+            if (ui_btn_process_touch(&data->btn_unlock, is_touching, tx, ty, now_tick)) handled = true;//e: 17]
+            if (ui_btn_process_touch(&data->btn_erase, is_touching, tx, ty, now_tick)) handled = true;//e: 17]
+            break;//e: 17]
+        case TAB_DAP://e: 17]
+            if (ui_btn_process_touch(&data->btn_toggle_dap, is_touching, tx, ty, now_tick)) handled = true;//e: 17]
+            break;//e: 17]
+        default://e: 17]
+            break;//e: 17]
+    }
+
+    if (handled) {
         return true;
     }
 
-    bool handled = false;
-    switch (data->tabview.active_tab_idx) {
-        case TAB_PROBE:
-            if (ui_btn_process_touch(&data->btn_probe, is_touching, tx, ty, now_tick)) handled = true;
-            break;
-        case TAB_CTRL:
-            if (ui_btn_process_touch(&data->btn_halt, is_touching, tx, ty, now_tick)) handled = true;
-            if (ui_btn_process_touch(&data->btn_run, is_touching, tx, ty, now_tick)) handled = true;
-            if (ui_btn_process_touch(&data->btn_step, is_touching, tx, ty, now_tick)) handled = true;
-            if (ui_btn_process_touch(&data->btn_reset, is_touching, tx, ty, now_tick)) handled = true;
-            break;
-        case TAB_FLASH:
-            if (ui_btn_process_touch(&data->btn_unlock, is_touching, tx, ty, now_tick)) handled = true;
-            if (ui_btn_process_touch(&data->btn_erase, is_touching, tx, ty, now_tick)) handled = true;
-            break;
-        case TAB_DAP:
-            if (ui_btn_process_touch(&data->btn_toggle_dap, is_touching, tx, ty, now_tick)) handled = true;
-            break;
-        default:
-            break;
+    if (data->dirty_rect.w > 0 && data->dirty_rect.h > 0) {
+        return true;
     }
-    return handled;
+
+    return false;
 }
 
-static void app_swd_draw(app_t *self, ui_tile_t *tile) {
-    app_swd_data_t *data = (app_swd_data_t *)self->user_data;
-    ui_rect_t overlap;
+/* ================= 7. 切片光栅化渲染 ================= */
 
-    ui_tabview_draw(tile, &data->tabview);
+static void app_swd_draw(app_t *self, ui_tile_t *tile) {//e: 17]
+    app_swd_data_t *data = (app_swd_data_t *)self->user_data;//e: 17]
+    ui_rect_t overlap;//e: 17]
 
-    if (ui_rect_intersect(&tile->rect, &data->tabview.content_rect, &overlap)) {
+    ui_tabview_draw(tile, &data->tabview);//e: 17]
+
+    if (ui_rect_intersect(&tile->rect, &data->tabview.content_rect, &overlap)) {//e: 17]
         ui_draw_fill_rect(tile, &overlap, 0xFFFF);
     }
 
-    char str_buf[64];
+    char str_buf[64];//e: 17]
 
-    switch (data->tabview.active_tab_idx) {
-        case TAB_PROBE: {
-            ui_rect_t card = ui_rect_make(120, 44, 345, 180);
-            if (ui_rect_intersect(&tile->rect, &card, &overlap)) {
-                ui_draw_fill_rect(tile, &overlap, 0xEF7D);
-                ui_draw_rect(tile, &card, 0xC618);
-                if (data->state.target_connected) {
-                    ui_draw_string(tile, 135, 54, "状态: 已成功探测", FONT_16, 0x05E0, 0xEF7D);
-                    snprintf(str_buf, sizeof(str_buf), "芯片型号: %s", data->state.chip_model);
-                    ui_draw_string(tile, 135, 78, str_buf, FONT_16, 0x1A7B, 0xEF7D);
-                    snprintf(str_buf, sizeof(str_buf), "ARM 内核: %s", data->state.core_name);
-                    ui_draw_string(tile, 135, 102, str_buf, FONT_16, 0x1A7B, 0xEF7D);
-                    snprintf(str_buf, sizeof(str_buf), "DP IDCODE: 0x%08lX", data->state.dp_idcode);
-                    ui_draw_string(tile, 135, 126, str_buf, FONT_16, 0x03DF, 0xEF7D);
-                    snprintf(str_buf, sizeof(str_buf), "片上 Flash: %u KB", data->state.flash_kb);
-                    ui_draw_string(tile, 135, 150, str_buf, FONT_16, 0xF800, 0xEF7D);
+    switch (data->tabview.active_tab_idx) {//e: 17]
+        case TAB_PROBE: {//e: 17]
+            ui_rect_t card = ui_rect_make(120, 44, 345, 180);//e: 17]
+            if (ui_rect_intersect(&tile->rect, &card, &overlap)) {//e: 17]
+                ui_draw_fill_rect(tile, &overlap, 0xEF7D);//e: 17]
+                ui_draw_rect(tile, &card, 0xC618);//e: 17]
+                if (data->state.target_connected) {//e: 17]
+                    ui_draw_string(tile, 135, 54, "状态: 已成功探测", FONT_16, 0x05E0, 0xEF7D);//e: 17]
+                    snprintf(str_buf, sizeof(str_buf), "芯片型号: %s", data->state.chip_model);//e: 17]
+                    ui_draw_string(tile, 135, 78, str_buf, FONT_16, 0x1A7B, 0xEF7D);//e: 17]
+                    snprintf(str_buf, sizeof(str_buf), "ARM 内核: %s", data->state.core_name);//e: 17]
+                    ui_draw_string(tile, 135, 102, str_buf, FONT_16, 0x1A7B, 0xEF7D);//e: 17]
+                    snprintf(str_buf, sizeof(str_buf), "DP IDCODE: 0x%08lX", data->state.dp_idcode);//e: 17]
+                    ui_draw_string(tile, 135, 126, str_buf, FONT_16, 0x03DF, 0xEF7D);//e: 17]
+                    snprintf(str_buf, sizeof(str_buf), "片上 Flash: %u KB", data->state.flash_kb);//e: 17]
+                    ui_draw_string(tile, 135, 150, str_buf, FONT_16, 0xF800, 0xEF7D);//e: 17]
                 } else {
-                    ui_draw_string(tile, 135, 54, "状态: 未连接", FONT_16, 0x8410, 0xEF7D);
-                    ui_draw_string(tile, 135, 94, "请将 GP2 接 SWCLK, GP3 接 SWDIO", FONT_16, 0x4208, 0xEF7D);
-                    ui_draw_string(tile, 135, 124, "必须与目标共地(GND)且目标板已供电", FONT_16, 0x4208, 0xEF7D);
+                    ui_draw_string(tile, 135, 54, "状态: 未连接", FONT_16, 0x8410, 0xEF7D);//e: 17]
+                    ui_draw_string(tile, 135, 94, "请将 GP2 接 SWCLK, GP3 接 SWDIO", FONT_16, 0x4208, 0xEF7D);//e: 17]
+                    ui_draw_string(tile, 135, 124, "必须与目标共地(GND)且目标板已供电", FONT_16, 0x4208, 0xEF7D);//e: 17]
                 }
             }
-            ui_btn_draw(tile, &data->btn_probe);
-            break;
+            ui_btn_draw(tile, &data->btn_probe);//e: 17]
+            break;//e: 17]
         }
 
-        case TAB_CTRL: {
-            ui_rect_t card = ui_rect_make(120, 44, 345, 75);
-            if (ui_rect_intersect(&tile->rect, &card, &overlap)) {
-                ui_draw_fill_rect(tile, &overlap, 0xDEFB);
-                ui_draw_rect(tile, &card, 0x03DF);
-                snprintf(str_buf, sizeof(str_buf), "CPU 状态: %s", data->state.is_halted ? "HALTED (暂停)" : "RUNNING (运行中)");
-                ui_draw_string(tile, 135, 54, str_buf, FONT_16, data->state.is_halted ? 0xF800 : 0x05E0, 0xDEFB);
-                snprintf(str_buf, sizeof(str_buf), "当前 PC: 0x%08lX", data->state.current_pc);
-                ui_draw_string(tile, 135, 82, str_buf, FONT_16, 0x1A7B, 0xDEFB);
+        case TAB_CTRL: {//e: 17]
+            ui_rect_t card = ui_rect_make(120, 44, 345, 75);//e: 17]
+            if (ui_rect_intersect(&tile->rect, &card, &overlap)) {//e: 17]
+                ui_draw_fill_rect(tile, &overlap, 0xDEFB);//e: 17]
+                ui_draw_rect(tile, &card, 0x03DF);//e: 17]
+                snprintf(str_buf, sizeof(str_buf), "CPU 状态: %s", data->state.is_halted ? "HALTED (暂停)" : "RUNNING (运行中)");//e: 17]
+                ui_draw_string(tile, 135, 54, str_buf, FONT_16, data->state.is_halted ? 0xF800 : 0x05E0, 0xDEFB);//e: 17]
+                snprintf(str_buf, sizeof(str_buf), "当前 PC: 0x%08lX", data->state.current_pc);//e: 17]
+                ui_draw_string(tile, 135, 82, str_buf, FONT_16, 0x1A7B, 0xDEFB);//e: 17]
             }
-            ui_btn_draw(tile, &data->btn_halt);
-            ui_btn_draw(tile, &data->btn_run);
-            ui_btn_draw(tile, &data->btn_step);
-            ui_btn_draw(tile, &data->btn_reset);
-            break;
+            ui_btn_draw(tile, &data->btn_halt);//e: 17]
+            ui_btn_draw(tile, &data->btn_run);//e: 17]
+            ui_btn_draw(tile, &data->btn_step);//e: 17]
+            ui_btn_draw(tile, &data->btn_reset);//e: 17]
+            break;//e: 17]
         }
 
-        case TAB_FLASH: {
-            ui_rect_t card = ui_rect_make(120, 44, 345, 90);
-            if (ui_rect_intersect(&tile->rect, &card, &overlap)) {
-                ui_draw_fill_rect(tile, &overlap, 0xEF7D);
-                ui_draw_rect(tile, &card, 0xC618);
-                ui_draw_string(tile, 135, 54, "FPEC 状态: ", FONT_16, 0x1A7B, 0xEF7D);
-                ui_draw_string(tile, 220, 54, data->state.flash_unlocked ? "已解锁" : "已锁定", FONT_16, data->state.flash_unlocked ? 0x05E0 : 0xF800, 0xEF7D);
-                if (strlen(data->state.flash_msg) > 0) ui_draw_string(tile, 135, 84, data->state.flash_msg, FONT_16, 0x03DF, 0xEF7D);
+        case TAB_FLASH: {//e: 17]
+            ui_rect_t card = ui_rect_make(120, 44, 345, 90);//e: 17]
+            if (ui_rect_intersect(&tile->rect, &card, &overlap)) {//e: 17]
+                ui_draw_fill_rect(tile, &overlap, 0xEF7D);//e: 17]
+                ui_draw_rect(tile, &card, 0xC618);//e: 17]
+                ui_draw_string(tile, 135, 54, "FPEC 状态: ", FONT_16, 0x1A7B, 0xEF7D);//e: 17]
+                ui_draw_string(tile, 220, 54, data->state.flash_unlocked ? "已解锁" : "已锁定", FONT_16, data->state.flash_unlocked ? 0x05E0 : 0xF800, 0xEF7D);//e: 17]
+                if (strlen(data->state.flash_msg) > 0) ui_draw_string(tile, 135, 84, data->state.flash_msg, FONT_16, 0x03DF, 0xEF7D);//e: 17]
             }
-            ui_btn_draw(tile, &data->btn_unlock);
-            ui_btn_draw(tile, &data->btn_erase);
-            break;
+            ui_btn_draw(tile, &data->btn_unlock);//e: 17]
+            ui_btn_draw(tile, &data->btn_erase);//e: 17]
+            break;//e: 17]
         }
 
-        case TAB_DAP: {
-            ui_rect_t card = ui_rect_make(120, 44, 345, 150);
-            if (ui_rect_intersect(&tile->rect, &card, &overlap)) {
-                ui_draw_fill_rect(tile, &overlap, 0x10A2);
-                ui_draw_rect(tile, &card, 0x07FF);
+        case TAB_DAP: {//e: 17]
+            ui_rect_t card = ui_rect_make(120, 44, 345, 150);//e: 17]
+            if (ui_rect_intersect(&tile->rect, &card, &overlap)) {//e: 17]
+                ui_draw_fill_rect(tile, &overlap, 0x10A2);//e: 17]
+                ui_draw_rect(tile, &card, 0x07FF);//e: 17]
 
-                if (g_dap_enabled) {
-                    ui_draw_string(tile, 135, 56, "● DAP 调试通道: [ 运行中 ]", FONT_16, 0x07FF, 0x10A2);
-                    snprintf(str_buf, sizeof(str_buf), "传输数据包: %lu 帧", g_dap_packet_counter);
-                    ui_draw_string(tile, 135, 84, str_buf, FONT_16, 0xFFFF, 0x10A2);
-                    snprintf(str_buf, sizeof(str_buf), "SWD 频率: %.1f MHz", (float)g_dap_cur_clock_hz / 1000000.0f);
-                    ui_draw_string(tile, 135, 112, str_buf, FONT_16, 0x05E0, 0x10A2);
-                    ui_draw_string(tile, 135, 140, "电脑端 Keil/OpenOCD 可直接连接", FONT_16, 0x8410, 0x10A2);
+                if (g_dap_enabled) {//e: 17]
+                    ui_draw_string(tile, 135, 56, "● DAP 调试通道: [ 运行中 ]", FONT_16, 0x07FF, 0x10A2);//e: 17]
+                    snprintf(str_buf, sizeof(str_buf), "SWD 时钟频率: %.1f MHz", (float)g_dap_cur_clock_hz / 1000000.0f);//e: 17]
+                    ui_draw_string(tile, 135, 84, str_buf, FONT_16, 0x05E0, 0x10A2);//e: 17]
+                    ui_draw_string(tile, 135, 112, "通信协议: CMSIS-DAP HID (免驱)", FONT_16, 0xFFFF, 0x10A2);
+                    ui_draw_string(tile, 135, 140, "电脑端 Keil/OpenOCD 可直接连接", FONT_16, 0x8410, 0x10A2);//e: 17]
                 } else {
-                    ui_draw_string(tile, 135, 56, "○ DAP 调试通道: [ 已待机 ]", FONT_16, 0x8410, 0x10A2);
-                    ui_draw_string(tile, 135, 90, "点击下方按钮开启 DAP 联机通道", FONT_16, 0xFFFF, 0x10A2);
-                    ui_draw_string(tile, 135, 124, "开启后 Pico 将作为免驱调试器工作", FONT_16, 0x8410, 0x10A2);
+                    ui_draw_string(tile, 135, 56, "○ DAP 调试通道: [ 已待机 ]", FONT_16, 0x8410, 0x10A2);//e: 17]
+                    ui_draw_string(tile, 135, 90, "点击下方按钮开启 DAP 联机通道", FONT_16, 0xFFFF, 0x10A2);//e: 17]
+                    ui_draw_string(tile, 135, 124, "开启后 Pico 将作为免驱调试器工作", FONT_16, 0x8410, 0x10A2);//e: 17]
                 }
             }
-            ui_btn_draw(tile, &data->btn_toggle_dap);
-            break;
+            ui_btn_draw(tile, &data->btn_toggle_dap);//e: 17]
+            break;//e: 17]
         }
 
-        case TAB_HELP: {
-            ui_rect_t card = ui_rect_make(120, 44, 345, 235);
-            if (ui_rect_intersect(&tile->rect, &card, &overlap)) {
-                ui_draw_fill_rect(tile, &overlap, 0xEF7D);
-                ui_draw_rect(tile, &card, 0xC618);
-                ui_draw_string(tile, 135, 54, "接线标准说明:", FONT_16, 0x03DF, 0xEF7D);
-                ui_draw_string(tile, 135, 80, "Pin 4 (GP2) -> 目标板 SWCLK (PA14)", FONT_16, 0x1A7B, 0xEF7D);
-                ui_draw_string(tile, 135, 106, "Pin 5 (GP3) -> 目标板 SWDIO (PA13)", FONT_16, 0x1A7B, 0xEF7D);
-                ui_draw_string(tile, 135, 132, "GND 针脚    -> 目标板 GND (必须连)", FONT_16, 0x1A7B, 0xEF7D);
-                ui_draw_string(tile, 135, 158, "3.3V 输出   -> 目标板 3.3V (可选)", FONT_16, 0x1A7B, 0xEF7D);
-                ui_draw_string(tile, 135, 194, "支持 Keil/OpenOCD/PyOCD 免驱联机", FONT_16, 0x05E0, 0xEF7D);
-                ui_draw_string(tile, 135, 220, "退出 App 或切标签将自动保护断开", FONT_16, 0x8410, 0xEF7D);
+        case TAB_HELP: {//e: 17]
+            ui_rect_t card = ui_rect_make(120, 44, 345, 235);//e: 17]
+            if (ui_rect_intersect(&tile->rect, &card, &overlap)) {//e: 17]
+                ui_draw_fill_rect(tile, &overlap, 0xEF7D);//e: 17]
+                ui_draw_rect(tile, &card, 0xC618);//e: 17]
+                ui_draw_string(tile, 135, 54, "接线标准说明:", FONT_16, 0x03DF, 0xEF7D);//e: 17]
+                ui_draw_string(tile, 135, 80, "Pin 4 (GP2) -> 目标板 SWCLK (PA14)", FONT_16, 0x1A7B, 0xEF7D);//e: 17]
+                ui_draw_string(tile, 135, 106, "Pin 5 (GP3) -> 目标板 SWDIO (PA13)", FONT_16, 0x1A7B, 0xEF7D);//e: 17]
+                ui_draw_string(tile, 135, 132, "GND 针脚    -> 目标板 GND (必须连)", FONT_16, 0x1A7B, 0xEF7D);//e: 17]
+                ui_draw_string(tile, 135, 158, "3.3V 输出   -> 目标板 3.3V (可选)", FONT_16, 0x1A7B, 0xEF7D);//e: 17]
+                ui_draw_string(tile, 135, 194, "支持 Keil/OpenOCD/PyOCD 免驱联机", FONT_16, 0x05E0, 0xEF7D);//e: 17]
+                ui_draw_string(tile, 135, 220, "退出 App 或切标签将自动保护断开", FONT_16, 0x8410, 0xEF7D);//e: 17]
             }
-            break;
+            break;//e: 17]
         }
         default:
             break;
     }
 }
 
-app_t *app_swd_probe_get_instance(void) {
-    s_app_swd.id            = APP_ID_CUSTOM_0;
-    s_app_swd.name          = "SWD调试器";
-    s_app_swd.init          = app_swd_init;
-    s_app_swd.enter         = app_swd_enter;
-    s_app_swd.exit          = app_swd_exit;
-    s_app_swd.update        = app_swd_update;
-    s_app_swd.process_touch = app_swd_process_touch;
-    s_app_swd.draw          = app_swd_draw;
-    return &s_app_swd;
+app_t *app_swd_probe_get_instance(void) {//e: 17]
+    s_app_swd.id            = APP_ID_CUSTOM_0;//e: 17]
+    s_app_swd.name          = "SWD调试器";//e: 17]
+    s_app_swd.init          = app_swd_init;//e: 17]
+    s_app_swd.enter         = app_swd_enter;//e: 17]
+    s_app_swd.exit          = app_swd_exit;//e: 17]
+    s_app_swd.update        = app_swd_update;//e: 17]
+    s_app_swd.process_touch = app_swd_process_touch;//e: 17]
+    s_app_swd.draw          = app_swd_draw;//e: 17]
+    return &s_app_swd;//e: 17]
 }
