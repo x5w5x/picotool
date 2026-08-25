@@ -437,8 +437,7 @@
 //     s_app_uart.process_touch = app_uart_process_touch;
 //     s_app_uart.draw          = app_uart_draw;
 //     return &s_app_uart;
-// }
-#include "app_uart_term.h"
+// }#include "app_uart_term.h"
 #include "app_manager.h"
 #include "ui_draw.h"
 #include "ui_btn.h"
@@ -457,16 +456,16 @@
 #include <stdio.h>
 
 #define UART_INST           uart0
-#define PIN_UART_TX         0   // GP0 (TX) -> 接 ML307R RXD
-#define PIN_UART_RX         1   // GP1 (RX) -> 接 ML307R TXD
+#define PIN_UART_TX         0   // GP0 (TX) -> 接 ML307R RXD[cite: 17]
+#define PIN_UART_RX         1   // GP1 (RX) -> 接 ML307R TXD[cite: 17]
 
-// ⚡ 2048 字节硬件 DMA 环形接收缓冲区 (按 2048 字节硬件严格对齐)
+// ⚡ 2048 字节硬件 DMA 环形接收缓冲区 (按 2048 字节硬件严格对齐)[cite: 17]
 #define RX_DMA_RING_SIZE    2048
 static uint8_t              s_rx_dma_ring[RX_DMA_RING_SIZE] __attribute__((aligned(RX_DMA_RING_SIZE)));
 static volatile uint16_t    s_rx_tail = 0;
 static int                  s_dma_rx_chan = -1;
 
-// 侧边栏 Tab 标签
+// 侧边栏 Tab 标签[cite: 17]
 static const char *s_uart_tabs[] = {
     "透传监视",
     "波特配置",
@@ -474,45 +473,45 @@ static const char *s_uart_tabs[] = {
 };
 #define TAB_COUNT (sizeof(s_uart_tabs) / sizeof(s_uart_tabs[0]))
 
-// 常用波特率预设表 (ML307R 默认为 115200)
+// 常用波特率预设表 (ML307R 默认为 115200)[cite: 17]
 static const uint32_t s_baud_table[] = {9600, 115200, 460800, 921600, 2000000};
 #define BAUD_TABLE_SIZE (sizeof(s_baud_table) / sizeof(s_baud_table[0]))
 
-// 运行模式枚举
+// 运行模式枚举[cite: 17]
 typedef enum {
-    UART_MODE_IDLE = 0,   // 0: 挂起待机
-    UART_MODE_BRIDGE,     // 1: USB ↔ GP0/GP1 双向透传
-    UART_MODE_ECHO        // 2: 硬件回显测试
+    UART_MODE_IDLE = 0,   // 0: 挂起待机[cite: 17]
+    UART_MODE_BRIDGE,     // 1: USB ↔ GP0/GP1 双向透传[cite: 17]
+    UART_MODE_ECHO        // 2: 硬件回显测试[cite: 17]
 } uart_work_mode_t;
 
 /* ================= 1. App 私有数据结构体 ================= */
 
 typedef struct {
-    ui_rect_t               dirty_rect;     // ⚠️ 必须放在第 1 位
-    ui_tabview_t            tabview;        // 侧边栏
-    uint8_t                 last_tab_idx;   // 上次 Tab 索引
+    ui_rect_t               dirty_rect;     // ⚠️ 必须放在第 1 位[cite: 17]
+    ui_tabview_t            tabview;        // 侧边栏[cite: 17]
+    uint8_t                 last_tab_idx;   // 上次 Tab 索引[cite: 17]
 
-    // ⚡ 双核跨核共享状态
+    // ⚡ 双核跨核共享状态[cite: 17]
     volatile uart_work_mode_t work_mode;
     volatile uint8_t        baud_idx;
-    volatile uint32_t       tx_bytes_cnt;   // USB 输入累计
-    volatile uint32_t       rx_bytes_cnt;   // USB 输出/回传累计
+    volatile uint32_t       tx_bytes_cnt;   // USB 输入累计[cite: 17]
+    volatile uint32_t       rx_bytes_cnt;   // USB 输出/回传累计[cite: 17]
 
-    // UI 刷新比对缓存
+    // UI 刷新比对缓存[cite: 17]
     uint32_t                last_ui_tx;
     uint32_t                last_ui_rx;
     uint32_t                last_stat_tick;
 
-    // Tab 0: 透传监视
+    // Tab 0: 透传监视[cite: 17]
     ui_switch_t             sw_bridge_en;
     ui_btn_t                btn_clear_cnt;
     ui_rect_t               stat_card;
 
-    // Tab 1: 波特率配置
+    // Tab 1: 波特率配置[cite: 17]
     ui_btn_t                btn_baud_next;
     ui_rect_t               baud_card;
 
-    // Tab 2: 硬件回显
+    // Tab 2: 硬件回显[cite: 17]
     ui_switch_t             sw_echo_en;
     ui_rect_t               echo_card;
 } app_uart_data_t;
@@ -528,7 +527,7 @@ static void app_uart_core1_worker(void) {
     while (1) {
         switch (data->work_mode) {
             case UART_MODE_BRIDGE: {
-                // ================= 通道 A: PC (USB CDC) -> ML307R (GP0 TX) =================
+                // ================= 通道 A: PC (USB CDC) -> ML307R (GP0 TX) =================[cite: 17]
                 int usb_ch;
                 while ((usb_ch = getchar_timeout_us(0)) != PICO_ERROR_TIMEOUT) {
                     while (!uart_is_writable(UART_INST)) {
@@ -538,8 +537,7 @@ static void app_uart_core1_worker(void) {
                     data->tx_bytes_cnt++;
                 }
 
-                // ================= 通道 B: 硬件 DMA 环形队列 -> PC (USB CDC) =================
-                // 计算当前 DMA 硬件写入游标 head
+                // ================= 通道 B: 硬件 DMA 环形队列 -> PC (USB CDC) =================[cite: 17]
                 uint16_t head = (uint16_t)((uintptr_t)dma_hw->ch[s_dma_rx_chan].write_addr - (uintptr_t)s_rx_dma_ring) % RX_DMA_RING_SIZE;
                 bool has_rx = false;
 
@@ -551,7 +549,7 @@ static void app_uart_core1_worker(void) {
                 }
 
                 if (has_rx) {
-                    stdio_flush(); // 强制刷出 USB 发送缓冲
+                    stdio_flush(); // 强制刷出 USB 发送缓冲[cite: 17]
                 }
                 break;
             }
@@ -637,7 +635,7 @@ static void app_uart_init(app_t *self) {
 
     data->dirty_rect      = ui_rect_make(0, 0, 0, 0);
     data->work_mode       = UART_MODE_BRIDGE;
-    data->baud_idx        = 1; // 默认 115200 (匹配 ML307R)
+    data->baud_idx        = 1; // 默认 115200 (匹配 ML307R)[cite: 17]
     data->tx_bytes_cnt    = 0;
     data->rx_bytes_cnt    = 0;
     data->last_ui_tx      = 0;
@@ -645,12 +643,12 @@ static void app_uart_init(app_t *self) {
     data->last_stat_tick  = 0;
     data->last_tab_idx    = 0;
 
-    // 1. 初始化 TabView
+    // 1. 初始化 TabView[cite: 17]
     ui_tabview_init(&data->tabview, 0, 32, LCD_WIDTH, LCD_HEIGHT - 32,
                     110, 48, s_uart_tabs, TAB_COUNT, 0, on_tab_changed);
     data->tabview.user_data = data;
 
-    // 2. Tab 0: 监视页控件 (默认开)
+    // 2. Tab 0: 监视页控件 (默认开)[cite: 17]
     data->stat_card = ui_rect_make(125, 48, 340, 100);
     ui_switch_init(&data->sw_bridge_en, 385, 168, 64, 32, true, on_bridge_switch);
     data->sw_bridge_en.user_data = data;
@@ -661,7 +659,7 @@ static void app_uart_init(app_t *self) {
     data->btn_clear_cnt.font_size = FONT_20;
     ui_btn_set_color(&data->btn_clear_cnt, 0xBF5E, 0x03DF, 0x1A7B);
 
-    // 3. Tab 1: 波特率配置
+    // 3. Tab 1: 波特率配置[cite: 17]
     data->baud_card = ui_rect_make(125, 48, 340, 90);
     ui_btn_init(&data->btn_baud_next, 175, 170, 240, 44, "切换下一档波特率", on_baud_next_click);
     data->btn_baud_next.user_data = data;
@@ -669,7 +667,7 @@ static void app_uart_init(app_t *self) {
     data->btn_baud_next.font_size = FONT_20;
     ui_btn_set_color(&data->btn_baud_next, 0xBF5E, 0x03DF, 0x1A7B);
 
-    // 4. Tab 2: 回显页控件 (默认关)
+    // 4. Tab 2: 回显页控件 (默认关)[cite: 17]
     data->echo_card = ui_rect_make(125, 48, 340, 100);
     ui_switch_init(&data->sw_echo_en, 385, 175, 64, 32, false, on_echo_switch);
     data->sw_echo_en.user_data = data;
@@ -678,10 +676,10 @@ static void app_uart_init(app_t *self) {
 static void app_uart_enter(app_t *self) {
     app_uart_data_t *data = (app_uart_data_t *)self->user_data;
 
-    // ⚡ 禁用 stdio 自动换行转义
+    // ⚡ 禁用 stdio 自动换行转义[cite: 17]
     stdio_set_translate_crlf(&stdio_usb, false);
 
-    // 1. 初始化 UART 硬件
+    // 1. 初始化 UART 硬件[cite: 17]
     uart_init(UART_INST, s_baud_table[data->baud_idx]);
     gpio_set_function(PIN_UART_TX, GPIO_FUNC_UART);
     gpio_set_function(PIN_UART_RX, GPIO_FUNC_UART);
@@ -691,12 +689,12 @@ static void app_uart_enter(app_t *self) {
     uart_set_format(UART_INST, 8, 1, UART_PARITY_NONE);
     uart_set_fifo_enabled(UART_INST, true);
 
-    // 清空硬件 FIFO
+    // 清空硬件 FIFO[cite: 17]
     while (uart_is_readable(UART_INST)) {
         (void)uart_getc(UART_INST);
     }
 
-    // 2. ⚡ 配置并启动硬件 DMA 接收通道 (2048 字节硬件自动环绕)
+    // 2. ⚡ 配置并启动硬件 DMA 接收通道 (2048 字节硬件自动环绕)[cite: 17]
     s_rx_tail = 0;
     if (s_dma_rx_chan < 0) {
         s_dma_rx_chan = dma_claim_unused_channel(true);
@@ -704,21 +702,21 @@ static void app_uart_enter(app_t *self) {
 
     dma_channel_config c = dma_channel_get_default_config(s_dma_rx_chan);
     channel_config_set_transfer_data_size(&c, DMA_SIZE_8);
-    channel_config_set_read_increment(&c, false);                                   // 固定读 UART0 DR
-    channel_config_set_write_increment(&c, true);                                  // 写入递增
-    channel_config_set_ring(&c, true, 11);                                         // 2^11 = 2048 字节硬件自动环绕
-    channel_config_set_dreq(&c, uart_get_dreq(UART_INST, false));                  // UART0 RX 请求信号
+    channel_config_set_read_increment(&c, false);                                   // 固定读 UART0 DR[cite: 17]
+    channel_config_set_write_increment(&c, true);                                  // 写入递增[cite: 17]
+    channel_config_set_ring(&c, true, 11);                                         // 2^11 = 2048 字节硬件自动环绕[cite: 17]
+    channel_config_set_dreq(&c, uart_get_dreq(UART_INST, false));                  // UART0 RX 请求信号[cite: 17]
 
     dma_channel_configure(
         s_dma_rx_chan,
         &c,
-        s_rx_dma_ring,                                                             // 目标缓冲区
-        &uart_get_hw(UART_INST)->dr,                                               // 数据源
-        0xFFFFFFFF,                                                                // 持续运行
-        true                                                                       // 立即使能
+        s_rx_dma_ring,                                                             // 目标缓冲区[cite: 17]
+        &uart_get_hw(UART_INST)->dr,                                               // 数据源[cite: 17]
+        0xFFFFFFFF,                                                                // 持续运行[cite: 17]
+        true                                                                       // 立即使能[cite: 17]
     );
 
-    // 3. ⚡ 点火 Core 1 专核
+    // 3. ⚡ 点火 Core 1 专核[cite: 17]
     multicore_reset_core1();
     multicore_launch_core1(app_uart_core1_worker);
 }
@@ -726,62 +724,72 @@ static void app_uart_enter(app_t *self) {
 static void app_uart_exit(app_t *self) {
     (void)self;
 
-    // 1. 复位 Core 1
+    // 1. 复位 Core 1[cite: 17]
     multicore_reset_core1();
 
-    // 2. 释放 DMA 通道
+    // 2. 释放 DMA 通道[cite: 17]
     if (s_dma_rx_chan >= 0) {
         dma_channel_abort(s_dma_rx_chan);
         dma_channel_unclaim(s_dma_rx_chan);
         s_dma_rx_chan = -1;
     }
 
-    // 3. 释放 UART 外设与引脚
+    // 3. 释放 UART 外设与引脚[cite: 17]
     uart_deinit(UART_INST);
     gpio_set_function(PIN_UART_TX, GPIO_FUNC_NULL);
     gpio_set_function(PIN_UART_RX, GPIO_FUNC_NULL);
 }
 
-/* ================= 5. 事件驱动 + 50ms 节流快速刷新 ================= */
+/* ================= 5. ⚡ 核心刷新：硬件时间戳节流 + 脏区自动清空闭环 ================= */
 
 static void app_uart_update(app_t *self, uint32_t now_tick) {
+    (void)now_tick;
     app_uart_data_t *data = (app_uart_data_t *)self->user_data;
 
-    bool data_changed = (data->tx_bytes_cnt != data->last_ui_tx) || 
-                        (data->rx_bytes_cnt != data->last_ui_rx);
+    // ⚡ 1. 每帧开始时清空脏矩形，防止上一帧残留导致死循环渲染
+    data->dirty_rect = ui_rect_make(0, 0, 0, 0);
 
-    if (data_changed && (now_tick - data->last_stat_tick >= 50)) {
-        data->last_stat_tick = now_tick;
-        data->last_ui_tx     = data->tx_bytes_cnt;
-        data->last_ui_rx     = data->rx_bytes_cnt;
+    // ⚡ 2. 硬件绝对时间 100ms (10 FPS) 节流检测
+    uint32_t now_ms = to_ms_since_boot(get_absolute_time());
 
-        if (data->tabview.active_tab_idx == 0) {
-            data->dirty_rect = data->stat_card;
-        } else if (data->tabview.active_tab_idx == 2) {
-            data->dirty_rect = data->echo_card;
+    if (now_ms - data->last_stat_tick >= 100) {
+        bool data_changed = (data->tx_bytes_cnt != data->last_ui_tx) || 
+                            (data->rx_bytes_cnt != data->last_ui_rx);
+
+        if (data_changed) {
+            data->last_stat_tick = now_ms;
+            data->last_ui_tx     = data->tx_bytes_cnt;
+            data->last_ui_rx     = data->rx_bytes_cnt;
+
+            // ⚡ 3. 产生待重绘卡片脏矩形
+            if (data->tabview.active_tab_idx == 0) {
+                data->dirty_rect = data->stat_card;
+            } else if (data->tabview.active_tab_idx == 2) {
+                data->dirty_rect = data->echo_card;
+            }
         }
     }
 }
 
-/* ================= 6. 触控分发 ================= */
+/* ================= 6. ⚡ 触控分发与主动渲染触发 ================= */
 
 static bool app_uart_process_touch(app_t *self, bool is_touching, int16_t tx, int16_t ty, uint32_t now_tick) {
     app_uart_data_t *data = (app_uart_data_t *)self->user_data;
 
-    // 1. 侧边栏触控
+    // 1. 侧边栏触控[cite: 17]
     if (ui_tabview_process_touch(&data->tabview, is_touching, tx, ty, now_tick)) {
         if (data->tabview.active_tab_idx != data->last_tab_idx) {
             data->last_tab_idx = data->tabview.active_tab_idx;
-            data->dirty_rect   = data->tabview.rect; // 全工作区重绘
+            data->dirty_rect   = data->tabview.rect; // 全工作区重绘[cite: 17]
         } else {
             data->dirty_rect   = ui_tabview_get_bar_dirty_rect(&data->tabview);
         }
         return true;
     }
 
-    // 2. 当前 Tab 控件事件
+    // 2. 当前 Tab 控件事件[cite: 17]
     switch (data->tabview.active_tab_idx) {
-        case 0: { // 监视页
+        case 0: { // 监视页[cite: 17]
             bool sw_act  = ui_switch_process_touch(&data->sw_bridge_en, is_touching, tx, ty, now_tick);
             bool clr_act = ui_btn_process_touch(&data->btn_clear_cnt, is_touching, tx, ty, now_tick);
 
@@ -794,7 +802,7 @@ static bool app_uart_process_touch(app_t *self, bool is_touching, int16_t tx, in
             break;
         }
 
-        case 1: { // 波特率页
+        case 1: { // 波特率页[cite: 17]
             if (ui_btn_process_touch(&data->btn_baud_next, is_touching, tx, ty, now_tick)) {
                 ui_rect_t b_dirty = ui_btn_get_dirty_rect(&data->btn_baud_next);
                 ui_rect_union(&b_dirty, &data->baud_card, &data->dirty_rect);
@@ -803,7 +811,7 @@ static bool app_uart_process_touch(app_t *self, bool is_touching, int16_t tx, in
             break;
         }
 
-        case 2: { // 回显页
+        case 2: { // 回显页[cite: 17]
             if (ui_switch_process_touch(&data->sw_echo_en, is_touching, tx, ty, now_tick)) {
                 ui_rect_t s_dirty = ui_switch_get_dirty_rect(&data->sw_echo_en);
                 ui_rect_union(&s_dirty, &data->echo_card, &data->dirty_rect);
@@ -811,6 +819,11 @@ static bool app_uart_process_touch(app_t *self, bool is_touching, int16_t tx, in
             }
             break;
         }
+    }
+
+    // ⚡ 核心闭环：如果 update() 产生脏矩形，无论是否有按压都返回 true 启动主循环单次局部渲染
+    if (data->dirty_rect.w > 0 && data->dirty_rect.h > 0) {
+        return true;
     }
 
     return false;
@@ -822,16 +835,16 @@ static void app_uart_draw(app_t *self, ui_tile_t *tile) {
     app_uart_data_t *data = (app_uart_data_t *)self->user_data;
     ui_rect_t overlap;
 
-    // 1. 绘制白底背景
+    // 1. 绘制白底背景[cite: 17]
     ui_rect_t body = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
     if (ui_rect_intersect(&tile->rect, &body, &overlap)) {
         ui_draw_fill_rect(tile, &overlap, 0xFFFF);
     }
 
-    // 2. 绘制 TabView 侧边栏
+    // 2. 绘制 TabView 侧边栏[cite: 17]
     ui_tabview_draw(tile, &data->tabview);
 
-    // 3. 右侧内容区切片测试
+    // 3. 右侧内容区切片测试[cite: 17]
     if (!ui_rect_intersect(&tile->rect, &data->tabview.content_rect, &overlap)) {
         return;
     }
@@ -839,7 +852,7 @@ static void app_uart_draw(app_t *self, ui_tile_t *tile) {
     char str_buf[64];
 
     switch (data->tabview.active_tab_idx) {
-        case 0: { // 监视页
+        case 0: { // 监视页[cite: 17]
             if (ui_rect_intersect(&tile->rect, &data->stat_card, &overlap)) {
                 ui_draw_fill_rect(tile, &overlap, 0xEF7D);
                 ui_draw_rect(tile, &data->stat_card, 0xC618);
@@ -866,7 +879,7 @@ static void app_uart_draw(app_t *self, ui_tile_t *tile) {
             break;
         }
 
-        case 1: { // 波特率页
+        case 1: { // 波特率页[cite: 17]
             if (ui_rect_intersect(&tile->rect, &data->baud_card, &overlap)) {
                 ui_draw_fill_rect(tile, &overlap, 0xEF7D);
                 ui_draw_rect(tile, &data->baud_card, 0xC618);
@@ -886,7 +899,7 @@ static void app_uart_draw(app_t *self, ui_tile_t *tile) {
             break;
         }
 
-        case 2: { // 回显页
+        case 2: { // 回显页[cite: 17]
             if (ui_rect_intersect(&tile->rect, &data->echo_card, &overlap)) {
                 ui_draw_fill_rect(tile, &overlap, 0xEF7D);
                 ui_draw_rect(tile, &data->echo_card, 0xC618);
