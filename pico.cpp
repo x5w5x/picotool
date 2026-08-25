@@ -33,6 +33,7 @@
 #include "app_led.h"
 #include "app_template.h"
 #include "app_uart_term.h"
+#include "app_swd_probe.h"
 #define LED_PIN PICO_DEFAULT_LED_PIN
 
 // 屏幕物理背景色: 纯白 (0xFFFF)
@@ -117,6 +118,7 @@ void app_ui_custom_init(void) {
     app_manager_register(&g_app_mgr, app_template_get_instance()); 
     
     app_manager_register(&g_app_mgr, app_uart_term_get_instance()); 
+    app_manager_register(&g_app_mgr, app_swd_probe_get_instance()); 
     
 
     // 3. 初始化顶部状态栏 (X:0, Y:0, W:480, H:32)

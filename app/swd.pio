@@ -1,0 +1,20 @@
+.program swd_raw
+.side_set 1 opt
+
+; 采用 Side-set 控制 SWCLK 引脚 (bit 0)
+; 数据在 SWCLK 下降沿改变，上升沿由目标芯片采样
+
+.wrap_target
+public bit_out:
+    out pins, 1         side 0 [1]   ; SWCLK=0, 输出数据保持
+    nop                 side 1 [2]   ; SWCLK=1, 产生时钟上升沿
+.wrap
+
+.program swd_in
+.side_set 1 opt
+
+.wrap_target
+public bit_in:
+    nop                 side 0 [1]   ; SWCLK=0
+    in pins, 1          side 1 [2]   ; SWCLK=1, 采样 SWDIO
+.wrap

@@ -324,9 +324,6 @@ PICO_STDIO_USB:BOOL=OFF
 //No help, variable specified on the command line.
 Python3_EXECUTABLE:UNINITIALIZED=c:/Users/xwx/AppData/Local/Programs/Python/Python312/python.exe
 
-//Path to a program.
-_uigeom_gcc_exe:FILEPATH=C:/Users/xwx/.eide/tools/gcc_arm/bin/arm-none-eabi-gcc.exe
-
 //Value Computed by CMake
 pico_BINARY_DIR:STATIC=E:/pico/pico/build
 
