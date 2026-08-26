@@ -17,6 +17,7 @@ add_library(appmgr STATIC
     usb_descriptors.c   
     msc_disk.c 
     app_sd_msc.c
+    swd_flasher.c
 )
 
 target_include_directories(appmgr PUBLIC

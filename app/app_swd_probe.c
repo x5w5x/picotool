@@ -57,8 +57,6 @@ typedef struct {
     ui_rect_t       dirty_rect;
     ui_tabview_t    tabview;
     swd_dev_state_t state;
-
-    // ⚡ 时钟变更监控缓存
     uint32_t        last_dap_clock_hz;
 
     ui_btn_t        btn_probe;
@@ -74,6 +72,38 @@ typedef struct {
 static app_swd_data_t s_swd_data;
 static app_t          s_app_swd;
 static volatile uint32_t s_swd_delay_cnt = 25;
+static volatile uint8_t  s_last_write_ack = 0;
+static volatile uint8_t  s_last_read_ack  = 0;
+
+static void     SWD_LineReset(void);
+static uint8_t  SWD_Trans_Robust(uint8_t req, uint32_t *dat, uint8_t rd);
+static uint8_t  Gen_Req(uint8_t is_ap, uint8_t is_read, uint8_t addr_2_3);
+static uint8_t  Target_PowerUp(void);
+
+uint8_t target_get_write_ack(void) { return s_last_write_ack; }
+uint8_t target_get_read_ack(void)  { return s_last_read_ack; }
+void    target_set_swd_delay(uint8_t d) { s_swd_delay_cnt = d; }
+
+bool target_swd_init(void) {
+    gpio_init(PIN_SWCLK); gpio_init(PIN_SWDIO);
+    gpio_set_dir(PIN_SWCLK, GPIO_OUT); gpio_set_dir(PIN_SWDIO, GPIO_OUT);
+    gpio_put(PIN_SWCLK, 1); gpio_put(PIN_SWDIO, 1);
+    gpio_pull_up(PIN_SWDIO);
+    sleep_ms(20);
+
+    s_swd_delay_cnt = 25;
+    for (int i = 0; i < 5; i++) { SWD_LineReset(); sleep_ms(2); }
+
+    uint32_t id = 0;
+    if (SWD_Trans_Robust(Gen_Req(0, 1, 0x00), &id, 1) != 1 || id == 0) {
+        return false;
+    }
+    if (!Target_PowerUp()) {
+        return false;
+    }
+    s_swd_delay_cnt = 2;
+    return true;
+}
 
 static inline ui_rect_t rect_union_box(ui_rect_t a, ui_rect_t b) {
     if (a.w == 0 || a.h == 0) return b;
@@ -100,7 +130,6 @@ static inline void SWD_Delay(void) {
 static inline void SWDIO_OUT(void) { gpio_set_dir(PIN_SWDIO, GPIO_OUT); }
 static inline void SWDIO_IN(void)  { gpio_set_dir(PIN_SWDIO, GPIO_IN); gpio_pull_up(PIN_SWDIO); }
 
-// ⚡ 原始标准 SWD 写位时序
 static void SWD_WriteBit(uint8_t bit) {
     if (bit) SWDIO_HIGH(); else SWDIO_LOW();
     SWD_Delay();
@@ -109,7 +138,6 @@ static void SWD_WriteBit(uint8_t bit) {
     SWCLK_HIGH();
 }
 
-// ⚡ 原始标准 SWD 读位时序 (低电平采样)
 static uint8_t SWD_ReadBit(void) {
     uint8_t bit;
     SWCLK_LOW();
@@ -217,15 +245,38 @@ static uint8_t Target_PowerUp(void) {
     return 0;
 }
 
-static void Target_Write(uint32_t addr, uint32_t val) {
+void Target_Write(uint32_t addr, uint32_t val) {
     uint32_t tmp = 0;
     tmp = 0x00000000; SWD_Trans_Robust(Gen_Req(0, 0, 0x08), &tmp, 0);
     tmp = 0x23000002; SWD_Trans_Robust(Gen_Req(1, 0, 0x00), &tmp, 0);
     tmp = addr;       SWD_Trans_Robust(Gen_Req(1, 0, 0x04), &tmp, 0);
-    SWD_Trans_Robust(Gen_Req(1, 0, 0x0C), &val, 0);
+    if (SWD_Trans_Robust(Gen_Req(1, 0, 0x0C), &val, 0) != 1) {
+        s_last_write_ack = 2;
+    } else {
+        s_last_write_ack = 1;
+    }
 }
 
-static uint32_t Target_Read(uint32_t addr) {
+// ⚡ 核心修复：添加 ARM CoreSight Byte-Lane 字节通道对齐
+void Target_WriteHalf(uint32_t addr, uint16_t val16) {
+    uint32_t tmp = 0;
+    SWD_Trans_Robust(Gen_Req(0, 0, 0x08), &tmp, 0);          // SELECT=0
+    tmp = 0x23000001; SWD_Trans_Robust(Gen_Req(1, 0, 0x00), &tmp, 0); // CSW=16-bit
+    tmp = addr;       SWD_Trans_Robust(Gen_Req(1, 0, 0x04), &tmp, 0); // TAR=addr
+
+    // 当 addr & 2 != 0 时，数据必须放置在 DRW[31:16]
+    uint32_t drw = (addr & 2) ? ((uint32_t)val16 << 16) : (uint32_t)val16;
+
+    if (SWD_Trans_Robust(Gen_Req(1, 0, 0x0C), &drw, 0) != 1) {
+        s_last_write_ack = 2;
+    } else {
+        s_last_write_ack = 1;
+    }
+    // 恢复 32-bit CSW
+    tmp = 0x23000002; SWD_Trans_Robust(Gen_Req(1, 0, 0x00), &tmp, 0);
+}
+
+uint32_t Target_Read(uint32_t addr) {
     uint32_t tmp = 0, val = 0;
     tmp = 0x00000000; SWD_Trans_Robust(Gen_Req(0, 0, 0x08), &tmp, 0);
     tmp = 0x23000002; SWD_Trans_Robust(Gen_Req(1, 0, 0x00), &tmp, 0);
@@ -272,28 +323,16 @@ static void swd_decode_target(swd_dev_state_t *t) {
 
 static bool swd_probe_target(swd_dev_state_t *t) {
     memset(t, 0, sizeof(swd_dev_state_t));
-    gpio_init(PIN_SWCLK); gpio_init(PIN_SWDIO);
-    gpio_set_dir(PIN_SWCLK, GPIO_OUT); gpio_set_dir(PIN_SWDIO, GPIO_OUT);
-    SWCLK_HIGH(); SWDIO_HIGH(); gpio_pull_up(PIN_SWDIO);
-    sleep_ms(20);
-
-    s_swd_delay_cnt = 25;
-    for (int i = 0; i < 5; i++) { SWD_LineReset(); sleep_ms(2); }
-
-    uint32_t target_id = 0;
-    if (SWD_Trans_Robust(Gen_Req(0, 1, 0x00), &target_id, 1) != 1 || target_id == 0) {
+    if (!target_swd_init()) {
         strcpy(t->diag_msg, "未收到 ACK 应答 / 未接通");
         return false;
     }
 
+    uint32_t target_id = 0;
+    SWD_Trans_Robust(Gen_Req(0, 1, 0x00), &target_id, 1);
     t->dp_idcode = target_id;
-    if (!Target_PowerUp()) {
-        t->target_connected = true;
-        strcpy(t->chip_model, "DP在线 但 Power-Up 失败");
-        return true;
-    }
 
-    s_swd_delay_cnt = 2; // 提速至稳定读写
+    s_swd_delay_cnt = 2;
     Target_Write(0xE000EDF0, 0xA05F0003);
     sleep_ms(1);
     t->cpuid = Target_Read(REG_CPUID);
@@ -383,7 +422,6 @@ static void on_erase_click(ui_btn_t *btn, void *user_data) {
     data->dirty_rect = data->tabview.content_rect;
 }
 
-// ⚡ 核心优化：启动时硬件预加电 + 提前同步时钟，防止首包握手被打断
 static void on_toggle_dap_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_swd_data_t *data = (app_swd_data_t *)user_data;
@@ -398,27 +436,21 @@ static void on_toggle_dap_click(ui_btn_t *btn, void *user_data) {
         SWDIO_HIGH();
         gpio_pull_up(PIN_SWDIO);
 
-        // 1. 硬件预加电与 CoreSight 激活
         s_swd_delay_cnt = 25;
         for (int i = 0; i < 3; i++) {
             SWD_LineReset();
             sleep_ms(1);
         }
         Target_PowerUp();
-
-        // 2. 提前同步当前时钟基准
         data->last_dap_clock_hz = g_dap_cur_clock_hz;
 
         tud_connect();
-
         data->btn_toggle_dap.text = "停止 DAP 联机";
         ui_btn_set_color(&data->btn_toggle_dap, 0xF800, 0xB000, 0xFFFF);
     } else {
         tud_disconnect();
-
         gpio_set_dir(PIN_SWCLK, GPIO_IN);
         gpio_set_dir(PIN_SWDIO, GPIO_IN);
-
         data->btn_toggle_dap.text = "启动 DAP 联机调试";
         ui_btn_set_color(&data->btn_toggle_dap, 0x05E0, 0x03E0, 0xFFFF);
     }
@@ -432,11 +464,7 @@ static void on_tab_change(ui_tabview_t *tv, uint8_t old_tab, uint8_t new_tab, vo
 }
 
 static const char *s_tab_titles[TAB_COUNT] = {
-    "芯片探测",
-    "内核控制",
-    "闪存管理",
-    "DAP联机",
-    "接线说明"
+    "芯片探测", "内核控制", "闪存管理", "DAP联机", "接线说明"
 };
 
 static void app_swd_init(app_t *self) {
@@ -505,35 +533,27 @@ static void app_swd_exit(app_t *self) {
     }
 }
 
-/* ================= 5. ⚡ 仅在时钟发生有效突变时刷新单行微区域 ================= */
-
 static void app_swd_update(app_t *self, uint32_t now_tick) {
     (void)now_tick;
     app_swd_data_t *data = (app_swd_data_t *)self->user_data;
-
     data->dirty_rect = ui_rect_make(0, 0, 0, 0);
 
     if (data->tabview.active_tab_idx == TAB_DAP && g_dap_enabled) {
         if (g_dap_cur_clock_hz != data->last_dap_clock_hz) {
             data->last_dap_clock_hz = g_dap_cur_clock_hz;
-            // 仅标记频率显示单行 (X:130, Y:80, W:300, H:28)
             data->dirty_rect = ui_rect_make(130, 80, 300, 28);
         }
     }
 }
 
-/* ================= 6. 触控分发与主动渲染触发 ================= */
-
 static bool app_swd_process_touch(app_t *self, bool is_touching, int16_t tx, int16_t ty, uint32_t now_tick) {
     app_swd_data_t *data = (app_swd_data_t *)self->user_data;
 
-    // 1. 侧边栏触控
     if (ui_tabview_process_touch(&data->tabview, is_touching, tx, ty, now_tick)) {
         data->dirty_rect = rect_union_box(data->dirty_rect, ui_tabview_get_bar_dirty_rect(&data->tabview));
         return true;
     }
 
-    // 2. 当前 Tab 控件事件
     bool handled = false;
     switch (data->tabview.active_tab_idx) {
         case TAB_PROBE:
@@ -552,22 +572,11 @@ static bool app_swd_process_touch(app_t *self, bool is_touching, int16_t tx, int
         case TAB_DAP:
             if (ui_btn_process_touch(&data->btn_toggle_dap, is_touching, tx, ty, now_tick)) handled = true;
             break;
-        default:
-            break;
+        default: break;
     }
 
-    if (handled) {
-        return true;
-    }
-
-    if (data->dirty_rect.w > 0 && data->dirty_rect.h > 0) {
-        return true;
-    }
-
-    return false;
+    return handled || (data->dirty_rect.w > 0 && data->dirty_rect.h > 0);
 }
-
-/* ================= 7. 切片光栅化渲染 ================= */
 
 static void app_swd_draw(app_t *self, ui_tile_t *tile) {
     app_swd_data_t *data = (app_swd_data_t *)self->user_data;
@@ -675,8 +684,7 @@ static void app_swd_draw(app_t *self, ui_tile_t *tile) {
             }
             break;
         }
-        default:
-            break;
+        default: break;
     }
 }
 

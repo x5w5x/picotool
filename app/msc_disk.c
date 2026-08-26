@@ -4,9 +4,30 @@
  */
 #include "tusb.h"
 #include "tf.h"
+#include "pico/time.h"
 #include <string.h>
+#include <stdbool.h>
 
 static bool s_msc_ready = false;
+
+// ⚡ 拖拽传输监听状态
+static volatile uint64_t s_last_msc_write_us = 0;
+static volatile bool     s_msc_has_written   = false;
+
+bool msc_disk_check_write_completed(uint32_t quiet_ms) {
+    if (!s_msc_has_written) return false;
+    uint64_t now = time_us_64();
+    if ((now - s_last_msc_write_us) > ((uint64_t)quiet_ms * 1000ULL)) {
+        s_msc_has_written = false;
+        return true;
+    }
+    return false;
+}
+
+void msc_disk_reset_write_state(void) {
+    s_msc_has_written = false;
+    s_last_msc_write_us = 0;
+}
 
 // 1. 电脑端查询设备信息 (Inquiry)
 void tud_msc_inquiry_cb(uint8_t lun, uint8_t vendor_id[8], uint8_t product_id[16], uint8_t product_rev[4]) {
@@ -23,7 +44,6 @@ void tud_msc_inquiry_cb(uint8_t lun, uint8_t vendor_id[8], uint8_t product_id[16
 // 2. 检查单元就绪状态 (Test Unit Ready)
 bool tud_msc_test_unit_ready_cb(uint8_t lun) {
     (void)lun;
-    // 当 App 开启 U 盘模式且底层 TF 卡就绪时返回 true
     return s_msc_ready && TF_IsReady();
 }
 
@@ -68,13 +88,15 @@ int32_t tud_msc_write10_cb(uint8_t lun, uint32_t lba, uint32_t offset, uint8_t *
 
     uint32_t count = bufsize / TF_BLOCK_SIZE;
     if (TF_WriteBlocks(lba, (const uint8_t *)buffer, count) == TF_OK) {
+        s_last_msc_write_us = time_us_64();
+        s_msc_has_written   = true;
         return (int32_t)bufsize;
     }
 
     return -1;
 }
 
-// 6. SCSI 指令未处理透传 (可选安全兜底)
+// 6. SCSI 指令未处理透传
 int32_t tud_msc_scsi_cb(uint8_t lun, uint8_t const scsi_cmd[16], void *buffer, uint16_t bufsize) {
     (void)lun;
     (void)scsi_cmd;
