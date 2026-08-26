@@ -44,6 +44,7 @@ if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   include("E:/pico/pico/build/Drivers/cmake_install.cmake")
   include("E:/pico/pico/build/ui/cmake_install.cmake")
   include("E:/pico/pico/build/app/cmake_install.cmake")
+  include("E:/pico/pico/build/fatfs/cmake_install.cmake")
 
 endif()
 

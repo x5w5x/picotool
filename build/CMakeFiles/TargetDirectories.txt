@@ -213,3 +213,6 @@ E:/pico/pico/build/ui/CMakeFiles/rebuild_cache.dir
 E:/pico/pico/build/app/CMakeFiles/appmgr.dir
 E:/pico/pico/build/app/CMakeFiles/edit_cache.dir
 E:/pico/pico/build/app/CMakeFiles/rebuild_cache.dir
+E:/pico/pico/build/fatfs/CMakeFiles/FatFs_SPI.dir
+E:/pico/pico/build/fatfs/CMakeFiles/edit_cache.dir
+E:/pico/pico/build/fatfs/CMakeFiles/rebuild_cache.dir

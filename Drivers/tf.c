@@ -1,7 +1,7 @@
 #include "tf.h"
 #include "board_pins.h"
 #include "spi_bus.h"
-#include "lcd.h"            // 新增：引入 LCD_WaitDMA() 保证总线安全
+#include "lcd.h"
 
 #include "hardware/spi.h"
 #include "hardware/gpio.h"
@@ -31,7 +31,8 @@
 #define R1_IDLE           (1 << 0)
 #define R1_ILLEGAL_CMD    (1 << 2)
 
-static uint8_t tf_ready = 0;
+static uint8_t tf_ready  = 0;
+static uint8_t card_type = TF_CT_NONE;
 
 static inline uint8_t tf_xchg(uint8_t b)
 {
@@ -48,7 +49,7 @@ static inline void tf_cs_select(void)
 static inline void tf_cs_release(void)
 {
     gpio_put(PIN_TF_CS, 1);
-    tf_xchg(0xFF); // 补充 8 个 Dummy 时钟，使 SD 卡彻底释放 MISO 进入高阻态
+    tf_xchg(0xFF); // 补充 8 个 Dummy 时钟，使 SD 卡彻底释放 MISO
 }
 
 static int tf_wait_ready(uint32_t timeout_ms)
@@ -103,6 +104,7 @@ int TF_Init(void)
 {
     uint8_t r1;
     uint32_t t0;
+    card_type = TF_CT_NONE;
 
     LCD_WaitDMA(); // 确保 LCD 的 DMA 搬运已彻底完成
 
@@ -117,20 +119,16 @@ int TF_Init(void)
         gpio_set_function(PIN_SPI_MOSI, GPIO_FUNC_SPI);
         gpio_set_function(PIN_SPI_MISO, GPIO_FUNC_SPI);
     }
-
-    // 开启 MISO 弱上拉，防止总线悬空读回 0x00
     gpio_pull_up(PIN_SPI_MISO);
 
-    // 1. 降频至 300kHz
+    // 1. 降频至 300kHz 并发送 74+ 个脉冲
     SPI_Bus_SetBaud(TF_INIT_BAUD);
-
-    // 2. 发送至少 74 个时钟脉冲同步
     gpio_put(PIN_TF_CS, 1);
     for (int i = 0; i < 20; i++) {
         tf_xchg(0xFF);
     }
 
-    // 3. 循环发送 CMD0 尝试进入 SPI 模式
+    // 2. CMD0 进入 SPI 模式
     uint8_t retry = 0;
     do {
         r1 = tf_send_cmd(CMD0, 0, 0x95);
@@ -144,33 +142,25 @@ int TF_Init(void)
         return TF_ERR_INIT;
     }
 
-    // 4. CMD8 接口条件检测
+    // 3. CMD8 判别卡版本
+    uint8_t is_v2 = 0;
     r1 = tf_send_cmd(CMD8, 0x000001AA, 0x87);
-    if (r1 & R1_ILLEGAL_CMD) {
+    if (r1 == R1_IDLE) {
+        uint8_t r7[4];
+        for (int i = 0; i < 4; i++) r7[i] = tf_xchg(0xFF);
         tf_cs_release();
-        SPI_Bus_High();
-        return TF_ERR_INIT;
-    } else if (r1 != R1_IDLE) {
+        if (r7[2] == 0x01 && r7[3] == 0xAA) {
+            is_v2 = 1;
+        }
+    } else {
         tf_cs_release();
-        SPI_Bus_High();
-        return TF_ERR_INIT;
     }
 
-    uint8_t r7[4];
-    for (int i = 0; i < 4; i++) {
-        r7[i] = tf_xchg(0xFF);
-    }
-    tf_cs_release();
-
-    if (r7[2] != 0x01 || r7[3] != 0xAA) {
-        SPI_Bus_High();
-        return TF_ERR_INIT;
-    }
-
-    // 5. 循环 ACMD41 初始化卡片
+    // 4. ACMD41 激活卡片
     t0 = to_ms_since_boot(get_absolute_time());
+    uint32_t acmd_arg = is_v2 ? 0x40000000 : 0x00000000;
     do {
-        r1 = tf_send_acmd(ACMD41, 0x40000000, 0xFF);
+        r1 = tf_send_acmd(ACMD41, acmd_arg, 0xFF);
         tf_cs_release();
         if (r1 == 0) break;
         if (to_ms_since_boot(get_absolute_time()) - t0 > 1500) {
@@ -180,19 +170,20 @@ int TF_Init(void)
         sleep_ms(10);
     } while (1);
 
-    // 6. CMD58 检查 OCR
-    r1 = tf_send_cmd(CMD58, 0, 0xFF);
-    if (r1 != 0) {
+    // 5. 若为 V2 卡，通过 CMD58 读取 OCR 判断 SDHC/SDXC 还是 SDSC
+    if (is_v2) {
+        r1 = tf_send_cmd(CMD58, 0, 0xFF);
+        if (r1 == 0) {
+            uint8_t ocr[4];
+            for (int i = 0; i < 4; i++) ocr[i] = tf_xchg(0xFF);
+            card_type = (ocr[0] & 0x40) ? TF_CT_SD2_HC : TF_CT_SD2_SC;
+        }
         tf_cs_release();
-        SPI_Bus_High();
-        return TF_ERR_INIT;
+    } else {
+        card_type = TF_CT_SD1;
     }
-    for (int i = 0; i < 4; i++) {
-        tf_xchg(0xFF);
-    }
-    tf_cs_release();
 
-    // 7. CMD16 锁定 512 字节块大小
+    // 6. 锁定 512 字节块大小
     r1 = tf_send_cmd(CMD16, TF_BLOCK_SIZE, 0xFF);
     tf_cs_release();
     if (r1 != 0) {
@@ -201,7 +192,7 @@ int TF_Init(void)
     }
 
     tf_ready = 1;
-    SPI_Bus_High(); // 还原 62.5MHz 给屏幕与 Flash
+    SPI_Bus_High(); // 还原高速给屏幕与 Flash
     return TF_OK;
 }
 
@@ -243,6 +234,75 @@ int TF_ReadCID(uint8_t buf[16])
     return TF_OK;
 }
 
+int TF_ReadCSD(uint8_t buf[16])
+{
+    if (!tf_ready) return TF_ERR_INIT;
+
+    LCD_WaitDMA();
+    SPI_Bus_TF();
+
+    uint8_t r1 = tf_send_cmd(CMD9, 0, 0xFF);
+    if (r1 != 0) {
+        tf_cs_release();
+        SPI_Bus_High();
+        return TF_ERR_CMD;
+    }
+
+    uint8_t tok = 0xFF;
+    for (int i = 0; i < 500; i++) {
+        tok = tf_xchg(0xFF);
+        if (tok == 0xFE) break;
+    }
+
+    if (tok != 0xFE) {
+        tf_cs_release();
+        SPI_Bus_High();
+        return TF_ERR_READ;
+    }
+
+    for (int i = 0; i < 16; i++) {
+        buf[i] = tf_xchg(0xFF);
+    }
+    tf_xchg(0xFF);
+    tf_xchg(0xFF);
+    tf_cs_release();
+
+    SPI_Bus_High();
+    return TF_OK;
+}
+
+int TF_GetSectors(uint32_t *sectors)
+{
+    if (!sectors) return TF_ERR_CMD;
+
+    uint8_t csd[16];
+    int rc = TF_ReadCSD(csd);
+    if (rc != TF_OK) return rc;
+
+    // CSD Structure: csd[0] 7:6
+    if ((csd[0] >> 6) == 1) {
+        // CSD Version 2.0 (SDHC / SDXC)
+        uint32_t c_size = ((uint32_t)(csd[7] & 0x3F) << 16) |
+                          ((uint32_t)csd[8] << 8) |
+                          (uint32_t)csd[9];
+        *sectors = (c_size + 1) * 1024;
+    } else {
+        // CSD Version 1.0 (SDSC)
+        uint32_t c_size = ((uint32_t)(csd[6] & 0x03) << 10) |
+                          ((uint32_t)csd[7] << 2) |
+                          ((uint32_t)(csd[8] & 0xC0) >> 6);
+        uint32_t c_size_mult = ((uint32_t)(csd[9] & 0x03) << 1) |
+                               ((uint32_t)(csd[10] & 0x80) >> 7);
+        uint32_t read_bl_len = csd[5] & 0x0F;
+        
+        uint32_t block_nr = (c_size + 1) * (1UL << (c_size_mult + 2));
+        uint32_t block_len = 1UL << read_bl_len;
+        *sectors = block_nr * (block_len / TF_BLOCK_SIZE);
+    }
+
+    return TF_OK;
+}
+
 int TF_ReadBlocks(uint32_t lba, uint8_t *buf, uint32_t count)
 {
     if (!tf_ready) return TF_ERR_INIT;
@@ -251,7 +311,9 @@ int TF_ReadBlocks(uint32_t lba, uint8_t *buf, uint32_t count)
     SPI_Bus_TF();
 
     for (uint32_t n = 0; n < count; n++) {
-        uint8_t r1 = tf_send_cmd(CMD17, lba + n, 0xFF);
+        uint32_t addr = (card_type & TF_CT_SD2_HC) ? (lba + n) : ((lba + n) << 9);
+
+        uint8_t r1 = tf_send_cmd(CMD17, addr, 0xFF);
         if (r1 != 0) {
             tf_cs_release();
             SPI_Bus_High();
@@ -259,7 +321,7 @@ int TF_ReadBlocks(uint32_t lba, uint8_t *buf, uint32_t count)
         }
 
         uint8_t tok = 0xFF;
-        for (int i = 0; i < 200; i++) {
+        for (int i = 0; i < 2000; i++) {
             tok = tf_xchg(0xFF);
             if (tok == 0xFE) break;
         }
@@ -291,7 +353,9 @@ int TF_WriteBlocks(uint32_t lba, const uint8_t *buf, uint32_t count)
     SPI_Bus_TF();
 
     for (uint32_t n = 0; n < count; n++) {
-        uint8_t r1 = tf_send_cmd(CMD24, lba + n, 0xFF);
+        uint32_t addr = (card_type & TF_CT_SD2_HC) ? (lba + n) : ((lba + n) << 9);
+
+        uint8_t r1 = tf_send_cmd(CMD24, addr, 0xFF);
         if (r1 != 0) {
             tf_cs_release();
             SPI_Bus_High();

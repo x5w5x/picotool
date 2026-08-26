@@ -142,6 +142,9 @@ pico_enable_stdio_usb(pico 1)
 # Add the standard include files to the build
 target_include_directories(pico PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}
+    ${CMAKE_CURRENT_LIST_DIR}/fatfs/ff15/source
+    ${CMAKE_CURRENT_LIST_DIR}/fatfs/include
+    ${CMAKE_CURRENT_LIST_DIR}/fatfs/src
 )
 
 # 引入子模块
@@ -149,6 +152,7 @@ add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/rtos)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/Drivers)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/ui)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/app)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/fatfs)
 
 # 关键修复：仅对 minirtos 使用 --whole-archive，drivelib 和 SDK 库放在常规链接区
 # 业务静态库(drivelib / uigeom / appmgr)用 --start-group / --end-group 圈起来,
@@ -162,6 +166,7 @@ target_link_libraries(pico PRIVATE
     drivelib
     uigeom
     appmgr
+    FatFs_SPI
     -Wl,--end-group
     pico_stdlib
     hardware_pio

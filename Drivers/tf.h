@@ -1,9 +1,3 @@
-/*
- * @Author: 轩
- * @Date: 2026-08-18 16:29:25
- * @LastEditTime: 2026-08-18 16:41:53
- * @FilePath: \pico\Drivers\tf.h
- */
 #ifndef TF_H
 #define TF_H
 
@@ -21,10 +15,17 @@ extern "C" {
 #define TF_ERR_READ       -4
 #define TF_ERR_WRITE      -5
 
+#define TF_CT_NONE        0x00
+#define TF_CT_SD1         0x01  /* V1 Standard Capacity (SDSC) */
+#define TF_CT_SD2_SC      0x02  /* V2 Standard Capacity (SDSC) */
+#define TF_CT_SD2_HC      0x04  /* V2 High Capacity (SDHC/SDXC) */
+
 /* 初始化与状态 API */
 int      TF_Init(void);
 uint8_t  TF_IsReady(void);
 int      TF_ReadCID(uint8_t buf[16]);
+int      TF_ReadCSD(uint8_t buf[16]);
+int      TF_GetSectors(uint32_t *sectors);
 
 /* 块读写 API (LBA: 逻辑块地址, count: 块数量) */
 int      TF_ReadBlocks(uint32_t lba, uint8_t *buf, uint32_t count);

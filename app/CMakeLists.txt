@@ -14,7 +14,9 @@ add_library(appmgr STATIC
     app_uart_term.c
     app_swd_probe.c
     cmsis_dap.c         
-    usb_descriptors.c    
+    usb_descriptors.c   
+    msc_disk.c 
+    app_sd_msc.c
 )
 
 target_include_directories(appmgr PUBLIC
@@ -23,6 +25,10 @@ target_include_directories(appmgr PUBLIC
     ${CMAKE_CURRENT_LIST_DIR}/../ui
     # app_led.c 通过 ui_btn.h / ui_draw.h 链上 chinese.h → Drivers/
     ${CMAKE_CURRENT_LIST_DIR}/../Drivers
+     ${CMAKE_CURRENT_LIST_DIR}/../fatfs
+     ${CMAKE_CURRENT_LIST_DIR}/../fatfs/ff15/source
+     ${CMAKE_CURRENT_LIST_DIR}/../fatfs/include
+     ${CMAKE_CURRENT_LIST_DIR}/../fatfs/src
 )
 
 # 业务 App(app_led)需要 Pico SDK 的 hardware/gpio.h / pico/stdlib.h。

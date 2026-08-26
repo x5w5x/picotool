@@ -1,3 +1,9 @@
+/*
+ * @Author: 轩
+ * @Date: 2026-08-26 12:32:14
+ * @LastEditTime: 2026-08-26 14:45:50
+ * @FilePath: \pico\app\tusb_config.h
+ */
 #ifndef _TUSB_CONFIG_H_
 #define _TUSB_CONFIG_H_
 
@@ -20,8 +26,8 @@ extern "C" {
 // ⚡ 核心：同时启用 1 个 HID 与 1 个 CDC
 #define CFG_TUD_HID              1
 #define CFG_TUD_CDC              1
-#define CFG_TUD_MSC              0
-
+#define CFG_TUD_MSC              1
+#define CFG_TUD_MSC_EP_BUFSIZE  512
 // HID 报表缓冲区大小 (标准 64 字节包)
 #define CFG_TUD_HID_EP_BUFSIZE   64
 
