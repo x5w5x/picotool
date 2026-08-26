@@ -233,7 +233,14 @@ uint32_t dap_process_command(const uint8_t *req, uint8_t *resp) {
             if (pin_sel & 0x02) {
                 if (pin_val & 0x02) SWDIO_HIGH(); else SWDIO_LOW();
             }
-            if (pin_sel & 0x80) s_nreset_pin = (pin_val & 0x80) ? 1 : 0;
+            if (pin_sel & 0x80) {
+                s_nreset_pin = (pin_val & 0x80) ? 1 : 0;
+                if (s_nreset_pin == 0) {
+                    // ⚡ 软复位 (无 nRESET 硬件线):通过 SWD 写 AIRCR.SYSRESETREQ
+                    // 完整序列:DP SELECT=0 → AP CSW=32bit → TAR=AIRCR → DRW=0x05FA0004 → RDBUFF 提交
+                    target_mem_write(0xE000ED0C, 0x05FA0004);
+                }
+            }
 
             if (wait_us) sleep_us(wait_us);
 
