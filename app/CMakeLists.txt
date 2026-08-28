@@ -18,6 +18,10 @@ add_library(appmgr STATIC
     msc_disk.c 
     app_sd_msc.c
     swd_flasher.c
+    app_adc.c
+    app_pwm.c
+    app_i2c_spi.c
+    app_pinout.c
 )
 
 target_include_directories(appmgr PUBLIC
@@ -36,7 +40,16 @@ target_include_directories(appmgr PUBLIC
 # 用 INTERFACE_INCLUDE_DIRECTORIES 顺着 link 关系自动加进来,
 #   IntelliSense / 编译器都能拿到 SDK 头文件路径。
 # 注意:pico_stdlib 是 INTERFACE 库,它会 PUBLIC 暴露所有 SDK include 路径。
-target_link_libraries(appmgr PUBLIC pico_stdlib hardware_gpio pico_multicore pico_stdio_usb hardware_dma hardware_pio)
+target_link_libraries(appmgr PUBLIC pico_stdlib hardware_gpio pico_multicore 
+pico_stdio_usb 
+hardware_dma
+ hardware_pio 
+hardware_adc
+ hardware_pwm
+ hardware_i2c
+ hardware_spi
+
+)
 
 # ARM GCC 自带的 stdint.h / stdbool.h 路径。
 # 与 ui/CMakeLists.txt 完全相同的检测块 —— 不能简单依赖 uigeom 的 PUBLIC 选项传播,
