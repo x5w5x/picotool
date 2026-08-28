@@ -39,6 +39,7 @@
 #include "app_pwm.h"
 #include "app_i2c_spi.h"
 #include "app_pinout.h"
+#include "app_audio.h"
 #define LED_PIN PICO_DEFAULT_LED_PIN
 
 // 屏幕物理背景色: 纯白 (0xFFFF)
@@ -140,6 +141,7 @@ void app_ui_custom_init(void)
     app_manager_register(&g_app_mgr, app_pwm_get_instance());
     app_manager_register(&g_app_mgr, app_i2c_spi_get_instance());
     app_manager_register(&g_app_mgr,app_pinout_get_instance());
+      app_manager_register(&g_app_mgr,app_audio_get_instance());
     // 3. 初始化顶部状态栏 (X:0, Y:0, W:480, H:32)
     ui_status_bar_init(&g_status_bar, 0, 0, LCD_WIDTH, 32, "多功能嵌入式终端", on_status_bar_click);
 
