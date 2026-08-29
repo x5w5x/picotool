@@ -201,9 +201,6 @@ E:/pico/pico/build/pico-sdk/src/rp2_common/pico_stdlib/CMakeFiles/edit_cache.dir
 E:/pico/pico/build/pico-sdk/src/rp2_common/pico_stdlib/CMakeFiles/rebuild_cache.dir
 E:/pico/pico/build/pico-sdk/docs/CMakeFiles/edit_cache.dir
 E:/pico/pico/build/pico-sdk/docs/CMakeFiles/rebuild_cache.dir
-E:/pico/pico/build/rtos/CMakeFiles/minirtos.dir
-E:/pico/pico/build/rtos/CMakeFiles/edit_cache.dir
-E:/pico/pico/build/rtos/CMakeFiles/rebuild_cache.dir
 E:/pico/pico/build/Drivers/CMakeFiles/drivelib.dir
 E:/pico/pico/build/Drivers/CMakeFiles/edit_cache.dir
 E:/pico/pico/build/Drivers/CMakeFiles/rebuild_cache.dir

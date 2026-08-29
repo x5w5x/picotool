@@ -148,7 +148,6 @@ target_include_directories(pico PRIVATE
 )
 
 # 引入子模块
-add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/rtos)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/Drivers)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/ui)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/app)
@@ -159,9 +158,6 @@ add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/fatfs)
 # 让链接器反复扫描直到符号收敛 —— 否则 app_led.o 引用 ui_switch_set_state,
 # 而 libuigeom.a 在 libappmgr.a 之前就被处理,ui_switch.o 拉不进来 → undefined reference。
 target_link_libraries(pico PRIVATE
-    -Wl,--whole-archive
-    minirtos
-    -Wl,--no-whole-archive
     -Wl,--start-group
     drivelib
     uigeom

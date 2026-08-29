@@ -24,7 +24,7 @@
 #define LCD_SPI          spi1
 #define LCD_SPI_BAUD     SPI_BUS_BAUD_HIGH
 
-#define UI_TILE_H       32
+#define UI_TILE_H        32
 
 #define LCD_CS_LOW()     gpio_put(PIN_LCD_CS, 0)
 #define LCD_CS_HIGH()    gpio_put(PIN_LCD_CS, 1)
@@ -35,6 +35,9 @@
 
 static int lcd_dma_chan = -1;
 static dma_channel_config dma_cfg;
+
+// ⚡ 核心优化 1：合并为唯一的 DMA 推流/字节翻转共享缓冲 (立省 30.72 KB RAM)
+static uint16_t s_lcd_dma_buf[LCD_WIDTH * UI_TILE_H] __attribute__((aligned(4)));
 
 static inline void LCD_WaitDMA_Auto(void)
 {
@@ -108,22 +111,54 @@ void LCD_PushTileDMA_Async(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const
 {
     if (w == 0 || h == 0 || !buf) return;
     
-    // 静态双缓冲专供字节翻转
-    static uint16_t dma_swap_buf[LCD_WIDTH * UI_TILE_H];
     uint32_t count = (uint32_t)w * h;
     if (count > LCD_WIDTH * UI_TILE_H) count = LCD_WIDTH * UI_TILE_H;
 
+    // ⚡ 必须先等上一帧 DMA 搬运完毕，再安全复用共享缓冲
+    LCD_WaitDMA();
+
+    // ⚡ 核心优化 2：利用 GCC 内建 rev16 硬件单指令加速大小端翻转
     for (uint32_t i = 0; i < count; i++) {
-        uint16_t c = buf[i];
-        dma_swap_buf[i] = (uint16_t)((c >> 8) | (c << 8));
+        s_lcd_dma_buf[i] = __builtin_bswap16(buf[i]);
     }
 
-    LCD_WaitDMA();
     LCD_SetWindow(x, y, x + w - 1, y + h - 1);
     LCD_DC_HIGH();
     LCD_CS_LOW();
-    dma_channel_set_read_addr(lcd_dma_chan, dma_swap_buf, false);
+    dma_channel_set_read_addr(lcd_dma_chan, s_lcd_dma_buf, false);
     dma_channel_set_trans_count(lcd_dma_chan, count * 2, true);
+}
+
+void LCD_PushSubTile(uint16_t screen_x, uint16_t screen_y, 
+                     uint16_t sub_w, uint16_t sub_h, 
+                     const uint16_t *tile_buf, uint16_t tile_stride,
+                     uint16_t src_offset_x, uint16_t src_offset_y)
+{
+    if (sub_w == 0 || sub_h == 0 || !tile_buf) return;
+
+    if (screen_x >= LCD_WIDTH || screen_y >= LCD_HEIGHT) return;
+    if (screen_x + sub_w > LCD_WIDTH)  sub_w = LCD_WIDTH - screen_x;
+    if (screen_y + sub_h > LCD_HEIGHT) sub_h = LCD_HEIGHT - screen_y;
+
+    uint32_t total_pixels = (uint32_t)sub_w * sub_h;
+    if (total_pixels > (LCD_WIDTH * UI_TILE_H)) {
+        total_pixels = LCD_WIDTH * UI_TILE_H;
+    }
+
+    // ⚡ 必须先等上一帧 DMA 搬运完毕，再安全复用共享缓冲
+    LCD_WaitDMA();
+
+    uint32_t dst_idx = 0;
+    for (uint16_t row = 0; row < sub_h; row++) {
+        const uint16_t *src = tile_buf + (src_offset_y + row) * tile_stride + src_offset_x;
+        for (uint16_t col = 0; col < sub_w; col++) {
+            s_lcd_dma_buf[dst_idx++] = __builtin_bswap16(src[col]);
+        }
+    }
+
+    LCD_SetWindow(screen_x, screen_y, screen_x + sub_w - 1, screen_y + sub_h - 1);
+    LCD_BulkWriteDMA((const uint8_t *)s_lcd_dma_buf, total_pixels * 2);
+    LCD_WaitDMA();
 }
 
 static void LCD_GPIO_Init(void)
@@ -387,37 +422,4 @@ void LCD_DrawString(uint16_t x, uint16_t y, const char *str, uint16_t color, uin
         }
     }
     LCD_CS_HIGH();
-}
-void LCD_PushSubTile(uint16_t screen_x, uint16_t screen_y, 
-                     uint16_t sub_w, uint16_t sub_h, 
-                     const uint16_t *tile_buf, uint16_t tile_stride,
-                     uint16_t src_offset_x, uint16_t src_offset_y)
-{
-    if (sub_w == 0 || sub_h == 0 || !tile_buf) return;
-
-    if (screen_x >= LCD_WIDTH || screen_y >= LCD_HEIGHT) return;
-    if (screen_x + sub_w > LCD_WIDTH)  sub_w = LCD_WIDTH - screen_x;
-    if (screen_y + sub_h > LCD_HEIGHT) sub_h = LCD_HEIGHT - screen_y;
-
-    static uint16_t dma_pack_buf[LCD_WIDTH * UI_TILE_H];
-    uint32_t total_pixels = (uint32_t)sub_w * sub_h;
-    if (total_pixels > (LCD_WIDTH * UI_TILE_H)) {
-        total_pixels = LCD_WIDTH * UI_TILE_H;
-    }
-
-    // ⚡ 核心修复：将 16 位颜色高低字节调换为 ST7796 要求的 Big-Endian 顺序
-    uint32_t dst_idx = 0;
-    for (uint16_t row = 0; row < sub_h; row++) {
-        const uint16_t *src = tile_buf + (src_offset_y + row) * tile_stride + src_offset_x;
-        for (uint16_t col = 0; col < sub_w; col++) {
-            uint16_t c = src[col];
-            // 高 8 位与低 8 位对调
-            dma_pack_buf[dst_idx++] = (uint16_t)((c >> 8) | (c << 8));
-        }
-    }
-
-    LCD_WaitDMA();
-    LCD_SetWindow(screen_x, screen_y, screen_x + sub_w - 1, screen_y + sub_h - 1);
-    LCD_BulkWriteDMA((const uint8_t *)dma_pack_buf, total_pixels * 2);
-    LCD_WaitDMA();
 }
