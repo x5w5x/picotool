@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define UI_DRAWER_MAX_APPS 10
+#define UI_DRAWER_MAX_APPS 12
 
 typedef void (*ui_drawer_cb_t)(uint8_t app_idx, void *user_data);
 

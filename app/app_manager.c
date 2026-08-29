@@ -81,6 +81,7 @@ void app_manager_init(app_manager_t *mgr) {
     mgr->edge_touch_down  = false;
     mgr->edge_candidate   = 0;
     mgr->gesture_consumed = false;
+    mgr->needs_full_redraw = false;
 
     for (uint8_t i = 0; i < APP_MAX_COUNT; i++) {
         mgr->apps[i] = NULL;
@@ -108,6 +109,9 @@ bool app_manager_switch_to(app_manager_t *mgr, uint8_t app_idx) {
     mgr->is_home     = false;
     mgr->current_idx = (int8_t)app_idx;
     mgr->drawer.selected_idx = (int8_t)app_idx;
+    /* ⚡ 切到新 app 时强制下一帧整屏重画 — 否则上一次触摸事件的旧
+     * dirty_rect(比如 app_sd 的文件浏览器区域)会限制新 app 的首次渲染 */
+    mgr->needs_full_redraw = true;
 
     app_t *new_app = mgr->apps[app_idx];
     if (new_app && new_app->enter) new_app->enter(new_app);
@@ -122,6 +126,10 @@ bool app_manager_return_home(app_manager_t *mgr) {
     mgr->is_home     = true;
     mgr->current_idx = -1;
     mgr->drawer.selected_idx = -1;
+    /* ⚡ 主动退出当前 app(loader 卸载 plugin / drawer 右滑回主界面等)后,
+     * 必须强制下一帧整屏重画,否则 home_dashboard 不会显示,屏冻在
+     * 最后一次 plugin UI 上 */
+    mgr->needs_full_redraw = true;
     return true;
 }
 

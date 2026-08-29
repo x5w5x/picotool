@@ -24,6 +24,7 @@ add_library(appmgr STATIC
     app_pinout.c
     audio_i2s.c
     app_audio.c
+    app_loader.c
 )
 
 target_include_directories(appmgr PUBLIC

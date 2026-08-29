@@ -17,7 +17,7 @@
 #include "pico/stdlib.h"
 #include <stdio.h>
 #include <string.h>
-
+#include "app_loader.h"
 extern void usb_switch_mode(uint8_t mode);
 extern void msc_set_enabled(bool enabled);
 extern bool msc_disk_check_write_completed(uint32_t quiet_ms);
@@ -164,54 +164,118 @@ static bool find_latest_firmware(app_sd_data_t *data, char *out_path, char *out_
     return found;
 }
 
-/* ================= 交互回调 ================= */
+// /* ================= 交互回调 ================= */
 
+// static void on_file_item_click(ui_file_browser_t *fb, int8_t index, const ui_file_item_t *item, void *user_data) {
+//     (void)fb; (void)index;
+//     app_sd_data_t *data = (app_sd_data_t *)user_data;
+//     const char *name = item->name;
+//     bool is_dir = (item->type == UI_FILE_TYPE_DIR);
+
+//     if (is_dir) {
+//         if (strcmp(name, "..") == 0) {
+//             char *last_slash = strrchr(data->current_path, '/');
+//             if (last_slash && last_slash != data->current_path + 2) *last_slash = '\0';
+//             else strcpy(data->current_path, "0:/");
+//         } else {
+//             if (data->current_path[strlen(data->current_path) - 1] != '/') strcat(data->current_path, "/");
+//             strcat(data->current_path, name);
+//         }
+//         load_directory(data, data->current_path);
+//         data->dirty_rect = data->tabview.content_rect;
+//     } else {
+//         if (strcmp(data->current_path, "0:/") == 0) {
+//             snprintf(data->selected_file_path, sizeof(data->selected_file_path), "0:/%s", name);
+//         } else {
+//             snprintf(data->selected_file_path, sizeof(data->selected_file_path), "%s/%s", data->current_path, name);
+//         }
+//         strncpy(data->selected_file_name, name, sizeof(data->selected_file_name) - 1);
+
+//         if (strstr(name, ".bin") || strstr(name, ".BIN") || strstr(name, ".hex") || strstr(name, ".HEX")) {
+//             strcpy(data->matched_algo_path, "0:/algo/STM32F10x_128.algo");
+//             data->view_mode = VIEW_MODE_FLASHING;
+//             data->msc_was_auto_dropped = false; // 手动离线点击烧录不自动恢复 U 盘
+//             ui_progressbar_set_progress(&data->prog_bar, 0);
+//             data->dirty_rect = data->tabview.content_rect;
+//         } else {
+//             FIL fil;
+//             if (f_open(&fil, data->selected_file_path, FA_READ) == FR_OK) {
+//                 memset(data->hex_buf, 0, sizeof(data->hex_buf));
+//                 f_read(&fil, data->hex_buf, sizeof(data->hex_buf), &data->hex_buf_len);
+//                 f_close(&fil);
+
+//                 ui_hex_view_bind(&data->hex_view, data->hex_buf, data->hex_buf_len, 0x0000);
+//                 data->view_mode = VIEW_MODE_HEX_PREVIEW;
+//                 data->dirty_rect = data->tabview.content_rect;
+//             }
+//         }
+//     }
+// }
 static void on_file_item_click(ui_file_browser_t *fb, int8_t index, const ui_file_item_t *item, void *user_data) {
     (void)fb; (void)index;
-    app_sd_data_t *data = (app_sd_data_t *)user_data;
-    const char *name = item->name;
-    bool is_dir = (item->type == UI_FILE_TYPE_DIR);
+    app_sd_data_t *data = (app_sd_data_t *)user_data; //
+    const char *name = item->name; //
+    bool is_dir = (item->type == UI_FILE_TYPE_DIR); //[cite: 9]
 
-    if (is_dir) {
-        if (strcmp(name, "..") == 0) {
-            char *last_slash = strrchr(data->current_path, '/');
-            if (last_slash && last_slash != data->current_path + 2) *last_slash = '\0';
-            else strcpy(data->current_path, "0:/");
+    if (is_dir) { //[cite: 9]
+        if (strcmp(name, "..") == 0) { //[cite: 9]
+            char *last_slash = strrchr(data->current_path, '/'); //[cite: 9]
+            if (last_slash && last_slash != data->current_path + 2) *last_slash = '\0'; //[cite: 9]
+            else strcpy(data->current_path, "0:/"); //[cite: 9]
         } else {
-            if (data->current_path[strlen(data->current_path) - 1] != '/') strcat(data->current_path, "/");
-            strcat(data->current_path, name);
+            if (data->current_path[strlen(data->current_path) - 1] != '/') strcat(data->current_path, "/"); //[cite: 9]
+            strcat(data->current_path, name); //[cite: 9]
         }
-        load_directory(data, data->current_path);
-        data->dirty_rect = data->tabview.content_rect;
+        load_directory(data, data->current_path); //[cite: 9]
+        data->dirty_rect = data->tabview.content_rect; //[cite: 9]
     } else {
-        if (strcmp(data->current_path, "0:/") == 0) {
-            snprintf(data->selected_file_path, sizeof(data->selected_file_path), "0:/%s", name);
+        if (strcmp(data->current_path, "0:/") == 0) { //[cite: 9]
+            snprintf(data->selected_file_path, sizeof(data->selected_file_path), "0:/%s", name); //[cite: 9]
         } else {
-            snprintf(data->selected_file_path, sizeof(data->selected_file_path), "%s/%s", data->current_path, name);
+            snprintf(data->selected_file_path, sizeof(data->selected_file_path), "%s/%s", data->current_path, name); //[cite: 9]
         }
-        strncpy(data->selected_file_name, name, sizeof(data->selected_file_name) - 1);
+        strncpy(data->selected_file_name, name, sizeof(data->selected_file_name) - 1); //[cite: 9]
 
-        if (strstr(name, ".bin") || strstr(name, ".BIN") || strstr(name, ".hex") || strstr(name, ".HEX")) {
-            strcpy(data->matched_algo_path, "0:/algo/STM32F10x_128.algo");
-            data->view_mode = VIEW_MODE_FLASHING;
-            data->msc_was_auto_dropped = false; // 手动离线点击烧录不自动恢复 U 盘
-            ui_progressbar_set_progress(&data->prog_bar, 0);
-            data->dirty_rect = data->tabview.content_rect;
-        } else {
-            FIL fil;
-            if (f_open(&fil, data->selected_file_path, FA_READ) == FR_OK) {
-                memset(data->hex_buf, 0, sizeof(data->hex_buf));
-                f_read(&fil, data->hex_buf, sizeof(data->hex_buf), &data->hex_buf_len);
-                f_close(&fil);
+        // ⚡ 核心分支 1：点击 .papp / .PAPP 动态插件文件
+        if (strstr(name, ".papp") || strstr(name, ".PAPP")) {
+            printf("[PAPP] click: \"%s\" path=\"%s\"\r\n",
+                   name ? name : "(null)",
+                   data->selected_file_path);
+            if (app_loader_load_papp(data->selected_file_path)) {
+                // 遍历寻找动态插件容器在 g_app_mgr 中的索引并切换运行
+                for (uint8_t i = 0; i < g_app_mgr.app_count; i++) {
+                    if (g_app_mgr.apps[i] == app_loader_get_instance()) {
+                        app_manager_switch_to(&g_app_mgr, i);
+                        break;
+                    }
+                }
+            }
+            return;
+        }
 
-                ui_hex_view_bind(&data->hex_view, data->hex_buf, data->hex_buf_len, 0x0000);
-                data->view_mode = VIEW_MODE_HEX_PREVIEW;
-                data->dirty_rect = data->tabview.content_rect;
+        // ⚡ 核心分支 2：点击 .bin / .hex 固件文件（脱机烧录）
+        if (strstr(name, ".bin") || strstr(name, ".BIN") || strstr(name, ".hex") || strstr(name, ".HEX")) { //[cite: 9]
+            strcpy(data->matched_algo_path, "0:/algo/STM32F10x_128.algo"); //[cite: 9]
+            data->view_mode = VIEW_MODE_FLASHING; //[cite: 9]
+            data->msc_was_auto_dropped = false; //[cite: 9]
+            ui_progressbar_set_progress(&data->prog_bar, 0); //[cite: 9]
+            data->dirty_rect = data->tabview.content_rect; //[cite: 9]
+        } 
+        // ⚡ 核心分支 3：其他常规文件（Hex 预览）
+        else {
+            FIL fil; //[cite: 9]
+            if (f_open(&fil, data->selected_file_path, FA_READ) == FR_OK) { //[cite: 9]
+                memset(data->hex_buf, 0, sizeof(data->hex_buf)); //[cite: 9]
+                f_read(&fil, data->hex_buf, sizeof(data->hex_buf), &data->hex_buf_len); //[cite: 9]
+                f_close(&fil); //[cite: 9]
+
+                ui_hex_view_bind(&data->hex_view, data->hex_buf, data->hex_buf_len, 0x0000); //[cite: 9]
+                data->view_mode = VIEW_MODE_HEX_PREVIEW; //[cite: 9]
+                data->dirty_rect = data->tabview.content_rect; //[cite: 9]
             }
         }
     }
 }
-
 static void on_start_flash_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_sd_data_t *data = (app_sd_data_t *)user_data;

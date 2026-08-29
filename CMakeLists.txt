@@ -173,3 +173,17 @@ target_link_libraries(pico PRIVATE
 )
 
 pico_add_extra_outputs(pico)
+
+# 独立 plugin 子工程: 编译 .papp 动态 App,产物 plugins/led_controller/build/led_controller.papp
+# 不影响主 pico 固件构建
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/plugins/led_controller)
+
+# ============================================================
+# 锚定 .app_pool_sec @ 0x20038000
+# ------------------------------------------------------------
+# 必须用本地 fork 的 memmap_pico.ld(SDK 默认脚本不锚定 .app_pool_sec,
+# 会让链接器把它扔到 RAM 最低位,导致 plugin 编译期地址 (0x20038000)
+# 跟 host 运行期地址不一致 → app_entry 跳错 → bad magic)。
+# 位置已经过对齐: .bss 末址 ≈ 0x20034910,挪到 0x20038000 给 heap 留 ~14KB。
+# ============================================================
+pico_set_linker_script(pico "${CMAKE_CURRENT_LIST_DIR}/app/memmap_pico.ld")

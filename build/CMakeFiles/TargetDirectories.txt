@@ -213,3 +213,6 @@ E:/pico/pico/build/app/CMakeFiles/rebuild_cache.dir
 E:/pico/pico/build/fatfs/CMakeFiles/FatFs_SPI.dir
 E:/pico/pico/build/fatfs/CMakeFiles/edit_cache.dir
 E:/pico/pico/build/fatfs/CMakeFiles/rebuild_cache.dir
+E:/pico/pico/build/plugins/led_controller/CMakeFiles/led_controller.dir
+E:/pico/pico/build/plugins/led_controller/CMakeFiles/edit_cache.dir
+E:/pico/pico/build/plugins/led_controller/CMakeFiles/rebuild_cache.dir

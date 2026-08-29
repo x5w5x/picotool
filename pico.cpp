@@ -40,14 +40,18 @@
 #include "app_i2c_spi.h"
 #include "app_pinout.h"
 #include "app_audio.h"
+#include "app_loader.h"
 #define LED_PIN PICO_DEFAULT_LED_PIN
 
 // 屏幕物理背景色: 纯白 (0xFFFF)
 #define SCREEN_BG_COLOR 0xFFFF
 
 /* ================= 1. 全局控件实体与性能遥测 ================= */
-
-static app_manager_t g_app_mgr;      // 应用管理器核心
+extern "C"
+{
+    app_manager_t g_app_mgr; // 去掉 static，并用 extern "C" 导出符号
+}
+// static app_manager_t g_app_mgr;      // 应用管理器核心
 static ui_status_bar_t g_status_bar; // 顶部常驻状态栏 (480x32)
 static ui_picture_t g_pic_dog;       // 图像组件
 static ui_btn_t g_btn_sl;            // 烧录模式更新按键
@@ -140,8 +144,9 @@ void app_ui_custom_init(void)
 
     app_manager_register(&g_app_mgr, app_pwm_get_instance());
     app_manager_register(&g_app_mgr, app_i2c_spi_get_instance());
-    app_manager_register(&g_app_mgr,app_pinout_get_instance());
-      app_manager_register(&g_app_mgr,app_audio_get_instance());
+    app_manager_register(&g_app_mgr, app_pinout_get_instance());
+    app_manager_register(&g_app_mgr, app_audio_get_instance());
+    app_manager_register(&g_app_mgr, app_loader_get_instance());
     // 3. 初始化顶部状态栏 (X:0, Y:0, W:480, H:32)
     ui_status_bar_init(&g_status_bar, 0, 0, LCD_WIDTH, 32, "多功能嵌入式终端", on_status_bar_click);
 
@@ -414,9 +419,9 @@ int main(void)
             }
         }
 
-        // ================= G. 推流执行 =================
-        if (is_full_frame)
+        if (is_full_frame || g_app_mgr.needs_full_redraw)
         {
+            g_app_mgr.needs_full_redraw = false;
             LCD_WaitDMA();
             ui_render_frame(render_custom_scene);
         }

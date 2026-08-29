@@ -25,6 +25,7 @@ typedef struct {
     bool            edge_touch_down;
     uint8_t         edge_candidate;
     bool            gesture_consumed;
+    bool            needs_full_redraw;   // ⚡ switch_to / return_home 后置 true,通知主循环整屏重画
 } app_manager_t;
 
 void app_manager_init(app_manager_t *mgr);
@@ -45,7 +46,7 @@ bool app_manager_process_touch_dirty(app_manager_t *mgr, bool is_touching, int16
                                      uint32_t now_tick, ui_rect_t *out_dirty, bool *is_full_frame);
 
 void app_manager_draw(app_manager_t *mgr, ui_tile_t *tile);
-
+extern app_manager_t g_app_mgr;
 #ifdef __cplusplus
 }
 #endif
