@@ -1,4 +1,5 @@
 #include "app_swd_probe.h"
+#include "app_shared_ram.h" // ⚡ 引入共享内存头文件
 #include "app_manager.h"
 #include "ui_draw.h"
 #include "ui_btn.h"
@@ -69,7 +70,6 @@ typedef struct {
     ui_btn_t        btn_toggle_dap;
 } app_swd_data_t;
 
-static app_swd_data_t s_swd_data;
 static app_t          s_app_swd;
 static volatile uint32_t s_swd_delay_cnt = 25;
 static volatile uint8_t  s_last_write_ack = 0;
@@ -257,14 +257,12 @@ void Target_Write(uint32_t addr, uint32_t val) {
     }
 }
 
-// ⚡ 核心修复：添加 ARM CoreSight Byte-Lane 字节通道对齐
 void Target_WriteHalf(uint32_t addr, uint16_t val16) {
     uint32_t tmp = 0;
-    SWD_Trans_Robust(Gen_Req(0, 0, 0x08), &tmp, 0);          // SELECT=0
-    tmp = 0x23000001; SWD_Trans_Robust(Gen_Req(1, 0, 0x00), &tmp, 0); // CSW=16-bit
-    tmp = addr;       SWD_Trans_Robust(Gen_Req(1, 0, 0x04), &tmp, 0); // TAR=addr
+    SWD_Trans_Robust(Gen_Req(0, 0, 0x08), &tmp, 0);          
+    tmp = 0x23000001; SWD_Trans_Robust(Gen_Req(1, 0, 0x00), &tmp, 0); 
+    tmp = addr;       SWD_Trans_Robust(Gen_Req(1, 0, 0x04), &tmp, 0); 
 
-    // 当 addr & 2 != 0 时，数据必须放置在 DRW[31:16]
     uint32_t drw = (addr & 2) ? ((uint32_t)val16 << 16) : (uint32_t)val16;
 
     if (SWD_Trans_Robust(Gen_Req(1, 0, 0x0C), &drw, 0) != 1) {
@@ -272,7 +270,6 @@ void Target_WriteHalf(uint32_t addr, uint16_t val16) {
     } else {
         s_last_write_ack = 1;
     }
-    // 恢复 32-bit CSW
     tmp = 0x23000002; SWD_Trans_Robust(Gen_Req(1, 0, 0x00), &tmp, 0);
 }
 
@@ -352,6 +349,7 @@ static bool swd_probe_target(swd_dev_state_t *t) {
 static void on_probe_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_swd_data_t *data = (app_swd_data_t *)user_data;
+    if (!data) return;
     swd_probe_target(&data->state);
     data->dirty_rect = data->tabview.content_rect;
 }
@@ -359,6 +357,7 @@ static void on_probe_click(ui_btn_t *btn, void *user_data) {
 static void on_halt_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_swd_data_t *data = (app_swd_data_t *)user_data;
+    if (!data) return;
     Target_Write(0xE000EDF0, 0xA05F0003);
     sleep_ms(5);
     data->state.current_pc = SWD_Read_PC();
@@ -369,6 +368,7 @@ static void on_halt_click(ui_btn_t *btn, void *user_data) {
 static void on_run_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_swd_data_t *data = (app_swd_data_t *)user_data;
+    if (!data) return;
     Target_Write(0xE000EDF0, 0xA05F0001);
     data->state.is_halted = false;
     data->dirty_rect = data->tabview.content_rect;
@@ -377,6 +377,7 @@ static void on_run_click(ui_btn_t *btn, void *user_data) {
 static void on_step_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_swd_data_t *data = (app_swd_data_t *)user_data;
+    if (!data) return;
     Target_Write(0xE000EDF0, 0xA05F0005);
     sleep_ms(5);
     Target_Write(0xE000EDF0, 0xA05F0003);
@@ -389,6 +390,7 @@ static void on_step_click(ui_btn_t *btn, void *user_data) {
 static void on_reset_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_swd_data_t *data = (app_swd_data_t *)user_data;
+    if (!data) return;
     Target_Write(0xE000ED0C, 0x05FA0004);
     Target_Write(0xE000EDF0, 0xA05F0000);
     data->state.is_halted = false;
@@ -398,6 +400,7 @@ static void on_reset_click(ui_btn_t *btn, void *user_data) {
 static void on_unlock_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_swd_data_t *data = (app_swd_data_t *)user_data;
+    if (!data) return;
     Target_Write(F103_FLASH_KEYR, FLASH_KEY1);
     Target_Write(F103_FLASH_KEYR, FLASH_KEY2);
     data->state.flash_unlocked = true;
@@ -408,6 +411,7 @@ static void on_unlock_click(ui_btn_t *btn, void *user_data) {
 static void on_erase_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_swd_data_t *data = (app_swd_data_t *)user_data;
+    if (!data) return;
     Target_Write(F103_FLASH_KEYR, FLASH_KEY1);
     Target_Write(F103_FLASH_KEYR, FLASH_KEY2);
     Target_Write(F103_FLASH_CR, (1 << 2) | (1 << 6));
@@ -425,6 +429,7 @@ static void on_erase_click(ui_btn_t *btn, void *user_data) {
 static void on_toggle_dap_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_swd_data_t *data = (app_swd_data_t *)user_data;
+    if (!data) return;
     g_dap_enabled = !g_dap_enabled;
 
     if (g_dap_enabled) {
@@ -460,7 +465,7 @@ static void on_toggle_dap_click(ui_btn_t *btn, void *user_data) {
 static void on_tab_change(ui_tabview_t *tv, uint8_t old_tab, uint8_t new_tab, void *user_data) {
     (void)old_tab; (void)new_tab;
     app_swd_data_t *data = (app_swd_data_t *)user_data;
-    data->dirty_rect = tv->content_rect;
+    if (data) data->dirty_rect = tv->content_rect;
 }
 
 static const char *s_tab_titles[TAB_COUNT] = {
@@ -468,12 +473,17 @@ static const char *s_tab_titles[TAB_COUNT] = {
 };
 
 static void app_swd_init(app_t *self) {
-    self->user_data = &s_swd_data;
-    app_swd_data_t *data = &s_swd_data;
+    self->user_data = g_static_app_ram;
+}
+
+static void app_swd_enter(app_t *self) {
+    app_swd_data_t *data = (app_swd_data_t *)g_static_app_ram;
+    self->user_data = data;
+    memset(data, 0, sizeof(app_swd_data_t));
 
     memset(&data->state, 0, sizeof(swd_dev_state_t));
-    data->dirty_rect        = ui_rect_make(0, 0, 0, 0);
-    data->last_dap_clock_hz = 0;
+    data->dirty_rect        = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
+    data->last_dap_clock_hz = g_dap_cur_clock_hz;
 
     ui_tabview_init(&data->tabview, 0, 32, LCD_WIDTH, LCD_HEIGHT - 32, 
                     108, 44, s_tab_titles, TAB_COUNT, TAB_PROBE, on_tab_change);
@@ -515,15 +525,9 @@ static void app_swd_init(app_t *self) {
     ui_btn_set_color(&data->btn_toggle_dap, 0x05E0, 0x03E0, 0xFFFF);
 }
 
-static void app_swd_enter(app_t *self) {
-    app_swd_data_t *data = (app_swd_data_t *)self->user_data;
-    data->dirty_rect        = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
-    data->last_dap_clock_hz = g_dap_cur_clock_hz;
-}
-
 static void app_swd_exit(app_t *self) {
     app_swd_data_t *data = (app_swd_data_t *)self->user_data;
-    if (g_dap_enabled) {
+    if (data && g_dap_enabled) {
         g_dap_enabled = false;
         tud_disconnect();
         gpio_set_dir(PIN_SWCLK, GPIO_IN);
@@ -531,11 +535,13 @@ static void app_swd_exit(app_t *self) {
         data->btn_toggle_dap.text = "启动 DAP 联机调试";
         ui_btn_set_color(&data->btn_toggle_dap, 0x05E0, 0x03E0, 0xFFFF);
     }
+    self->user_data = NULL;
 }
 
 static void app_swd_update(app_t *self, uint32_t now_tick) {
     (void)now_tick;
     app_swd_data_t *data = (app_swd_data_t *)self->user_data;
+    if (!data) return;
     data->dirty_rect = ui_rect_make(0, 0, 0, 0);
 
     if (data->tabview.active_tab_idx == TAB_DAP && g_dap_enabled) {
@@ -548,6 +554,7 @@ static void app_swd_update(app_t *self, uint32_t now_tick) {
 
 static bool app_swd_process_touch(app_t *self, bool is_touching, int16_t tx, int16_t ty, uint32_t now_tick) {
     app_swd_data_t *data = (app_swd_data_t *)self->user_data;
+    if (!data) return false;
 
     if (ui_tabview_process_touch(&data->tabview, is_touching, tx, ty, now_tick)) {
         data->dirty_rect = rect_union_box(data->dirty_rect, ui_tabview_get_bar_dirty_rect(&data->tabview));
@@ -580,6 +587,7 @@ static bool app_swd_process_touch(app_t *self, bool is_touching, int16_t tx, int
 
 static void app_swd_draw(app_t *self, ui_tile_t *tile) {
     app_swd_data_t *data = (app_swd_data_t *)self->user_data;
+    if (!data) return;
     ui_rect_t overlap;
 
     ui_tabview_draw(tile, &data->tabview);

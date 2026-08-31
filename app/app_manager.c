@@ -4,12 +4,13 @@
 #include <string.h>
 #include <stdlib.h>
 #include "lcd.h"
+#include "app_shared_ram.h"
 #define EDGE_ZONE_LEFT_PX   50
 #define EDGE_ZONE_RIGHT_PX  430
 #define SWIPE_THRESHOLD_PX  40
 #define SWIPE_MAX_DEVIATION 60
 #define DRAWER_WIDTH        140
-
+uint8_t g_static_app_ram[STATIC_APP_RAM_SIZE] __attribute__((aligned(32)));
 static void on_drawer_app_select(uint8_t app_idx, void *user_data) {
     app_manager_t *mgr = (app_manager_t *)user_data;
     if (!mgr) return;

@@ -1,4 +1,5 @@
 #include "app_adc.h"
+#include "app_shared_ram.h"
 #include "app_manager.h"
 #include "ui_draw.h"
 #include "ui_btn.h"
@@ -15,7 +16,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define ADC_WAVE_SAMPLES    350 // 示波器帧点数 (与 350px 视口严格 1:1)//e: 18, 19]
+#define ADC_WAVE_SAMPLES    350 // 示波器帧点数 (与 350px 视口严格 1:1)
 
 static const char *s_adc_tabs[] = {
     "实时监测",
@@ -82,8 +83,7 @@ typedef struct {
     ui_btn_t           btn_reset_stats;
 } app_adc_data_t;
 
-static app_adc_data_t s_adc_data;
-static app_t          s_app_adc;
+static app_t s_app_adc;
 
 static inline ui_rect_t rect_union_box(ui_rect_t a, ui_rect_t b) {
     if (a.w == 0 || a.h == 0) return b;
@@ -99,13 +99,14 @@ static inline ui_rect_t rect_union_box(ui_rect_t a, ui_rect_t b) {
 
 static void adc_stop_all(app_adc_data_t *data) {
     adc_run(false);
-    if (data->dma_chan >= 0) {
+    if (data && data->dma_chan >= 0) {
         dma_channel_abort(data->dma_chan);
     }
     adc_fifo_drain();
 }
 
 static void adc_trigger_one_dma_frame(app_adc_data_t *data) {
+    if (!data || data->dma_chan < 0) return;
     adc_stop_all(data);
 
     adc_select_input(data->active_wave_ch);
@@ -115,12 +116,12 @@ static void adc_trigger_one_dma_frame(app_adc_data_t *data) {
     if (target_hz < 1000UL) target_hz = 1000UL;
     if (target_hz >= 500000UL) {
         adc_set_clkdiv(0.0f);
-        data->waveform.sample_rate_hz = 500000;//e: 19]
+        data->waveform.sample_rate_hz = 500000;
     } else {
         float div = (48000000.0f / (float)target_hz) - 1.0f;
         if (div < 0.0f) div = 0.0f;
         adc_set_clkdiv(div);
-        data->waveform.sample_rate_hz = target_hz;//e: 19]
+        data->waveform.sample_rate_hz = target_hz;
     }
 
     adc_fifo_setup(true, true, 1, false, false);
@@ -135,6 +136,7 @@ static void adc_trigger_one_dma_frame(app_adc_data_t *data) {
 
 // Tab 0 安全的多通道轮询
 static void adc_sample_sync_tab0(app_adc_data_t *data) {
+    if (!data) return;
     adc_stop_all(data);
     adc_fifo_setup(false, false, 0, false, false);
 
@@ -160,6 +162,7 @@ static void adc_sample_sync_tab0(app_adc_data_t *data) {
 static void on_tab_changed(ui_tabview_t *tv, uint8_t old_tab, uint8_t new_tab, void *user_data) {
     (void)tv; (void)old_tab;
     app_adc_data_t *data = (app_adc_data_t *)user_data;
+    if (!data) return;
 
     if (new_tab == 1 || new_tab == 2) {
         if (data->wave_running) {
@@ -173,6 +176,7 @@ static void on_tab_changed(ui_tabview_t *tv, uint8_t old_tab, uint8_t new_tab, v
 static void on_freq_stepper_change(ui_stepper_t *sp, int32_t val, void *user_data) {
     (void)sp;
     app_adc_data_t *data = (app_adc_data_t *)user_data;
+    if (!data) return;
     data->cur_freq_khz = val;
     if (data->wave_running && (data->tabview.active_tab_idx == 1 || data->tabview.active_tab_idx == 2)) {
         adc_trigger_one_dma_frame(data);
@@ -182,12 +186,15 @@ static void on_freq_stepper_change(ui_stepper_t *sp, int32_t val, void *user_dat
 static void on_gain_stepper_change(ui_stepper_t *sp, int32_t val, void *user_data) {
     (void)sp;
     app_adc_data_t *data = (app_adc_data_t *)user_data;
-    data->cur_gain = val;
+    if (data) {
+        data->cur_gain = val;
+    }
 }
 
 static void on_wave_toggle_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_adc_data_t *data = (app_adc_data_t *)user_data;
+    if (!data) return;
     data->wave_running = !data->wave_running;
 
     if (data->wave_running) {
@@ -205,13 +212,15 @@ static void on_wave_toggle_click(ui_btn_t *btn, void *user_data) {
 
 static void on_wave_ch_select(ui_btn_t *btn, void *user_data) {
     app_adc_data_t *data = (app_adc_data_t *)user_data;
+    if (!data) return;
+
     if (btn == &data->btn_wave_ch0) data->active_wave_ch = ADC_CH_0;
     else if (btn == &data->btn_wave_ch1) data->active_wave_ch = ADC_CH_1;
     else if (btn == &data->btn_wave_ch2) data->active_wave_ch = ADC_CH_2;
     else if (btn == &data->btn_wave_temp) data->active_wave_ch = ADC_CH_TEMP;
 
     memset(data->analog_buf, 0, sizeof(data->analog_buf));
-    ui_waveform_bind_analog(&data->waveform, data->analog_buf, ADC_WAVE_SAMPLES);//e: 18, 19]
+    ui_waveform_bind_analog(&data->waveform, data->analog_buf, ADC_WAVE_SAMPLES);
     data->state.sample_cnt = 0;
 
     if (data->wave_running && (data->tabview.active_tab_idx == 1 || data->tabview.active_tab_idx == 2)) {
@@ -223,23 +232,32 @@ static void on_wave_ch_select(ui_btn_t *btn, void *user_data) {
 static void on_reset_stats_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_adc_data_t *data = (app_adc_data_t *)user_data;
-    data->state.sample_cnt = 0;
-    data->dirty_rect = data->stats_card;
+    if (data) {
+        data->state.sample_cnt = 0;
+        data->dirty_rect = data->stats_card;
+    }
 }
 
 /* ================= 4. 生命周期管理 ================= */
 
 static void app_adc_init(app_t *self) {
-    self->user_data = &s_adc_data;
-    app_adc_data_t *data = &s_adc_data;
+    // ⚡ 仅绑定共享静态池指针
+    self->user_data = g_static_app_ram;
+}
+
+static void app_adc_enter(app_t *self) {
+    // ⚡ 进入 App 时从 8KB 静态池就地初始化
+    app_adc_data_t *data = (app_adc_data_t *)g_static_app_ram;
+    self->user_data = data;
     memset(data, 0, sizeof(app_adc_data_t));
 
-    data->dirty_rect     = ui_rect_make(0, 0, 0, 0);
+    data->dirty_rect     = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
     data->last_tab_idx   = 0;
     data->active_wave_ch = ADC_CH_0;
     data->wave_running   = true;
-    data->cur_freq_khz   = 250; // ⚡ 默认 250 kHz
+    data->cur_freq_khz   = 250; // 默认 250 kHz
     data->cur_gain       = 1;   // 默认 1x
+    data->dma_chan       = -1;
 
     // 1. 初始化 ADC 硬件
     adc_init();
@@ -248,22 +266,24 @@ static void app_adc_init(app_t *self) {
     adc_gpio_init(28);
     adc_set_temp_sensor_enabled(true);
 
-    // 2. 申请 DMA 通道
+    // 2. 动态申请 DMA 通道
     data->dma_chan = dma_claim_unused_channel(true);
-    dma_channel_config cfg = dma_channel_get_default_config(data->dma_chan);
-    channel_config_set_transfer_data_size(&cfg, DMA_SIZE_16);
-    channel_config_set_read_increment(&cfg, false);
-    channel_config_set_write_increment(&cfg, true);
-    channel_config_set_dreq(&cfg, DREQ_ADC);
+    if (data->dma_chan >= 0) {
+        dma_channel_config cfg = dma_channel_get_default_config(data->dma_chan);
+        channel_config_set_transfer_data_size(&cfg, DMA_SIZE_16);
+        channel_config_set_read_increment(&cfg, false);
+        channel_config_set_write_increment(&cfg, true);
+        channel_config_set_dreq(&cfg, DREQ_ADC);
 
-    dma_channel_configure(
-        data->dma_chan,
-        &cfg,
-        data->dma_raw_buf,
-        &adc_hw->fifo,
-        ADC_WAVE_SAMPLES,
-        false
-    );
+        dma_channel_configure(
+            data->dma_chan,
+            &cfg,
+            data->dma_raw_buf,
+            &adc_hw->fifo,
+            ADC_WAVE_SAMPLES,
+            false
+        );
+    }
 
     // 3. 侧边栏初始化
     ui_tabview_init(&data->tabview, 0, 32, LCD_WIDTH, LCD_HEIGHT - 32,
@@ -276,26 +296,26 @@ static void app_adc_init(app_t *self) {
     data->monitor_cards[2] = ui_rect_make(120, 166, 350, 56);
     data->monitor_cards[3] = ui_rect_make(120, 228, 350, 56);
 
-    // 5. Tab 1: 示波器波形画布 (默认 250000 Hz)//e: 18, 19]
-    ui_waveform_init(&data->waveform, 118, 36, 354, 156, UI_WAVE_MODE_ANALOG_1CH, 250000);//e: 18, 19]
-    data->waveform.color_bg   = 0x0000;//e: 18, 19]
-    data->waveform.color_grid = 0x2104;//e: 18, 19]
-    ui_waveform_bind_analog(&data->waveform, data->analog_buf, ADC_WAVE_SAMPLES);//e: 18, 19]
+    // 5. Tab 1: 示波器波形画布
+    ui_waveform_init(&data->waveform, 118, 36, 354, 156, UI_WAVE_MODE_ANALOG_1CH, 250000);
+    data->waveform.color_bg   = 0x0000;
+    data->waveform.color_grid = 0x2104;
+    ui_waveform_bind_analog(&data->waveform, data->analog_buf, ADC_WAVE_SAMPLES);
 
-    // 控制行 1: 运行按钮 + 采样率步进器 + 增益步进器//e: 22]
+    // 控制行 1: 运行按钮 + 采样率步进器 + 增益步进器
     ui_btn_init(&data->btn_wave_toggle, 118, 198, 50, 32, "暂停", on_wave_toggle_click);
-    data->btn_wave_toggle.user_data = data; data->btn_wave_toggle.style = UI_BTN_STYLE_ROUND;
+    data->btn_wave_toggle.user_data = data; 
+    data->btn_wave_toggle.style = UI_BTN_STYLE_ROUND;
     data->btn_wave_toggle.font_size = FONT_16;
     ui_btn_set_color(&data->btn_wave_toggle, 0xF800, 0xB000, 0xFFFF);
 
-    // ⚡ 默认初始值设为 250 kHz//e: 22]
-    ui_stepper_init(&data->stepper_freq, 172, 198, 160, 32, 1, 500, 250, 10, "kHz", on_freq_stepper_change);//e: 22]
-    ui_stepper_set_prefix(&data->stepper_freq, "Fs:");//e: 22]
-    data->stepper_freq.user_data = data;//e: 22]
+    ui_stepper_init(&data->stepper_freq, 172, 198, 160, 32, 1, 500, 250, 10, "kHz", on_freq_stepper_change);
+    ui_stepper_set_prefix(&data->stepper_freq, "Fs:");
+    data->stepper_freq.user_data = data;
 
-    ui_stepper_init(&data->stepper_gain, 336, 198, 136, 32, 1, 8, 1, 1, "x", on_gain_stepper_change);//e: 22]
-    ui_stepper_set_prefix(&data->stepper_gain, "增益:");//e: 22]
-    data->stepper_gain.user_data = data;//e: 22]
+    ui_stepper_init(&data->stepper_gain, 336, 198, 136, 32, 1, 8, 1, 1, "x", on_gain_stepper_change);
+    ui_stepper_set_prefix(&data->stepper_gain, "增益:");
+    data->stepper_gain.user_data = data;
 
     // 控制行 2: 4 通道切换按钮
     ui_btn_init(&data->btn_wave_ch0, 118, 236, 82, 32, "CH0/GP26", on_wave_ch_select);
@@ -324,31 +344,24 @@ static void app_adc_init(app_t *self) {
     data->btn_reset_stats.user_data = data; data->btn_reset_stats.style = UI_BTN_STYLE_ROUND;
     data->btn_reset_stats.font_size = FONT_20;
     ui_btn_set_color(&data->btn_reset_stats, 0xBF5E, 0x03DF, 0x1A7B);
-}
 
-static void app_adc_enter(app_t *self) {
-    app_adc_data_t *data = (app_adc_data_t *)self->user_data;
-
-    adc_init();
-    adc_gpio_init(26);
-    adc_gpio_init(27);
-    adc_gpio_init(28);
-    adc_set_temp_sensor_enabled(true);
-
-    data->dirty_rect         = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
-    data->state.sample_cnt   = 0;
-    data->last_ui_frame_ms   = 0;
-    data->last_tab_idx       = data->tabview.active_tab_idx;
-
-    if ((data->tabview.active_tab_idx == 1 || data->tabview.active_tab_idx == 2) && data->wave_running) {
+    // 7. 触发首帧采样
+    if (data->wave_running && (data->tabview.active_tab_idx == 1 || data->tabview.active_tab_idx == 2)) {
         adc_trigger_one_dma_frame(data);
     }
 }
 
 static void app_adc_exit(app_t *self) {
     app_adc_data_t *data = (app_adc_data_t *)self->user_data;
-    adc_stop_all(data);
-    adc_fifo_setup(false, false, 0, false, false);
+    if (data) {
+        adc_stop_all(data);
+        adc_fifo_setup(false, false, 0, false, false);
+        if (data->dma_chan >= 0) {
+            dma_channel_unclaim(data->dma_chan);
+            data->dma_chan = -1;
+        }
+    }
+    self->user_data = NULL;
 }
 
 /* ================= 5. 30 FPS 节流帧处理 ================= */
@@ -356,6 +369,7 @@ static void app_adc_exit(app_t *self) {
 static void app_adc_update(app_t *self, uint32_t now_tick) {
     (void)now_tick;
     app_adc_data_t *data = (app_adc_data_t *)self->user_data;
+    if (!data) return;
     data->dirty_rect = ui_rect_make(0, 0, 0, 0);
 
     uint32_t now_ms = to_ms_since_boot(get_absolute_time());
@@ -367,7 +381,7 @@ static void app_adc_update(app_t *self, uint32_t now_tick) {
 
     // 示波器页 / 统计页：DMA 帧抓取处理
     if (data->tabview.active_tab_idx == 1 || data->tabview.active_tab_idx == 2) {
-        if (data->wave_running) {
+        if (data->wave_running && data->dma_chan >= 0) {
             if (!dma_channel_is_busy(data->dma_chan)) {
                 adc_run(false);
 
@@ -418,7 +432,7 @@ static void app_adc_update(app_t *self, uint32_t now_tick) {
                 data->state.v_pp = data->state.v_max - data->state.v_min;
                 data->state.sample_cnt += ADC_WAVE_SAMPLES;
 
-                ui_waveform_bind_analog(&data->waveform, data->analog_buf, ADC_WAVE_SAMPLES);//e: 18, 19]
+                ui_waveform_bind_analog(&data->waveform, data->analog_buf, ADC_WAVE_SAMPLES);
 
                 // 触发下一帧 DMA 抓取
                 adc_trigger_one_dma_frame(data);
@@ -431,7 +445,6 @@ static void app_adc_update(app_t *self, uint32_t now_tick) {
             }
         }
     }
-
     // 仪表页 (Tab 0)
     else if (data->tabview.active_tab_idx == 0) {
         adc_sample_sync_tab0(data);
@@ -443,6 +456,7 @@ static void app_adc_update(app_t *self, uint32_t now_tick) {
 
 static bool app_adc_process_touch(app_t *self, bool is_touching, int16_t tx, int16_t ty, uint32_t now_tick) {
     app_adc_data_t *data = (app_adc_data_t *)self->user_data;
+    if (!data) return false;
 
     // 1. 侧边栏触控
     if (ui_tabview_process_touch(&data->tabview, is_touching, tx, ty, now_tick)) {
@@ -458,16 +472,16 @@ static bool app_adc_process_touch(app_t *self, bool is_touching, int16_t tx, int
     // 2. 当前 Tab 控件事件
     switch (data->tabview.active_tab_idx) {
         case 1: { // 示波器页
-            if (ui_stepper_process_touch(&data->stepper_freq, is_touching, tx, ty, now_tick)) {//e: 22]
+            if (ui_stepper_process_touch(&data->stepper_freq, is_touching, tx, ty, now_tick)) {
                 data->dirty_rect = rect_union_box(data->dirty_rect, ui_stepper_get_dirty_rect(&data->stepper_freq));
                 return true;
             }
-            if (ui_stepper_process_touch(&data->stepper_gain, is_touching, tx, ty, now_tick)) {//e: 22]
+            if (ui_stepper_process_touch(&data->stepper_gain, is_touching, tx, ty, now_tick)) {
                 data->dirty_rect = rect_union_box(data->dirty_rect, ui_stepper_get_dirty_rect(&data->stepper_gain));
                 return true;
             }
 
-            if (ui_waveform_process_touch(&data->waveform, is_touching, tx, ty, now_tick)) {//e: 18, 19]
+            if (ui_waveform_process_touch(&data->waveform, is_touching, tx, ty, now_tick)) {
                 data->dirty_rect = ui_waveform_get_dirty_rect(&data->waveform);
                 return true;
             }
@@ -496,6 +510,7 @@ static bool app_adc_process_touch(app_t *self, bool is_touching, int16_t tx, int
 
 static void app_adc_draw(app_t *self, ui_tile_t *tile) {
     app_adc_data_t *data = (app_adc_data_t *)self->user_data;
+    if (!data) return;
     ui_rect_t overlap;
 
     ui_rect_t body = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
@@ -558,7 +573,7 @@ static void app_adc_draw(app_t *self, ui_tile_t *tile) {
         }
 
         case 1: { // ===== Tab 1: 模拟示波器 =====
-            ui_waveform_draw(tile, &data->waveform);//e: 18, 19]
+            ui_waveform_draw(tile, &data->waveform);
 
             int16_t info_y = 42;
             if ((info_y + 16) > tile->rect.y && info_y < (tile->rect.y + tile->rect.h)) {
@@ -572,8 +587,8 @@ static void app_adc_draw(app_t *self, ui_tile_t *tile) {
             }
 
             ui_btn_draw(tile, &data->btn_wave_toggle);
-            ui_stepper_draw(tile, &data->stepper_freq);//e: 22]
-            ui_stepper_draw(tile, &data->stepper_gain);//e: 22]
+            ui_stepper_draw(tile, &data->stepper_freq);
+            ui_stepper_draw(tile, &data->stepper_gain);
 
             ui_btn_draw(tile, &data->btn_wave_ch0);
             ui_btn_draw(tile, &data->btn_wave_ch1);

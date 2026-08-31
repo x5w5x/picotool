@@ -1,4 +1,5 @@
 #include "app_audio.h"
+#include "app_shared_ram.h"
 #include "audio_i2s.h"
 #include "app_manager.h"
 #include "ui_draw.h"
@@ -70,8 +71,7 @@ typedef struct {
     ui_btn_t           btn_music_stop;
 } app_audio_data_t;
 
-static app_audio_data_t s_app_audio_data;
-static app_t            s_app_audio;
+static app_t s_app_audio;
 
 static inline ui_rect_t rect_union_box(ui_rect_t a, ui_rect_t b) {
     if (a.w == 0 || a.h == 0) return b;
@@ -86,6 +86,7 @@ static inline ui_rect_t rect_union_box(ui_rect_t a, ui_rect_t b) {
 /* ================= 目录加载 ================= */
 
 static void load_sd_directory(app_audio_data_t *data, const char *path) {
+    if (!data) return;
     ui_file_browser_clear(&data->file_browser);
 
     if (!data->fs_mounted) {
@@ -115,6 +116,7 @@ static void load_sd_directory(app_audio_data_t *data, const char *path) {
 static void on_tab_changed(ui_tabview_t *tv, uint8_t old_tab, uint8_t new_tab, void *user_data) {
     (void)tv; (void)old_tab;
     app_audio_data_t *data = (app_audio_data_t *)user_data;
+    if (!data) return;
 
     audio_i2s_stop_melody();
     data->music_playing = false;
@@ -135,6 +137,7 @@ static void on_tab_changed(ui_tabview_t *tv, uint8_t old_tab, uint8_t new_tab, v
 static void on_file_click(ui_file_browser_t *fb, int8_t index, const ui_file_item_t *item, void *user_data) {
     (void)fb; (void)index;
     app_audio_data_t *data = (app_audio_data_t *)user_data;
+    if (!data) return;
     const char *name = item->name;
 
     if (item->type == UI_FILE_TYPE_DIR) {
@@ -162,6 +165,7 @@ static void on_file_click(ui_file_browser_t *fb, int8_t index, const ui_file_ite
 static void on_wav_pause_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_audio_data_t *data = (app_audio_data_t *)user_data;
+    if (!data) return;
     const wav_info_t *info = audio_i2s_get_wav_info();
     if (info->is_playing) {
         audio_i2s_pause_wav(!info->is_paused);
@@ -173,6 +177,7 @@ static void on_wav_pause_click(ui_btn_t *btn, void *user_data) {
 static void on_wav_stop_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_audio_data_t *data = (app_audio_data_t *)user_data;
+    if (!data) return;
     audio_i2s_stop_wav();
     data->dirty_rect = data->tabview.content_rect;
 }
@@ -180,6 +185,7 @@ static void on_wav_stop_click(ui_btn_t *btn, void *user_data) {
 static void on_synth_switch(ui_switch_t *sw, bool state, void *user_data) {
     (void)sw;
     app_audio_data_t *data = (app_audio_data_t *)user_data;
+    if (!data) return;
     data->synth_enabled = state;
     audio_i2s_set_enabled(state);
     data->dirty_rect = data->synth_card;
@@ -188,6 +194,7 @@ static void on_synth_switch(ui_switch_t *sw, bool state, void *user_data) {
 static void on_freq_change(ui_stepper_t *sp, int32_t val, void *user_data) {
     (void)sp;
     app_audio_data_t *data = (app_audio_data_t *)user_data;
+    if (!data) return;
     data->synth_freq = val;
     audio_i2s_set_freq((float)val);
     data->dirty_rect = data->synth_card;
@@ -196,6 +203,7 @@ static void on_freq_change(ui_stepper_t *sp, int32_t val, void *user_data) {
 static void on_vol_change(ui_stepper_t *sp, int32_t val, void *user_data) {
     (void)sp;
     app_audio_data_t *data = (app_audio_data_t *)user_data;
+    if (!data) return;
     data->synth_vol = val;
     audio_i2s_set_volume((uint8_t)val);
     data->dirty_rect = data->synth_card;
@@ -203,6 +211,7 @@ static void on_vol_change(ui_stepper_t *sp, int32_t val, void *user_data) {
 
 static void on_wave_btn_click(ui_btn_t *btn, void *user_data) {
     app_audio_data_t *data = (app_audio_data_t *)user_data;
+    if (!data) return;
     if (btn == &data->btn_wave_sine)     data->wave_idx = WAVE_SINE;
     if (btn == &data->btn_wave_square)   data->wave_idx = WAVE_SQUARE;
     if (btn == &data->btn_wave_tri)      data->wave_idx = WAVE_TRIANGLE;
@@ -213,6 +222,7 @@ static void on_wave_btn_click(ui_btn_t *btn, void *user_data) {
 
 static void on_song_click(ui_btn_t *btn, void *user_data) {
     app_audio_data_t *data = (app_audio_data_t *)user_data;
+    if (!data) return;
     audio_i2s_set_wave_type(WAVE_SQUARE);
     audio_i2s_set_volume((uint8_t)data->synth_vol);
 
@@ -234,12 +244,18 @@ static void on_song_click(ui_btn_t *btn, void *user_data) {
 /* ================= 生命周期管理 ================= */
 
 static void app_audio_init(app_t *self) {
-    self->user_data = &s_app_audio_data;
-    app_audio_data_t *data = &s_app_audio_data;
+    // ⚡ 仅绑定共享静态池指针
+    self->user_data = g_static_app_ram;
+}
+
+static void app_audio_enter(app_t *self) {
+    // ⚡ 进入 App 时从 8KB 静态池就地初始化
+    app_audio_data_t *data = (app_audio_data_t *)g_static_app_ram;
+    self->user_data = data;
     memset(data, 0, sizeof(app_audio_data_t));
 
     strcpy(data->current_path, "0:/");
-    data->dirty_rect    = ui_rect_make(0, 0, 0, 0);
+    data->dirty_rect    = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
     data->last_tab_idx  = 0;
     data->synth_freq    = 440;
     data->synth_vol     = 70;
@@ -308,14 +324,6 @@ static void app_audio_init(app_t *self) {
     data->btn_music_stop.user_data = data; data->btn_music_stop.style = UI_BTN_STYLE_ROUND;
     ui_btn_set_color(&data->btn_music_stop, 0xF800, 0xB000, 0xFFFF);
 
-    audio_i2s_pins_safe();
-}
-
-static void app_audio_enter(app_t *self) {
-    app_audio_data_t *data = (app_audio_data_t *)self->user_data;
-    data->dirty_rect   = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
-    data->last_tab_idx = data->tabview.active_tab_idx;
-
     audio_i2s_init();
     audio_i2s_set_enabled(false);
     audio_i2s_stop_melody();
@@ -326,25 +334,28 @@ static void app_audio_enter(app_t *self) {
 
 static void app_audio_exit(app_t *self) {
     app_audio_data_t *data = (app_audio_data_t *)self->user_data;
-    audio_i2s_stop_melody();
-    audio_i2s_stop_wav();
-    audio_i2s_set_enabled(false);
-    audio_i2s_deinit();
+    if (data) {
+        audio_i2s_stop_melody();
+        audio_i2s_stop_wav();
+        audio_i2s_set_enabled(false);
+        audio_i2s_deinit();
 
-    if (data->fs_mounted) {
-        f_mount(NULL, "0:", 1);
-        data->fs_mounted = false;
+        if (data->fs_mounted) {
+            f_mount(NULL, "0:", 1);
+            data->fs_mounted = false;
+        }
     }
+    self->user_data = NULL;
 }
+
 static void app_audio_update(app_t *self, uint32_t now_tick) {
     (void)now_tick;
     app_audio_data_t *data = (app_audio_data_t *)self->user_data;
+    if (!data) return;
     data->dirty_rect = ui_rect_make(0, 0, 0, 0);
 
-    // ⚡ 1. 优先读取 SD 卡填满音频缓冲区 (无任何阻塞)
     audio_i2s_update_wav();
 
-    // ⚡ 2. 只有秒数真正跳变时才标记重绘，绝不在每一毫秒死循环重绘
     const wav_info_t *info = audio_i2s_get_wav_info();
     if (info->is_playing) {
         static uint32_t s_last_sec = 0xFFFFFFFF;
@@ -352,7 +363,7 @@ static void app_audio_update(app_t *self, uint32_t now_tick) {
             s_last_sec = info->cur_sec;
             uint8_t prog = (info->total_samples > 0) ? (uint8_t)((uint64_t)info->played_samples * 100 / info->total_samples) : 0;
             ui_progressbar_set_progress(&data->prog_bar, prog);
-            data->dirty_rect = data->play_card; // 仅更新播放卡片区域
+            data->dirty_rect = data->play_card;
         }
     }
 
@@ -361,8 +372,10 @@ static void app_audio_update(app_t *self, uint32_t now_tick) {
         audio_i2s_update_playback(now_ms);
     }
 }
+
 static bool app_audio_process_touch(app_t *self, bool is_touching, int16_t tx, int16_t ty, uint32_t now_tick) {
     app_audio_data_t *data = (app_audio_data_t *)self->user_data;
+    if (!data) return false;
 
     if (ui_tabview_process_touch(&data->tabview, is_touching, tx, ty, now_tick)) {
         if (data->tabview.active_tab_idx != data->last_tab_idx) {
@@ -415,6 +428,7 @@ static bool app_audio_process_touch(app_t *self, bool is_touching, int16_t tx, i
 
 static void app_audio_draw(app_t *self, ui_tile_t *tile) {
     app_audio_data_t *data = (app_audio_data_t *)self->user_data;
+    if (!data) return;
     ui_rect_t overlap;
 
     ui_rect_t body = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);

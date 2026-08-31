@@ -1,4 +1,5 @@
 #include "app_led.h"
+#include "app_shared_ram.h"
 #include "app_manager.h"
 #include "ui_draw.h"
 #include "ui_btn.h"
@@ -6,6 +7,7 @@
 #include "ui_tabview.h"
 #include "lcd.h"
 #include <stdio.h>
+#include <string.h>
 
 /* ================= 1. 标签定义与 App 私有数据结构体 ================= */
 
@@ -18,8 +20,8 @@ static const char *s_tab_names[] = {
 
 typedef struct {
     ui_rect_t     dirty_rect;     // ⚠️ 必须保持在第 1 位！供 app_manager 提取局部脏矩形
-    ui_tabview_t  tabview;        // 侧边栏 TabView 容器[cite: 11]
-    uint8_t       last_tab_idx;   // 用于检测 Tab 切换标记全区重绘[cite: 11]
+    ui_tabview_t  tabview;        // 侧边栏 TabView 容器
+    uint8_t       last_tab_idx;   // 用于检测 Tab 切换标记全区重绘
 
     // --- Tab 0: 开关控制组件 ---
     bool          sw_state;       // 软件开关状态
@@ -31,7 +33,6 @@ typedef struct {
     uint8_t       work_mode;      // 0: 常亮, 1: 闪烁, 2: 呼吸
 } app_led_data_t;
 
-static app_led_data_t s_led_data;
 static app_t          s_app_led;
 
 /* ================= 2. 交互回调函数 ================= */
@@ -43,21 +44,30 @@ static void on_tab_change(ui_tabview_t *tv, uint8_t old_tab, uint8_t new_tab, vo
 static void on_switch_change(ui_switch_t *sw, bool state, void *user_data) {
     (void)sw;
     app_led_data_t *data = (app_led_data_t *)user_data;
-    data->sw_state = state;
+    if (data) data->sw_state = state;
 }
 
 static void on_btn_toggle_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_led_data_t *data = (app_led_data_t *)user_data;
-    data->sw_state = !data->sw_state;
-    ui_switch_set_state(&data->sw_led, data->sw_state);
+    if (data) {
+        data->sw_state = !data->sw_state;
+        ui_switch_set_state(&data->sw_led, data->sw_state);
+    }
 }
 
 /* ================= 3. 生命周期与事件回调 ================= */
 
 static void app_led_init(app_t *self) {
-    self->user_data = &s_led_data;
-    app_led_data_t *data = &s_led_data;
+    // ⚡ 仅绑定共享静态池指针
+    self->user_data = g_static_app_ram;
+}
+
+static void app_led_enter(app_t *self) {
+    // ⚡ 进入 App 时从 8KB 静态池就地初始化
+    app_led_data_t *data = (app_led_data_t *)g_static_app_ram;
+    self->user_data = data;
+    memset(data, 0, sizeof(app_led_data_t));
 
     data->dirty_rect   = ui_rect_make(0, 0, 0, 0);
     data->sw_state     = false;
@@ -82,12 +92,8 @@ static void app_led_init(app_t *self) {
     ui_btn_set_color(&data->btn_toggle, 0xBF5E, 0x03DF, 0x1A7B);
 }
 
-static void app_led_enter(app_t *self) {
-    (void)self;
-}
-
 static void app_led_exit(app_t *self) {
-    (void)self;
+    self->user_data = NULL;
 }
 
 static void app_led_update(app_t *self, uint32_t now_tick) {
@@ -98,16 +104,15 @@ static void app_led_update(app_t *self, uint32_t now_tick) {
 
 static bool app_led_process_touch(app_t *self, bool is_touching, int16_t tx, int16_t ty, uint32_t now_tick) {
     app_led_data_t *data = (app_led_data_t *)self->user_data;
+    if (!data) return false;
 
     // 1. 优先分发给 TabView 侧边栏
     if (ui_tabview_process_touch(&data->tabview, is_touching, tx, ty, now_tick)) {
         if (data->tabview.active_tab_idx != data->last_tab_idx) {
-            // Tab 发生切换：全工作区推流更新页面
             data->last_tab_idx = data->tabview.active_tab_idx;
             data->dirty_rect   = data->tabview.rect;
         } else {
-            // 仅侧边栏滚动：推流侧边栏局部切片
-            data->dirty_rect = ui_tabview_get_bar_dirty_rect(&data->tabview);
+            data->dirty_rect   = ui_tabview_get_bar_dirty_rect(&data->tabview);
         }
         return true;
     }
@@ -118,14 +123,12 @@ static bool app_led_process_touch(app_t *self, bool is_touching, int16_t tx, int
         bool btn_changed = ui_btn_process_touch(&data->btn_toggle, is_touching, tx, ty, now_tick);
 
         if (sw_changed) {
-            // 开关改变：刷新开关自身与状态卡片
             ui_rect_t c_sw = ui_switch_get_dirty_rect(&data->sw_led);
             ui_rect_union(&c_sw, &data->status_card, &data->dirty_rect);
             return true;
         }
 
         if (btn_changed) {
-            // 按钮点击：仅刷新按钮自身切片
             data->dirty_rect = ui_btn_get_dirty_rect(&data->btn_toggle);
             return true;
         }
@@ -138,27 +141,23 @@ static bool app_led_process_touch(app_t *self, bool is_touching, int16_t tx, int
 
 static void app_led_draw(app_t *self, ui_tile_t *tile) {
     app_led_data_t *data = (app_led_data_t *)self->user_data;
+    if (!data) return;
     ui_rect_t overlap;
 
-    // 1. 绘制纯白底板 (Y: 32 ~ 320)
     ui_rect_t body = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
     if (ui_rect_intersect(&tile->rect, &body, &overlap)) {
         ui_draw_fill_rect(tile, &overlap, 0xFFFF);
     }
 
-    // 2. 绘制 TabView 侧边栏 (自带切片 O(1) 索引剪枝与视口裁剪)
     ui_tabview_draw(tile, &data->tabview);
 
-    // 3. 右侧内容区切片求交保护
     if (!ui_rect_intersect(&tile->rect, &data->tabview.content_rect, &overlap)) {
         return;
     }
 
-    // 4. 根据当前选中的 Tab 渲染对应视图
     switch (data->tabview.active_tab_idx) {
-        case 0: // ===== Tab 0: 开关控制 =====
+        case 0: 
         {
-            // A. 状态卡片 (浅冰蓝底 0xBF5E + 边框 0xC618)
             if (ui_rect_intersect(&tile->rect, &data->status_card, &overlap)) {
                 ui_draw_fill_rect(tile, &overlap, 0xEF7D);
                 ui_draw_rect(tile, &data->status_card, 0xC618);
@@ -172,19 +171,17 @@ static void app_led_draw(app_t *self, ui_tile_t *tile) {
                 ui_draw_string(tile, 162, 84, st_str, FONT_16, data->sw_state ? 0x05E0 : 0x4208, 0xEF7D);
             }
 
-            // B. 控制标签
             int16_t lbl_y = 146;
             if ((lbl_y + 20) > tile->rect.y && lbl_y < (tile->rect.y + tile->rect.h)) {
                 ui_draw_string(tile, 130, lbl_y, "滑动开关主控:", FONT_20, 0x1A7B, 0xFFFF);
             }
 
-            // C. 控件光栅化
             ui_switch_draw(tile, &data->sw_led);
             ui_btn_draw(tile, &data->btn_toggle);
             break;
         }
 
-        case 1: // ===== Tab 1: 工作模式 =====
+        case 1: 
         {
             int16_t text_y = 60;
             if ((text_y + 24) > tile->rect.y && text_y < (tile->rect.y + tile->rect.h)) {
@@ -201,7 +198,7 @@ static void app_led_draw(app_t *self, ui_tile_t *tile) {
             break;
         }
 
-        case 2: // ===== Tab 2: 硬件信息 =====
+        case 2: 
         {
             int16_t text_y = 60;
             if ((text_y + 24) > tile->rect.y && text_y < (tile->rect.y + tile->rect.h)) {

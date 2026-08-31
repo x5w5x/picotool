@@ -1,4 +1,5 @@
 #include "app_sd_msc.h"
+#include "app_shared_ram.h"
 #include "app_manager.h"
 #include "ui_draw.h"
 #include "ui_btn.h"
@@ -97,7 +98,6 @@ typedef struct {
     ui_switch_t        sw_auto_flash;         // 开关 2
 } app_sd_data_t;
 
-static app_sd_data_t s_sd_data;
 static app_t         s_app_sd;
 
 static inline ui_rect_t rect_union_box(ui_rect_t a, ui_rect_t b) {
@@ -113,6 +113,7 @@ static inline ui_rect_t rect_union_box(ui_rect_t a, ui_rect_t b) {
 /* ================= 目录扫描与查找最新固件 ================= */
 
 static void load_directory(app_sd_data_t *data, const char *path) {
+    if (!data) return;
     ui_file_browser_clear(&data->file_browser);
 
     if (!data->fs_mounted) {
@@ -164,85 +165,37 @@ static bool find_latest_firmware(app_sd_data_t *data, char *out_path, char *out_
     return found;
 }
 
-// /* ================= 交互回调 ================= */
-
-// static void on_file_item_click(ui_file_browser_t *fb, int8_t index, const ui_file_item_t *item, void *user_data) {
-//     (void)fb; (void)index;
-//     app_sd_data_t *data = (app_sd_data_t *)user_data;
-//     const char *name = item->name;
-//     bool is_dir = (item->type == UI_FILE_TYPE_DIR);
-
-//     if (is_dir) {
-//         if (strcmp(name, "..") == 0) {
-//             char *last_slash = strrchr(data->current_path, '/');
-//             if (last_slash && last_slash != data->current_path + 2) *last_slash = '\0';
-//             else strcpy(data->current_path, "0:/");
-//         } else {
-//             if (data->current_path[strlen(data->current_path) - 1] != '/') strcat(data->current_path, "/");
-//             strcat(data->current_path, name);
-//         }
-//         load_directory(data, data->current_path);
-//         data->dirty_rect = data->tabview.content_rect;
-//     } else {
-//         if (strcmp(data->current_path, "0:/") == 0) {
-//             snprintf(data->selected_file_path, sizeof(data->selected_file_path), "0:/%s", name);
-//         } else {
-//             snprintf(data->selected_file_path, sizeof(data->selected_file_path), "%s/%s", data->current_path, name);
-//         }
-//         strncpy(data->selected_file_name, name, sizeof(data->selected_file_name) - 1);
-
-//         if (strstr(name, ".bin") || strstr(name, ".BIN") || strstr(name, ".hex") || strstr(name, ".HEX")) {
-//             strcpy(data->matched_algo_path, "0:/algo/STM32F10x_128.algo");
-//             data->view_mode = VIEW_MODE_FLASHING;
-//             data->msc_was_auto_dropped = false; // 手动离线点击烧录不自动恢复 U 盘
-//             ui_progressbar_set_progress(&data->prog_bar, 0);
-//             data->dirty_rect = data->tabview.content_rect;
-//         } else {
-//             FIL fil;
-//             if (f_open(&fil, data->selected_file_path, FA_READ) == FR_OK) {
-//                 memset(data->hex_buf, 0, sizeof(data->hex_buf));
-//                 f_read(&fil, data->hex_buf, sizeof(data->hex_buf), &data->hex_buf_len);
-//                 f_close(&fil);
-
-//                 ui_hex_view_bind(&data->hex_view, data->hex_buf, data->hex_buf_len, 0x0000);
-//                 data->view_mode = VIEW_MODE_HEX_PREVIEW;
-//                 data->dirty_rect = data->tabview.content_rect;
-//             }
-//         }
-//     }
-// }
 static void on_file_item_click(ui_file_browser_t *fb, int8_t index, const ui_file_item_t *item, void *user_data) {
     (void)fb; (void)index;
-    app_sd_data_t *data = (app_sd_data_t *)user_data; //
-    const char *name = item->name; //
-    bool is_dir = (item->type == UI_FILE_TYPE_DIR); //[cite: 9]
+    app_sd_data_t *data = (app_sd_data_t *)user_data;
+    if (!data) return;
+    const char *name = item->name;
+    bool is_dir = (item->type == UI_FILE_TYPE_DIR);
 
-    if (is_dir) { //[cite: 9]
-        if (strcmp(name, "..") == 0) { //[cite: 9]
-            char *last_slash = strrchr(data->current_path, '/'); //[cite: 9]
-            if (last_slash && last_slash != data->current_path + 2) *last_slash = '\0'; //[cite: 9]
-            else strcpy(data->current_path, "0:/"); //[cite: 9]
+    if (is_dir) {
+        if (strcmp(name, "..") == 0) {
+            char *last_slash = strrchr(data->current_path, '/');
+            if (last_slash && last_slash != data->current_path + 2) *last_slash = '\0';
+            else strcpy(data->current_path, "0:/");
         } else {
-            if (data->current_path[strlen(data->current_path) - 1] != '/') strcat(data->current_path, "/"); //[cite: 9]
-            strcat(data->current_path, name); //[cite: 9]
+            if (data->current_path[strlen(data->current_path) - 1] != '/') strcat(data->current_path, "/");
+            strcat(data->current_path, name);
         }
-        load_directory(data, data->current_path); //[cite: 9]
-        data->dirty_rect = data->tabview.content_rect; //[cite: 9]
+        load_directory(data, data->current_path);
+        data->dirty_rect = data->tabview.content_rect;
     } else {
-        if (strcmp(data->current_path, "0:/") == 0) { //[cite: 9]
-            snprintf(data->selected_file_path, sizeof(data->selected_file_path), "0:/%s", name); //[cite: 9]
+        if (strcmp(data->current_path, "0:/") == 0) {
+            snprintf(data->selected_file_path, sizeof(data->selected_file_path), "0:/%s", name);
         } else {
-            snprintf(data->selected_file_path, sizeof(data->selected_file_path), "%s/%s", data->current_path, name); //[cite: 9]
+            snprintf(data->selected_file_path, sizeof(data->selected_file_path), "%s/%s", data->current_path, name);
         }
-        strncpy(data->selected_file_name, name, sizeof(data->selected_file_name) - 1); //[cite: 9]
+        strncpy(data->selected_file_name, name, sizeof(data->selected_file_name) - 1);
 
-        // ⚡ 核心分支 1：点击 .papp / .PAPP 动态插件文件
         if (strstr(name, ".papp") || strstr(name, ".PAPP")) {
             printf("[PAPP] click: \"%s\" path=\"%s\"\r\n",
                    name ? name : "(null)",
                    data->selected_file_path);
             if (app_loader_load_papp(data->selected_file_path)) {
-                // 遍历寻找动态插件容器在 g_app_mgr 中的索引并切换运行
                 for (uint8_t i = 0; i < g_app_mgr.app_count; i++) {
                     if (g_app_mgr.apps[i] == app_loader_get_instance()) {
                         app_manager_switch_to(&g_app_mgr, i);
@@ -253,32 +206,31 @@ static void on_file_item_click(ui_file_browser_t *fb, int8_t index, const ui_fil
             return;
         }
 
-        // ⚡ 核心分支 2：点击 .bin / .hex 固件文件（脱机烧录）
-        if (strstr(name, ".bin") || strstr(name, ".BIN") || strstr(name, ".hex") || strstr(name, ".HEX")) { //[cite: 9]
-            strcpy(data->matched_algo_path, "0:/algo/STM32F10x_128.algo"); //[cite: 9]
-            data->view_mode = VIEW_MODE_FLASHING; //[cite: 9]
-            data->msc_was_auto_dropped = false; //[cite: 9]
-            ui_progressbar_set_progress(&data->prog_bar, 0); //[cite: 9]
-            data->dirty_rect = data->tabview.content_rect; //[cite: 9]
-        } 
-        // ⚡ 核心分支 3：其他常规文件（Hex 预览）
-        else {
-            FIL fil; //[cite: 9]
-            if (f_open(&fil, data->selected_file_path, FA_READ) == FR_OK) { //[cite: 9]
-                memset(data->hex_buf, 0, sizeof(data->hex_buf)); //[cite: 9]
-                f_read(&fil, data->hex_buf, sizeof(data->hex_buf), &data->hex_buf_len); //[cite: 9]
-                f_close(&fil); //[cite: 9]
+        if (strstr(name, ".bin") || strstr(name, ".BIN") || strstr(name, ".hex") || strstr(name, ".HEX")) {
+            strcpy(data->matched_algo_path, "0:/algo/STM32F10x_128.algo");
+            data->view_mode = VIEW_MODE_FLASHING;
+            data->msc_was_auto_dropped = false;
+            ui_progressbar_set_progress(&data->prog_bar, 0);
+            data->dirty_rect = data->tabview.content_rect;
+        } else {
+            FIL fil;
+            if (f_open(&fil, data->selected_file_path, FA_READ) == FR_OK) {
+                memset(data->hex_buf, 0, sizeof(data->hex_buf));
+                f_read(&fil, data->hex_buf, sizeof(data->hex_buf), &data->hex_buf_len);
+                f_close(&fil);
 
-                ui_hex_view_bind(&data->hex_view, data->hex_buf, data->hex_buf_len, 0x0000); //[cite: 9]
-                data->view_mode = VIEW_MODE_HEX_PREVIEW; //[cite: 9]
-                data->dirty_rect = data->tabview.content_rect; //[cite: 9]
+                ui_hex_view_bind(&data->hex_view, data->hex_buf, data->hex_buf_len, 0x0000);
+                data->view_mode = VIEW_MODE_HEX_PREVIEW;
+                data->dirty_rect = data->tabview.content_rect;
             }
         }
     }
 }
+
 static void on_start_flash_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_sd_data_t *data = (app_sd_data_t *)user_data;
+    if (!data) return;
     swd_flasher_start(data->selected_file_path, data->matched_algo_path);
     data->dirty_rect = data->flash_card;
 }
@@ -286,6 +238,7 @@ static void on_start_flash_click(ui_btn_t *btn, void *user_data) {
 static void on_close_flash_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_sd_data_t *data = (app_sd_data_t *)user_data;
+    if (!data) return;
     swd_flasher_abort();
     data->msc_was_auto_dropped = false;
     data->view_mode = VIEW_MODE_BROWSER;
@@ -295,6 +248,7 @@ static void on_close_flash_click(ui_btn_t *btn, void *user_data) {
 static void on_close_hex_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_sd_data_t *data = (app_sd_data_t *)user_data;
+    if (!data) return;
     data->view_mode = VIEW_MODE_BROWSER;
     data->dirty_rect = data->tabview.content_rect;
 }
@@ -354,6 +308,7 @@ static void do_card_benchmark(sd_test_state_t *st) {
 static void on_tab_changed(ui_tabview_t *tv, uint8_t old_tab, uint8_t new_tab, void *user_data) {
     (void)tv; (void)old_tab;
     app_sd_data_t *data = (app_sd_data_t *)user_data;
+    if (!data) return;
     data->view_mode = VIEW_MODE_BROWSER;
     if (new_tab == TAB_SD_BROWSER) {
         load_directory(data, data->current_path);
@@ -364,6 +319,7 @@ static void on_tab_changed(ui_tabview_t *tv, uint8_t old_tab, uint8_t new_tab, v
 static void on_fs_refresh_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_sd_data_t *data = (app_sd_data_t *)user_data;
+    if (!data) return;
     load_directory(data, data->current_path);
     data->dirty_rect = data->tabview.content_rect;
 }
@@ -371,6 +327,7 @@ static void on_fs_refresh_click(ui_btn_t *btn, void *user_data) {
 static void on_detect_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_sd_data_t *data = (app_sd_data_t *)user_data;
+    if (!data) return;
     do_card_detect(&data->state);
     data->dirty_rect = data->tabview.content_rect;
 }
@@ -378,14 +335,15 @@ static void on_detect_click(ui_btn_t *btn, void *user_data) {
 static void on_benchmark_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_sd_data_t *data = (app_sd_data_t *)user_data;
+    if (!data) return;
     do_card_benchmark(&data->state);
     data->dirty_rect = data->tabview.content_rect;
 }
 
-// 第 1 层开关：启用 U 盘
 static void on_msc_switch(ui_switch_t *sw, bool state, void *user_data) {
     (void)sw;
     app_sd_data_t *data = (app_sd_data_t *)user_data;
+    if (!data) return;
     data->msc_active = state;
     data->msc_was_auto_dropped = false;
     msc_set_enabled(state);
@@ -403,10 +361,10 @@ static void on_msc_switch(ui_switch_t *sw, bool state, void *user_data) {
     data->dirty_rect = data->tabview.content_rect;
 }
 
-// 第 2 层开关：拖拽自动烧录
 static void on_auto_flash_switch(ui_switch_t *sw, bool state, void *user_data) {
     (void)sw;
     app_sd_data_t *data = (app_sd_data_t *)user_data;
+    if (!data) return;
     data->auto_flash_en = state;
     data->dirty_rect = data->tabview.content_rect;
 }
@@ -414,8 +372,12 @@ static void on_auto_flash_switch(ui_switch_t *sw, bool state, void *user_data) {
 /* ================= 生命周期与主循环步进 ================= */
 
 static void app_sd_init(app_t *self) {
-    self->user_data = &s_sd_data;
-    app_sd_data_t *data = &s_sd_data;
+    self->user_data = g_static_app_ram;
+}
+
+static void app_sd_enter(app_t *self) {
+    app_sd_data_t *data = (app_sd_data_t *)g_static_app_ram;
+    self->user_data = data;
     memset(data, 0, sizeof(app_sd_data_t));
 
     strcpy(data->current_path, "0:/");
@@ -469,20 +431,12 @@ static void app_sd_init(app_t *self) {
     data->btn_benchmark.user_data = data; data->btn_benchmark.style = UI_BTN_STYLE_ROUND;
     ui_btn_set_color(&data->btn_benchmark, 0x05E0, 0x03E0, 0xFFFF);
 
-    // Tab 2: 虚拟 U 盘两层控件布局
     data->msc_card = ui_rect_make(125, 44, 340, 130);
-    
-    // 第 1 层开关：启用 U 盘
     ui_switch_init(&data->sw_msc_en, 385, 185, 64, 32, false, on_msc_switch);
     data->sw_msc_en.user_data = data;
-
-    // 第 2 层开关：拖拽自动烧录
     ui_switch_init(&data->sw_auto_flash, 385, 235, 64, 32, true, on_auto_flash_switch);
     data->sw_auto_flash.user_data = data;
-}
 
-static void app_sd_enter(app_t *self) {
-    app_sd_data_t *data = (app_sd_data_t *)self->user_data;
     data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
     data->view_mode = VIEW_MODE_BROWSER;
     load_directory(data, data->current_path);
@@ -490,28 +444,31 @@ static void app_sd_enter(app_t *self) {
 
 static void app_sd_exit(app_t *self) {
     app_sd_data_t *data = (app_sd_data_t *)self->user_data;
-    swd_flasher_abort();
-    data->msc_was_auto_dropped = false;
-    if (data->msc_active) {
-        data->msc_active = false;
-        msc_set_enabled(false);
-        usb_switch_mode(0);
+    if (data) {
+        swd_flasher_abort();
+        data->msc_was_auto_dropped = false;
+        if (data->msc_active) {
+            data->msc_active = false;
+            msc_set_enabled(false);
+            usb_switch_mode(0);
+        }
+        if (data->fs_mounted) {
+            f_mount(NULL, "0:", 1);
+            data->fs_mounted = false;
+        }
     }
-    if (data->fs_mounted) {
-        f_mount(NULL, "0:", 1);
-        data->fs_mounted = false;
-    }
+    self->user_data = NULL;
 }
 
 static void app_sd_update(app_t *self, uint32_t now_tick) {
     (void)now_tick;
     app_sd_data_t *data = (app_sd_data_t *)self->user_data;
+    if (!data) return;
     data->dirty_rect = ui_rect_make(0, 0, 0, 0);
 
-    // ⚡ 1. 拖拽触发：临时卸载 U 盘并标记 msc_was_auto_dropped = true
     if (data->msc_active && data->auto_flash_en && msc_disk_check_write_completed(800)) {
         data->msc_active = false;
-        data->msc_was_auto_dropped = true; // 记录拖拽触发状态
+        data->msc_was_auto_dropped = true;
         msc_set_enabled(false);
         usb_switch_mode(0);
 
@@ -535,7 +492,6 @@ static void app_sd_update(app_t *self, uint32_t now_tick) {
             data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
             return;
         } else {
-            // 如果未找到固件文件，直接恢复 U 盘
             data->msc_was_auto_dropped = false;
             if (data->fs_mounted) { f_mount(NULL, "0:", 1); data->fs_mounted = false; }
             data->msc_active = true;
@@ -544,7 +500,6 @@ static void app_sd_update(app_t *self, uint32_t now_tick) {
         }
     }
 
-    // ⚡ 2. 推进流式烧录，并在烧录成功后自动重新挂载 U 盘
     if (data->tabview.active_tab_idx == TAB_SD_BROWSER && data->view_mode == VIEW_MODE_FLASHING) {
         const flasher_status_t *st = swd_flasher_get_status();
         if (st->stage != FLASHER_IDLE && st->stage != FLASHER_STAGE_SUCCESS && st->stage != FLASHER_STAGE_ERROR) {
@@ -552,16 +507,15 @@ static void app_sd_update(app_t *self, uint32_t now_tick) {
             ui_progressbar_set_progress(&data->prog_bar, st->progress_percent);
             data->dirty_rect = data->flash_card;
 
-            // ⚡ 3. 烧录成功后：若是由拖拽触发，自动重新挂载 U 盘
             if (st->stage == FLASHER_STAGE_SUCCESS && data->msc_was_auto_dropped) {
                 data->msc_was_auto_dropped = false;
                 if (data->fs_mounted) {
-                    f_mount(NULL, "0:", 1); // 卸载本地 FatFs，交出 TF 卡控制权
+                    f_mount(NULL, "0:", 1);
                     data->fs_mounted = false;
                 }
                 data->msc_active = true;
                 msc_set_enabled(true);
-                usb_switch_mode(1); // 重新连接电脑 U 盘
+                usb_switch_mode(1);
                 ui_switch_set_state(&data->sw_msc_en, true);
             }
         }
@@ -570,6 +524,7 @@ static void app_sd_update(app_t *self, uint32_t now_tick) {
 
 static bool app_sd_process_touch(app_t *self, bool is_touching, int16_t tx, int16_t ty, uint32_t now_tick) {
     app_sd_data_t *data = (app_sd_data_t *)self->user_data;
+    if (!data) return false;
 
     if (data->tabview.active_tab_idx == TAB_SD_BROWSER && data->view_mode == VIEW_MODE_FLASHING) {
         if (ui_btn_process_touch(&data->btn_start_flash, is_touching, tx, ty, now_tick)) return true;
@@ -621,6 +576,7 @@ static bool app_sd_process_touch(app_t *self, bool is_touching, int16_t tx, int1
 
 static void app_sd_draw(app_t *self, ui_tile_t *tile) {
     app_sd_data_t *data = (app_sd_data_t *)self->user_data;
+    if (!data) return;
     ui_rect_t overlap;
 
     ui_rect_t body = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);

@@ -34,7 +34,7 @@ static char             s_bin_path_cache[256];
 static uint8_t          s_page_buffer[1024];
 static uint64_t         s_flash_start_us = 0;
 
-#define FIRMWARE_BUF_SIZE  (64 * 1024)
+#define FIRMWARE_BUF_SIZE  (32 * 1024)
 static uint8_t          s_firmware_buf[FIRMWARE_BUF_SIZE];
 static uint32_t         s_firmware_size   = 0;
 static uint32_t         s_firmware_offset = 0;

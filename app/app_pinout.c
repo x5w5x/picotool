@@ -1,4 +1,5 @@
 #include "app_pinout.h"
+#include "app_shared_ram.h" // ⚡ 引入共享内存头文件
 #include "app_manager.h"
 #include "ui_draw.h"
 #include "lcd.h"
@@ -59,7 +60,6 @@ typedef struct {
     int8_t      selected_pin_num; // 1 ~ 20 (0 为未选中)
 } app_pinout_data_t;
 
-static app_pinout_data_t s_pinout_data;
 static app_t             s_app_pinout;
 
 /* ================= 1. 引脚颜色配置 ================= */
@@ -109,31 +109,34 @@ static inline void get_pin_colors(pin_kind_t kind, bool is_selected, uint16_t *b
 /* ================= 2. 生命周期与触控 ================= */
 
 static void app_pinout_init(app_t *self) {
-    self->user_data = &s_pinout_data;
-    app_pinout_data_t *data = &s_pinout_data;
-    data->dirty_rect        = ui_rect_make(0, 0, 0, 0);
-    data->selected_pin_num  = 0;
+    // ⚡ 仅绑定共享静态池指针
+    self->user_data = g_static_app_ram;
 }
 
 static void app_pinout_enter(app_t *self) {
-    app_pinout_data_t *data = (app_pinout_data_t *)self->user_data;
+    // ⚡ 进入 App 时从 8KB 静态池就地初始化
+    app_pinout_data_t *data = (app_pinout_data_t *)g_static_app_ram;
+    self->user_data = data;
+    memset(data, 0, sizeof(app_pinout_data_t));
+
     data->dirty_rect        = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
     data->selected_pin_num  = 0;
 }
 
 static void app_pinout_exit(app_t *self) {
-    (void)self;
+    self->user_data = NULL;
 }
 
 static void app_pinout_update(app_t *self, uint32_t now_tick) {
     (void)now_tick;
     app_pinout_data_t *data = (app_pinout_data_t *)self->user_data;
-    data->dirty_rect = ui_rect_make(0, 0, 0, 0);
+    if (data) data->dirty_rect = ui_rect_make(0, 0, 0, 0);
 }
 
 static bool app_pinout_process_touch(app_t *self, bool is_touching, int16_t tx, int16_t ty, uint32_t now_tick) {
     (void)now_tick;
     app_pinout_data_t *data = (app_pinout_data_t *)self->user_data;
+    if (!data) return false;
 
     if (!is_touching) return false;
 
@@ -163,6 +166,7 @@ static bool app_pinout_process_touch(app_t *self, bool is_touching, int16_t tx, 
 
 static void app_pinout_draw(app_t *self, ui_tile_t *tile) {
     app_pinout_data_t *data = (app_pinout_data_t *)self->user_data;
+    if (!data) return;
     ui_rect_t overlap;
 
     // 背景底色 (深邃科技黑蓝)

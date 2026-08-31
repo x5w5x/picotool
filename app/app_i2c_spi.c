@@ -1,4 +1,5 @@
 #include "app_i2c_spi.h"
+#include "app_shared_ram.h"
 #include "app_manager.h"
 #include "ui_draw.h"
 #include "ui_btn.h"
@@ -88,7 +89,6 @@ typedef struct {
     ui_btn_t        btn_spi_speed;
 } app_bus_data_t;
 
-static app_bus_data_t s_bus_data;
 static app_t          s_app_bus;
 
 static inline ui_rect_t rect_union_box(ui_rect_t a, ui_rect_t b) {
@@ -370,6 +370,7 @@ static void do_spi_probe(app_bus_data_t *data) {
 static void on_tab_changed(ui_tabview_t *tv, uint8_t old_tab, uint8_t new_tab, void *user_data) {
     (void)tv; (void)old_tab;
     app_bus_data_t *data = (app_bus_data_t *)user_data;
+    if (!data) return;
     if (new_tab == TAB_BUS_I2C_SCAN || new_tab == TAB_BUS_I2C_RW) {
         bb_i2c_init_pins();
     } else if (new_tab == TAB_BUS_SPI_SCAN) {
@@ -380,6 +381,7 @@ static void on_tab_changed(ui_tabview_t *tv, uint8_t old_tab, uint8_t new_tab, v
 static void on_i2c_scan_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_bus_data_t *data = (app_bus_data_t *)user_data;
+    if (!data) return;
     do_i2c_scan(data);
     data->dirty_rect = data->tabview.content_rect;
 }
@@ -387,6 +389,7 @@ static void on_i2c_scan_click(ui_btn_t *btn, void *user_data) {
 static void on_i2c_speed_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_bus_data_t *data = (app_bus_data_t *)user_data;
+    if (!data) return;
     if (data->i2c_delay_us == 5) {
         data->i2c_delay_us = 1;
         data->btn_i2c_speed.text = "400kHz (快速)";
@@ -400,6 +403,7 @@ static void on_i2c_speed_click(ui_btn_t *btn, void *user_data) {
 static void on_stepper_dev_change(ui_stepper_t *sp, int32_t val, void *user_data) {
     (void)sp;
     app_bus_data_t *data = (app_bus_data_t *)user_data;
+    if (!data) return;
     data->rw_dev_addr = val;
     data->dirty_rect = data->rw_card;
 }
@@ -407,6 +411,7 @@ static void on_stepper_dev_change(ui_stepper_t *sp, int32_t val, void *user_data
 static void on_stepper_reg_change(ui_stepper_t *sp, int32_t val, void *user_data) {
     (void)sp;
     app_bus_data_t *data = (app_bus_data_t *)user_data;
+    if (!data) return;
     data->rw_reg_addr = val;
     data->dirty_rect = data->rw_card;
 }
@@ -414,12 +419,14 @@ static void on_stepper_reg_change(ui_stepper_t *sp, int32_t val, void *user_data
 static void on_stepper_val_change(ui_stepper_t *sp, int32_t val, void *user_data) {
     (void)sp;
     app_bus_data_t *data = (app_bus_data_t *)user_data;
+    if (!data) return;
     data->rw_val_byte = val;
 }
 
 static void on_exec_read_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_bus_data_t *data = (app_bus_data_t *)user_data;
+    if (!data) return;
     do_i2c_read_reg(data);
     data->dirty_rect = data->tabview.content_rect;
 }
@@ -427,6 +434,7 @@ static void on_exec_read_click(ui_btn_t *btn, void *user_data) {
 static void on_exec_write_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_bus_data_t *data = (app_bus_data_t *)user_data;
+    if (!data) return;
     uint8_t payload[2] = {(uint8_t)data->rw_reg_addr, (uint8_t)data->rw_val_byte};
     data->rw_executed = true;
     data->rw_success = do_i2c_write_bytes(data, (uint8_t)data->rw_dev_addr, payload, 2);
@@ -443,6 +451,7 @@ static void on_exec_write_click(ui_btn_t *btn, void *user_data) {
 static void on_oled_all_on_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_bus_data_t *data = (app_bus_data_t *)user_data;
+    if (!data) return;
     uint8_t cmds[] = {0x00, 0xAF, 0x00, 0xA5};
     data->rw_executed = true;
     data->rw_success = do_i2c_write_bytes(data, (uint8_t)data->rw_dev_addr, cmds, sizeof(cmds));
@@ -457,6 +466,7 @@ static void on_oled_all_on_click(ui_btn_t *btn, void *user_data) {
 static void on_oled_all_off_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_bus_data_t *data = (app_bus_data_t *)user_data;
+    if (!data) return;
     uint8_t cmds[] = {0x00, 0xA4};
     data->rw_executed = true;
     data->rw_success = do_i2c_write_bytes(data, (uint8_t)data->rw_dev_addr, cmds, sizeof(cmds));
@@ -471,6 +481,7 @@ static void on_oled_all_off_click(ui_btn_t *btn, void *user_data) {
 static void on_spi_probe_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_bus_data_t *data = (app_bus_data_t *)user_data;
+    if (!data) return;
     do_spi_probe(data);
     data->dirty_rect = data->tabview.content_rect;
 }
@@ -478,6 +489,7 @@ static void on_spi_probe_click(ui_btn_t *btn, void *user_data) {
 static void on_spi_speed_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     app_bus_data_t *data = (app_bus_data_t *)user_data;
+    if (!data) return;
     if (data->spi_speed_hz == 10000000) {
         data->spi_speed_hz = 20000000;
         data->btn_spi_speed.text = "20MHz";
@@ -495,8 +507,14 @@ static void on_spi_speed_click(ui_btn_t *btn, void *user_data) {
 /* ================= 4. 生命周期管理 ================= */
 
 static void app_bus_init(app_t *self) {
-    self->user_data = &s_bus_data;
-    app_bus_data_t *data = &s_bus_data;
+    // ⚡ 仅绑定共享静态池指针
+    self->user_data = g_static_app_ram;
+}
+
+static void app_bus_enter(app_t *self) {
+    // ⚡ 进入 App 时从 8KB 静态池就地初始化
+    app_bus_data_t *data = (app_bus_data_t *)g_static_app_ram;
+    self->user_data = data;
     memset(data, 0, sizeof(app_bus_data_t));
 
     data->dirty_rect   = ui_rect_make(0, 0, 0, 0);
@@ -523,16 +541,16 @@ static void app_bus_init(app_t *self) {
     ui_btn_set_color(&data->btn_i2c_speed, 0x03DF, 0x0275, 0xFFFF);
 
     // Tab 1: I2C 读写与测试
-    ui_stepper_init(&data->stepper_dev_addr, 120, 40, 110, 34, 8, 119, 60, 1, "", on_stepper_dev_change);//: 1, 2]
-    ui_stepper_set_prefix(&data->stepper_dev_addr, "地址:");//: 1]
+    ui_stepper_init(&data->stepper_dev_addr, 120, 40, 110, 34, 8, 119, 60, 1, "", on_stepper_dev_change);
+    ui_stepper_set_prefix(&data->stepper_dev_addr, "地址:");
     data->stepper_dev_addr.user_data = data;
 
-    ui_stepper_init(&data->stepper_reg_addr, 236, 40, 114, 34, 0, 255, 0, 1, "", on_stepper_reg_change);//: 1, 2]
-    ui_stepper_set_prefix(&data->stepper_reg_addr, "寄存:");//: 1]
+    ui_stepper_init(&data->stepper_reg_addr, 236, 40, 114, 34, 0, 255, 0, 1, "", on_stepper_reg_change);
+    ui_stepper_set_prefix(&data->stepper_reg_addr, "寄存:");
     data->stepper_reg_addr.user_data = data;
 
-    ui_stepper_init(&data->stepper_val_byte, 356, 40, 114, 34, 0, 255, 165, 1, "", on_stepper_val_change);//: 1, 2]
-    ui_stepper_set_prefix(&data->stepper_val_byte, "数值:");//: 1]
+    ui_stepper_init(&data->stepper_val_byte, 356, 40, 114, 34, 0, 255, 165, 1, "", on_stepper_val_change);
+    ui_stepper_set_prefix(&data->stepper_val_byte, "数值:");
     data->stepper_val_byte.user_data = data;
 
     ui_btn_init(&data->btn_exec_read, 120, 80, 170, 34, "读状态/寄存器", on_exec_read_click);
@@ -562,16 +580,6 @@ static void app_bus_init(app_t *self) {
     ui_btn_init(&data->btn_spi_speed, 358, 242, 112, 38, "10MHz", on_spi_speed_click);
     data->btn_spi_speed.user_data = data; data->btn_spi_speed.style = UI_BTN_STYLE_ROUND;
     ui_btn_set_color(&data->btn_spi_speed, 0x03DF, 0x0275, 0xFFFF);
-}
-
-static void app_bus_enter(app_t *self) {
-    app_bus_data_t *data = (app_bus_data_t *)self->user_data;
-
-    if (data->i2c_delay_us == 0) data->i2c_delay_us = 5;
-    if (data->spi_speed_hz == 0) data->spi_speed_hz = 10000000;
-
-    data->dirty_rect   = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
-    data->last_tab_idx = data->tabview.active_tab_idx;
 
     if (data->tabview.active_tab_idx == TAB_BUS_SPI_SCAN) {
         bus_init_spi(data);
@@ -586,16 +594,16 @@ static void app_bus_exit(app_t *self) {
     gpio_set_function(PIN_I2C_SCL, GPIO_FUNC_NULL);
     gpio_set_function(PIN_SPI_SCK, GPIO_FUNC_NULL);
     gpio_set_function(PIN_SPI_MOSI, GPIO_FUNC_NULL);
+    self->user_data = NULL;
 }
 
 static void app_bus_update(app_t *self, uint32_t now_tick) {
-    (void)now_tick;
-    app_bus_data_t *data = (app_bus_data_t *)self->user_data;
-    data->dirty_rect = ui_rect_make(0, 0, 0, 0);
+    (void)now_tick; (void)self;
 }
 
 static bool app_bus_process_touch(app_t *self, bool is_touching, int16_t tx, int16_t ty, uint32_t now_tick) {
     app_bus_data_t *data = (app_bus_data_t *)self->user_data;
+    if (!data) return false;
 
     if (ui_tabview_process_touch(&data->tabview, is_touching, tx, ty, now_tick)) {
         if (data->tabview.active_tab_idx != data->last_tab_idx) {
@@ -614,16 +622,16 @@ static bool app_bus_process_touch(app_t *self, bool is_touching, int16_t tx, int
             break;
 
         case TAB_BUS_I2C_RW:
-            if (ui_stepper_process_touch(&data->stepper_dev_addr, is_touching, tx, ty, now_tick)) {//: 1]
-                data->dirty_rect = rect_union_box(data->dirty_rect, ui_stepper_get_dirty_rect(&data->stepper_dev_addr));//: 2]
+            if (ui_stepper_process_touch(&data->stepper_dev_addr, is_touching, tx, ty, now_tick)) {
+                data->dirty_rect = rect_union_box(data->dirty_rect, ui_stepper_get_dirty_rect(&data->stepper_dev_addr));
                 return true;
             }
-            if (ui_stepper_process_touch(&data->stepper_reg_addr, is_touching, tx, ty, now_tick)) {//: 1]
-                data->dirty_rect = rect_union_box(data->dirty_rect, ui_stepper_get_dirty_rect(&data->stepper_reg_addr));//: 2]
+            if (ui_stepper_process_touch(&data->stepper_reg_addr, is_touching, tx, ty, now_tick)) {
+                data->dirty_rect = rect_union_box(data->dirty_rect, ui_stepper_get_dirty_rect(&data->stepper_reg_addr));
                 return true;
             }
-            if (ui_stepper_process_touch(&data->stepper_val_byte, is_touching, tx, ty, now_tick)) {//: 1]
-                data->dirty_rect = rect_union_box(data->dirty_rect, ui_stepper_get_dirty_rect(&data->stepper_val_byte));//: 2]
+            if (ui_stepper_process_touch(&data->stepper_val_byte, is_touching, tx, ty, now_tick)) {
+                data->dirty_rect = rect_union_box(data->dirty_rect, ui_stepper_get_dirty_rect(&data->stepper_val_byte));
                 return true;
             }
             if (ui_btn_process_touch(&data->btn_exec_read, is_touching, tx, ty, now_tick)) return true;
@@ -641,10 +649,11 @@ static bool app_bus_process_touch(app_t *self, bool is_touching, int16_t tx, int
     return (data->dirty_rect.w > 0 && data->dirty_rect.h > 0);
 }
 
-/* ================= 5. 切片光栅化渲染 (无任何边缘溢出) ================= */
+/* ================= 5. 切片光栅化渲染 ================= */
 
 static void app_bus_draw(app_t *self, ui_tile_t *tile) {
     app_bus_data_t *data = (app_bus_data_t *)self->user_data;
+    if (!data) return;
     ui_rect_t overlap;
 
     ui_rect_t body = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
@@ -692,9 +701,9 @@ static void app_bus_draw(app_t *self, ui_tile_t *tile) {
         }
 
         case TAB_BUS_I2C_RW: {
-            ui_stepper_draw(tile, &data->stepper_dev_addr);//: 1]
-            ui_stepper_draw(tile, &data->stepper_reg_addr);//: 1]
-            ui_stepper_draw(tile, &data->stepper_val_byte);//: 1]
+            ui_stepper_draw(tile, &data->stepper_dev_addr);
+            ui_stepper_draw(tile, &data->stepper_reg_addr);
+            ui_stepper_draw(tile, &data->stepper_val_byte);
             ui_btn_draw(tile, &data->btn_exec_read);
             ui_btn_draw(tile, &data->btn_exec_write);
 
@@ -702,7 +711,6 @@ static void app_bus_draw(app_t *self, ui_tile_t *tile) {
                 ui_draw_fill_rect(tile, &overlap, 0x10A2);
                 ui_draw_rect(tile, &data->rw_card, 0x07FF);
 
-                // 显示十进制与十六进制双向对照
                 snprintf(str_buf, sizeof(str_buf), "目标: 从机 %ld(0x%02X)  Reg %ld(0x%02X)",
                          (long)data->rw_dev_addr, (uint8_t)data->rw_dev_addr,
                          (long)data->rw_reg_addr, (uint8_t)data->rw_reg_addr);
@@ -763,24 +771,16 @@ static void app_bus_draw(app_t *self, ui_tile_t *tile) {
             break;
         }
 
-        case TAB_BUS_PINOUT: { // ⚡ 彻底优化排版，防止右侧溢出
+        case TAB_BUS_PINOUT: {
             ui_rect_t card = ui_rect_make(120, 40, 350, 240);
             if (ui_rect_intersect(&tile->rect, &card, &overlap)) {
                 ui_draw_fill_rect(tile, &overlap, 0xEF7D);
                 ui_draw_rect(tile, &card, 0xC618);
-
                 ui_draw_string(tile, 130, 48, "H1 排针总线引脚对照表:", FONT_16, 0x03DF, 0xEF7D);
-
-                // I2C 接线
                 ui_draw_string(tile, 130, 74, "[I2C]  SDA: Pin 9(GP4)  SCL: Pin 10(GP5)", FONT_16, 0x1A7B, 0xEF7D);
-
-                // SPI 接线 (拆分为两行显示)
                 ui_draw_string(tile, 130, 102, "[SPI]  SCK: Pin 11(GP6)  CS: Pin 10(GP5)", FONT_16, 0x05E0, 0xEF7D);
                 ui_draw_string(tile, 130, 126, "[SPI]  MOSI:Pin 12(GP7) MISO:Pin 9(GP4)", FONT_16, 0x05E0, 0xEF7D);
-
-                // 电源接线
                 ui_draw_string(tile, 130, 156, "[电源] 3.3V: Pin 2  5V: Pin 1  GND: Pin 3/4", FONT_16, 0xF800, 0xEF7D);
-
                 ui_draw_string(tile, 130, 188, "注意: SPI 与 I2C 共用 GP4/GP5 引脚", FONT_16, 0x8410, 0xEF7D);
                 ui_draw_string(tile, 130, 212, "切换功能前请确认外接线缆正确", FONT_16, 0x8410, 0xEF7D);
             }
