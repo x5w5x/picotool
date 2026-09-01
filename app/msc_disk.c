@@ -1,3 +1,29 @@
+/* =============================================================
+ * @file   app/msc_disk.c
+ * @brief  TinyUSB MSC ↔ Drivers/tf.c 桥接层 + 拖拽写盘监听
+ *
+ * @section 角色
+ *   - 实现 TinyUSB 6 个 MSC SCSI 回调(Inquiry / TestUnitReady / Capacity /
+ *     Read10 / Write10 / SCSI),把扇区操作转给 tf.c
+ *   - 拖拽烧录链路:Write10 回调更新 s_last_msc_write_us + s_msc_has_written,
+ *     app_sd_msc.c 调 msc_disk_check_write_completed(800) 检测"写停止 800ms"
+ *     触发自动烧录流程
+ *
+ * @section 导出符号
+ *   - tud_msc_inquiry_cb / test_unit_ready_cb / capacity_cb / read10_cb / write10_cb / scsi_cb
+ *   - msc_set_enabled(bool):开 / 关 MSC + 自动 TF_Init
+ *   - msc_disk_check_write_completed(quiet_ms):800ms 内无新写 → true
+ *   - msc_disk_reset_write_state:重置拖拽监听
+ *
+ * @section 依赖
+ *   - tusb.h / tf.h
+ *   - pico/time
+ *   - <string.h> / <stdbool.h>
+ *
+ * @section 待重构 (P2)
+ *   - SCSI 回调全返回 -1(未处理),实际上 StartStop/PreventRemoval 等需实现
+ *   - 多 LUN 仅支持 LUN 0
+ * ============================================================= */
 /*
  * @FilePath: \pico\app\msc_disk.c
  * @Description: TinyUSB MSC (Mass Storage Class) ↔ Drivers/tf.c 桥接层

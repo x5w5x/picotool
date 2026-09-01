@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>RP2040 Pico ui/ + app/ 代码总览</title>
+<style>
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; max-width: 960px; margin: 24px auto; padding: 0 16px; color: #1a1a1a; background: #fafafa; }
+  h1 { border-bottom: 3px double #1a7b; padding-bottom: 8px; }
+  h2 { color: #1a7b; border-left: 4px solid #1a7b; padding-left: 10px; margin-top: 32px; }
+  h3 { color: #2945; margin-top: 18px; }
+  details { background: #fff; border: 1px solid #d4d4d4; border-radius: 6px; padding: 6px 12px; margin: 6px 0; }
+  details[open] { box-shadow: 0 2px 6px rgba(0,0,0,.08); }
+  summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+  summary .path { color: #555; font-family: ui-monospace, Consolas, monospace; font-size: 0.92em; }
+  summary .lines { color: #888; font-weight: 400; font-size: 0.85em; margin-left: 8px; }
+  .warn { color: #c00; font-weight: 700; }
+  .ok   { color: #080; }
+  table { border-collapse: collapse; margin: 8px 0; font-size: 0.92em; }
+  td, th { border: 1px solid #ddd; padding: 4px 8px; text-align: left; }
+  th { background: #eef; }
+  code { background: #f0f0f0; padding: 1px 5px; border-radius: 3px; font-family: ui-monospace, Consolas, monospace; }
+  .deps { color: #555; font-size: 0.9em; }
+  .key-fn { color: #06c; }
+  .todo { background: #fffbcc; border-left: 3px solid #d4a017; padding: 4px 8px; margin: 6px 0; font-size: 0.92em; }
+  .pill { display: inline-block; background: #1a7b; color: #fff; border-radius: 10px; padding: 1px 8px; font-size: 0.78em; margin-right: 4px; }
+  .pill.warn { background: #c00; }
+  .pill.ok { background: #080; }
+</style>
+</head>
+<body>
+
+<h1>RP2040 Pico — ui/ + app/ 代码总览</h1>
+<p>最后更新: 2026-09-01。本文档是 <code>ui/</code> 和 <code>app/</code> 下所有 <code>.c</code>/<code>.h</code> 的速览卡片。
+每张卡片点:导出符号 · 依赖 · 角色 · 待办。</p>
+
+<p>
+<span class="pill">ui 文件: 47 个</span>
+<span class="pill">app 文件: 18 个 (不含 dog_data.h)</span>
+<span class="pill warn">⚠️ 重构重点: app_loader.c / app_api.h / novel_reader</span>
+</p>
+
+<!-- ============================================================ -->
+<h2>ui/ — UI 框架层 (47 文件)</h2>
+<!-- ============================================================ -->
+
+<h3>🧱 框架骨架 (Core + Tile + Geometry + Draw)</h3>
+
+<details>
+<summary><span class="path">ui/ui_tile.h</span> <span class="lines">38 行</span></summary>
+<ul>
+  <li><b>导出:</b> <code>UI_TILE_W=480 / UI_TILE_H=32 / UI_TILE_ROWS=10</code>, <code>ui_tile_t { rect, buf }</code>, <code>ui_tile_init / get_next / commit_row / wait_dma_done</code></li>
+  <li><b>依赖:</b> <code>ui_geometry.h</code></li>
+  <li><b>角色:</b> 全屏 480×320 分 10 个 480×32 切片行, 上下双缓冲 (60KB像素 = 120KB)。所有 <code>ui_draw_*</code> 都画到 <code>ui_tile_t::buf</code></li>
+  <li class="warn">⚠️ bug: <code>UI_TILE_H</code> 在 ui_tile.h 和 chinese.h 各定义一次, 重定义 warning</li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_tile.c</span> <span class="lines">40 行</span></summary>
+<ul>
+  <li><b>实现:</b> <code>s_tile_bufs[2][UI_TILE_W*UI_TILE_H]</code> 双缓冲, <code>ui_tile_get_next(row)</code> 切换 buf 索引 + 清零</li>
+  <li><b>依赖:</b> <code>ui_tile.h lcd.h</code></li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_geometry.h</span> <span class="lines">100 行</span></summary>
+<ul>
+  <li><b>导出:</b> <code>ui_rect_t { x,y,w,h } / ui_point_t / ui_rect_make / intersect / contain</code></li>
+  <li><b>角色:</b> 整个 UI 唯一几何原语。inline 函数, 头文件实现</li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_geometry.c</span> <span class="lines">68 行</span></summary>
+<ul>
+  <li><b>实现:</b> <code>ui_rect_intersect</code>, <code>ui_rect_contain_point</code></li>
+  <li><b>依赖:</b> <code>ui_geometry.h</code></li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_draw.h</span> <span class="lines">47 行</span></summary>
+<ul>
+  <li><b>导出:</b> <code>ui_draw_set_clip / reset_clip / get_clip</code>, <code>ui_draw_fill_rect / draw_char / draw_bitmap / draw_string</code>, <code>ui_draw_hline / vline</code></li>
+  <li><b>依赖:</b> <code>ui_geometry.h ui_tile.h chinese.h stddef.h</code></li>
+  <li><b>角色:</b> 像素级光栅化原语。clip 是全局静态 (非线程安全, plugin 调用要保证在 Core 0)</li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_draw.c</span> <span class="lines">371 行</span></summary>
+<ul>
+  <li><b>实现:</b> 全局裁剪 + 矩形填充 + 字符/位图渲染</li>
+  <li><b>关键函数:</b> <code class="key-fn">ui_draw_string</code> — ASCII (&lt;0x80) 走 <code>ui_draw_char</code>; GBK 双字节走 <code>GetFontBitmap + ui_draw_bitmap</code>。缺字 <code>dot_buf==NULL</code> 时<strong>静默跳过</strong> (导致 novel_reader 黑块)</li>
+  <li><b>依赖:</b> <code>ui_draw.h lcd.h stdlib.h string.h</code></li>
+  <li class="todo">待重构: 缺字应该画 '?' 或 '□' 占位, 不能静默</li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_core.h</span> <span class="lines">48 行</span></summary>
+<ul>
+  <li><b>导出:</b> <code>ui_scene_draw_cb_t</code> 回调类型, <code>ui_render_frame / ui_core_init / ui_core_set_backlight / ui_render_partial</code></li>
+  <li><b>依赖:</b> <code>ui_geometry.h ui_tile.h ui_draw.h lcd.h</code></li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_core.c</span> <span class="lines">125 行</span></summary>
+<ul>
+  <li><b>实现:</b> <code>ui_render_frame(cb)</code> 遍历 10 行切片, 每行清屏 → 调 cb 画 → DMA 推送 (乒乓缓冲)。大部分代码被注释, 实际跑 DMA 推送逻辑</li>
+  <li><b>依赖:</b> <code>ui_core.h</code></li>
+</ul>
+</details>
+
+<h3>🧩 控件层 (Widget)</h3>
+
+<details>
+<summary><span class="path">ui/ui_btn.h</span> <span class="lines">103 行</span></summary>
+<ul>
+  <li><b>导出:</b> <code>ui_btn_mode_t { PUSH / TOGGLE }</code>, <code>ui_btn_style_t { ROUND / FLAT }</code>, <code>ui_btn_init / process_touch / draw / set_color</code></li>
+  <li><b>依赖:</b> <code>ui_geometry.h ui_tile.h chinese.h stdint.h stdbool.h</code></li>
+  <li><b>角色:</b> UI 唯一标准按钮控件。插件 novel_reader / wire_quality 都在用</li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_btn.c</span> <span class="lines">224 行</span></summary>
+<ul>
+  <li><b>实现:</b> 触摸 hit-test + 8px 防抖 + 模式分发 (PUSH / TOGGLE) + 圆角矩形绘制 + label 居中</li>
+  <li><b>依赖:</b> <code>ui_btn.h ui_draw.h stdlib.h string.h</code></li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_dropdown.h</span> <span class="lines">63 行</span></summary>
+<ul><li><b>导出:</b> <code>ui_dropdown_init / set_options / process_touch / draw</code></li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_dropdown.c</span> <span class="lines">210 行</span></summary>
+<ul><li><b>实现:</b> 下拉选择</li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_switch.h</span> <span class="lines">73 行</span></summary>
+<ul><li><b>导出:</b> <code>ui_switch_init / process_touch / draw</code></li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_switch.c</span> <span class="lines">130 行</span></summary>
+<ul><li><b>实现:</b> 拨动开关 (滑动 toggle)</li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_slider.h</span> <span class="lines">85 行</span></summary>
+<ul><li><b>导出:</b> <code>ui_slider_init / set_value / process_touch / draw</code></li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_slider.c</span> <span class="lines">209 行</span></summary>
+<ul><li><b>实现:</b> 拖动滑块 (连续值)</li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_progressbar.h</span> <span class="lines">79 行</span></summary>
+<ul><li><b>导出:</b> <code>ui_progressbar_init / set_value / draw</code></li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_progressbar.c</span> <span class="lines">169 行</span></summary>
+<ul><li><b>实现:</b> 进度条 (纯展示, 不可拖)</li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_stepper.h</span> <span class="lines">93 行</span></summary>
+<ul><li><b>导出:</b> <code>ui_stepper_init / set_value / process_touch / draw</code></li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_stepper.c</span> <span class="lines">262 行</span></summary>
+<ul><li><b>实现:</b> +/-数字步进器</li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_tabview.h</span> <span class="lines">88 行</span></summary>
+<ul><li><b>导出:</b> <code>ui_tabview_init / set_active / process_touch / draw</code></li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_tabview.c</span> <span class="lines">239 行</span></summary>
+<ul><li><b>实现:</b> 顶部 tab 切换 (多页面)</li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_checkbox_group.h</span> <span class="lines">95 行</span></summary>
+<ul><li><b>导出:</b> <code>ui_checkbox_group_init / process_touch / draw / get_selected</code></li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_checkbox_group.c</span> <span class="lines">263 行</span></summary>
+<ul><li><b>实现:</b> 多选框组</li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_modal.h</span> <span class="lines">66 行</span></summary>
+<ul><li><b>导出:</b> <code>ui_modal_show / hide / process_touch / draw</code></li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_modal.c</span> <span class="lines">183 行</span></summary>
+<ul><li><b>实现:</b> 模态对话框</li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_toast.h</span> <span class="lines">68 行</span></summary>
+<ul><li><b>导出:</b> <code>ui_toast_show / draw / tick</code></li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_toast.c</span> <span class="lines">116 行</span></summary>
+<ul><li><b>实现:</b> 半透明 toast 提示 (1.5s 自动消失)</li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_input.h</span> <span class="lines">57 行</span></summary>
+<ul><li><b>导出:</b> <code>ui_input_init / set_text / process_touch / draw</code></li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_input.c</span> <span class="lines">117 行</span></summary>
+<ul><li><b>实现:</b> 单行输入框 (ASCII)</li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_keyboard.h</span> <span class="lines">56 行</span></summary>
+<ul><li><b>导出:</b> <code>ui_keyboard_init / process_touch / draw</code></li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_keyboard.c</span> <span class="lines">301 行</span></summary>
+<ul><li><b>实现:</b> 软件 QWERTY 键盘 (弹窗式)</li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_numpad.h</span> <span class="lines">79 行</span></summary>
+<ul><li><b>导出:</b> <code>ui_numpad_init / process_touch / draw</code></li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_numpad.c</span> <span class="lines">315 行</span></summary>
+<ul><li><b>实现:</b> 数字小键盘 (弹窗式)</li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_terminal.h</span> <span class="lines">94 行</span></summary>
+<ul><li><b>导出:</b> <code>ui_terminal_init / printf / process_touch / draw</code></li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_terminal.c</span> <span class="lines">258 行</span></summary>
+<ul><li><b>实现:</b> 终端显示 (滚动行缓冲)</li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_waveform.h</span> <span class="lines">105 行</span></summary>
+<ul><li><b>导出:</b> <code>ui_waveform_init / push_sample / draw</code></li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_waveform.c</span> <span class="lines">331 行</span></summary>
+<ul><li><b>实现:</b> 实时波形 (环形缓冲 + 折线)</li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_hex_view.h</span> <span class="lines">84 行</span></summary>
+<ul><li><b>导出:</b> <code>ui_hex_view_init / set_data / draw</code></li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_hex_view.c</span> <span class="lines">256 行</span></summary>
+<ul><li><b>实现:</b> hex dump (16 字节/行, 地址 + 字节 + ASCII)</li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_packet_table.h</span> <span class="lines">100 行</span></summary>
+<ul><li><b>导出:</b> <code>ui_packet_table_init / push_row / draw</code></li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_packet_table.c</span> <span class="lines">315 行</span></summary>
+<ul><li><b>实现:</b> 滚动列表 (类似 log 表格)</li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_scrollview.h</span> <span class="lines">54 行</span></summary>
+<ul><li><b>导出:</b> <code>ui_scrollview_init / set_content_h / process_touch / draw</code></li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_scrollview.c</span> <span class="lines">131 行</span></summary>
+<ul><li><b>实现:</b> 滚动容器 (嵌套 widget)</li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_file_browser.h</span> <span class="lines">78 行</span></summary>
+<ul><li><b>导出:</b> <code>ui_file_browser_init / refresh / process_touch / draw</code></li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_file_browser.c</span> <span class="lines">315 行</span></summary>
+<ul><li><b>实现:</b> TF 卡文件浏览器 (走 fatfs)</li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_status_bar.h</span> <span class="lines">94 行</span></summary>
+<ul><li><b>导出:</b> <code>ui_status_bar_init / set_msg / draw</code></li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_status_bar.c</span> <span class="lines">285 行</span></summary>
+<ul><li><b>实现:</b> 顶栏 (时间 + 电池 + 状态图标)</li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_drawer.h</span> <span class="lines">49 行</span></summary>
+<ul><li><b>导出:</b> <code>ui_drawer_init / process_touch / draw</code></li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_drawer.c</span> <span class="lines">392 行</span></summary>
+<ul><li><b>实现:</b> 侧滑抽屉 (左侧弹出菜单)</li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_picture.h</span> <span class="lines">70 行</span></summary>
+<ul><li><b>导出:</b> <code>ui_picture_init / draw</code></li></ul>
+</details>
+
+<details>
+<summary><span class="path">ui/ui_picture.c</span> <span class="lines">127 行</span></summary>
+<ul><li><b>实现:</b> 图片渲染 (位图到 tile)</li></ul>
+</details>
+
+<!-- ============================================================ -->
+<h2>app/ — host 端 app + plugin 框架 (18 文件)</h2>
+<!-- ============================================================ -->
+
+<h3>🧬 plugin 框架</h3>
+
+<details>
+<summary><span class="path warn">app/app_api.h</span> <span class="lines">109 行</span> <span class="pill warn">重构重点</span></summary>
+<ul>
+  <li><b>导出:</b> <code>pico_host_api_t</code> 单一巨大结构体, 字段:<code>fat_open/close/read/write/seek/size/list_dir</code>, <code>ui_btn_init/process_touch/draw/set_color</code>, <code>ui_draw_fill_rect/draw_string/...</code>, <code>gpio_get/set_dir/put/set_pulls</code>, <code>request_redraw/exit/get_time_ms/delay_ms/us/post_log</code></li>
+  <li><b>依赖:</b> <code>ui_tile.h ui_btn.h stdint.h stdbool.h</code></li>
+  <li><b>角色:</b> plugin 唯一可用 API 入口。host 在 <code>app_loader.c</code> 里实例化一份结构, 把函数指针填进去, 写到 plugin RAM 池头, plugin 拿到这张表自己调</li>
+  <li class="todo">⚠️ P0 重构: 字段按"内存 / GPIO / 文件 / UI / 日志 / 时间 / 退出"分组重排; 加 static_assert 字段偏移</li>
+  <li class="todo">⚠️ P0 重构: plugin <code>init()</code> 里检查每个函数指针非 NULL</li>
+  <li class="todo">⚠️ P0 重构: 加 <code>fat_last_error()</code> 让 plugin 拿到详细 err 码</li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path warn">app/app_loader.c</span> <span class="lines">511 行</span> <span class="pill warn">P0 拆 4 文件</span></summary>
+<ul>
+  <li><b>导出:</b> <code>app_loader_init / run / on_touch / on_tick / unload_current</code></li>
+  <li><b>依赖:</b> <code>app_loader.h app_manager.h lcd.h ff.h ui_draw.h ui_btn.h ui_tile.h hardware/gpio.h</code></li>
+  <li><b>角色:</b> plugin 主循环。32KB RAM 池 (0x20038000..0x20040000), <code>s_plugin_fat_mounted</code> flag 防 mount 状态失效, .papp 头 4 字节 magic 检查, 入口跳转, host_api 函数指针表填充</li>
+  <li><b>关键函数:</b> <code class="key-fn">host_fat_list_dir</code> (固定 stride 写 — novel_reader 修过的 bug), <code class="key-fn">app_loader_unload_current</code> (memset 池子 + fat_unmount), <code class="key-fn">app_loader_load</code> (读 .papp → memcpy → 跳 entry)</li>
+  <li class="todo">⚠️ P0: 拆 4 文件 — app_loader.c 主循环 / app_host_api.c 函数指针表 / app_plugin_slot.c 32KB RAM 池 / app_plugin_fat.c mount 状态</li>
+  <li class="todo">⚠️ P0: 加 .papp size sanity check (不能超 32KB)</li>
+  <li class="todo">⚠️ P1: 加 30s 健康检查, mount 状态跟内核对不上时自动重 mount</li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path">app/app_loader.h</span> <span class="lines">21 行</span></summary>
+<ul>
+  <li><b>导出:</b> <code>app_loader_*</code> 函数声明</li>
+  <li><b>依赖:</b> <code>app_base.h app_api.h</code></li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path">app/app_base.h</span> <span class="lines">56 行</span></summary>
+<ul>
+  <li><b>导出:</b> <code>app_id_t</code> enum (内置 app 列表), <code>APP_RAM_BASE / APP_RAM_SIZE / APP_MAGIC</code>, <code>app_event_t</code></li>
+  <li><b>角色:</b> 所有 app 共用基类头</li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path">app/app_shared_ram.h</span> <span class="lines">10 行</span></summary>
+<ul>
+  <li><b>导出:</b> <code>app_shared_state_t</code> — 内置 app 之间共享的全局状态 (当前选中 app id, 系统时间, 电池电量, TF 卡状态等)</li>
+  <li><b>依赖:</b> <code>stdint.h</code></li>
+</ul>
+</details>
+
+<h3>🎛️ 内置 app (每个 app 一对 .c + .h)</h3>
+
+<details>
+<summary><span class="path">app/app_template.c</span> <span class="lines">101 行</span></summary>
+<ul>
+  <li><b>导出:</b> <code>app_template_register()</code></li>
+  <li><b>角色:</b> app 框架 demo / 模板, 展示标准 app 的注册 / init / draw / on_touch / on_tick / exit 生命周期</li>
+  <li><b>依赖:</b> <code>app_template.h app_shared_ram.h app_manager.h ui_btn.h ui_draw.h</code></li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path">app/app_template.h</span> <span class="lines">24 行</span></summary>
+<ul><li>声明</li></ul>
+</details>
+
+<details>
+<summary><span class="path">app/app_manager.c</span> <span class="lines">280 行</span></summary>
+<ul>
+  <li><b>导出:</b> <code>app_manager_register / run / switch_to / current_id</code></li>
+  <li><b>角色:</b> app 总菜单调度。内置 app 列表, 侧滑 / 点击切换, 处理 back 键回到 home</li>
+  <li><b>依赖:</b> <code>app_manager.h ui_draw.h stdio.h string.h stdlib.h lcd.h app_shared_ram.h</code></li>
+  <li><b>关键函数:</b> <code class="key-fn">EDGE_ZONE_LEFT_PX=50</code> — 左边缘 50px 是抽屉呼出区</li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path">app/app_manager.h</span> <span class="lines">53 行</span></summary>
+<ul><li>声明</li></ul>
+</details>
+
+<details>
+<summary><span class="path">app/app_led.c</span> <span class="lines">231 行</span></summary>
+<ul>
+  <li><b>导出:</b> <code>app_led_register()</code></li>
+  <li><b>角色:</b> Pico 板载 LED 控制 (GP25) — 常亮 / 闪烁 / PWM 呼吸 / 多种 effect</li>
+  <li><b>依赖:</b> <code>app_led.h app_shared_ram.h app_manager.h ui_draw.h ui_btn.h ui_switch.h ui_tabview.h lcd.h</code></li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path">app/app_led.h</span> <span class="lines">16 行</span></summary>
+<ul><li>声明</li></ul>
+</details>
+
+<details>
+<summary><span class="path">app/app_pwm.c</span> <span class="lines">615 行</span></summary>
+<ul>
+  <li><b>导出:</b> <code>app_pwm_register()</code></li>
+  <li><b>角色:</b> 多路 PWM 输出 (任意 GPIO 设频率 + 占空比)</li>
+  <li><b>依赖:</b> <code>app_pwm.h app_shared_ram.h app_manager.h ui_draw.h ui_btn.h ui_switch.h ui_tabview.h ui_stepper.h</code></li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path">app/app_pwm.h</span> <span class="lines">21 行</span></summary>
+<ul><li>声明</li></ul>
+</details>
+
+<details>
+<summary><span class="path">app/app_adc.c</span> <span class="lines">658 行</span></summary>
+<ul>
+  <li><b>导出:</b> <code>app_adc_register()</code></li>
+  <li><b>角色:</b> ADC 实时采样 (3 路 ADC + 波形显示 + 数值读出)</li>
+  <li><b>依赖:</b> <code>app_adc.h app_shared_ram.h app_manager.h ui_draw.h ui_btn.h ui_tabview.h ui_waveform.h ui_stepper.h</code></li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path">app/app_adc.h</span> <span class="lines">21 行</span></summary>
+<ul><li>声明</li></ul>
+</details>
+
+<details>
+<summary><span class="path">app/app_audio.c</span> <span class="lines">546 行</span></summary>
+<ul>
+  <li><b>导出:</b> <code>app_audio_register()</code></li>
+  <li><b>角色:</b> I2S 音频播放 (TF 卡 .wav → audio_i2s)</li>
+  <li><b>依赖:</b> <code>app_audio.h app_shared_ram.h audio_i2s.h app_manager.h ui_draw.h ui_btn.h ui_switch.h ui_tabview.h</code></li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path">app/app_audio.h</span> <span class="lines">15 行</span></summary>
+<ul><li>声明</li></ul>
+</details>
+
+<details>
+<summary><span class="path">app/app_i2c_spi.c</span> <span class="lines">803 行</span></summary>
+<ul>
+  <li><b>导出:</b> <code>app_i2c_spi_register()</code></li>
+  <li><b>角色:</b> I2C 总线扫描 + SPI 设备探测</li>
+  <li><b>依赖:</b> <code>app_i2c_spi.h app_shared_ram.h app_manager.h ui_draw.h ui_btn.h ui_tabview.h ui_stepper.h lcd.h</code></li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path">app/app_i2c_spi.h</span> <span class="lines">21 行</span></summary>
+<ul><li>声明</li></ul>
+</details>
+
+<details>
+<summary><span class="path">app/app_pinout.c</span> <span class="lines">316 行</span></summary>
+<ul>
+  <li><b>导出:</b> <code>app_pinout_register()</code></li>
+  <li><b>角色:</b> 2×10 排针图可视化, tap 引脚显示当前 role (VBUS / 3V3 / GND / GPIO / ADC)</li>
+  <li><b>依赖:</b> <code>app_pinout.h app_shared_ram.h app_manager.h ui_draw.h lcd.h chinese.h pico/stdlib.h</code></li>
+  <li class="todo">⚠️ wire_tester 设计: 把 s_top_row_pins / s_bot_row_pins 抽到 <code>app/pinout_data.h</code> 共享</li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path">app/app_pinout.h</span> <span class="lines">21 行</span></summary>
+<ul><li>声明</li></ul>
+</details>
+
+<details>
+<summary><span class="path">app/app_sd_msc.c</span> <span class="lines">737 行</span></summary>
+<ul>
+  <li><b>导出:</b> <code>app_sd_msc_register()</code></li>
+  <li><b>角色:</b> TF 卡 U 盘模式 (挂 TF 卡 → USB MSC → PC 识别为 U盘)</li>
+  <li><b>依赖:</b> <code>app_sd_msc.h app_shared_ram.h app_manager.h ui_draw.h ui_btn.h ui_switch.h ui_tabview.h ui_file_browser.h</code></li>
+  <li><b>关键:</b> 进入此 app 时调 <code>f_mount(NULL,"0:",1)</code>, 退出时清 mount 状态</li>
+  <li class="todo">⚠️ 与 app_loader 交互: app_sd_msc.exit 调 f_mount(NULL) 会让 plugin 的 mount 失效, app_loader 加了 mount 状态恢复</li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path">app/app_sd_msc.h</span> <span class="lines">21 行</span></summary>
+<ul><li>声明</li></ul>
+</details>
+
+<details>
+<summary><span class="path">app/app_swd_probe.c</span> <span class="lines">708 行</span></summary>
+<ul>
+  <li><b>导出:</b> <code>app_swd_probe_register()</code></li>
+  <li><b>角色:</b> SWD 探测 + flash 烧写 (目标芯片 ID / 读 / 写)</li>
+  <li><b>依赖:</b> <code>app_swd_probe.h app_shared_ram.h app_manager.h ui_draw.h ui_btn.h ui_tabview.h lcd.h chinese.h</code></li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path">app/app_swd_probe.h</span> <span class="lines">24 行</span></summary>
+<ul><li>声明</li></ul>
+</details>
+
+<details>
+<summary><span class="path">app/app_uart_term.c</span> <span class="lines">852 行</span></summary>
+<ul>
+  <li><b>导出:</b> <code>app_uart_term_register()</code></li>
+  <li><b>角色:</b> UART 串口终端 (TX / RX 显示 + 输入)</li>
+  <li><b>依赖:</b> <code>app_uart_term.h app_shared_ram.h app_manager.h ui_draw.h ui_btn.h ui_switch.h ui_tabview.h ui_terminal.h</code></li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path">app/app_uart_term.h</span> <span class="lines">24 行</span></summary>
+<ul><li>声明</li></ul>
+</details>
+
+<details>
+<summary><span class="path">app/cmsis_dap.c</span> <span class="lines">623 行</span></summary>
+<ul>
+  <li><b>导出:</b> <code>cmsis_dap_init / task</code></li>
+  <li><b>角色:</b> CMSIS-DAP v2 协议 (USB HID), 让 PC 把 Pico 当成 DAP 调试器去调试目标板</li>
+  <li><b>依赖:</b> <code>cmsis_dap.h pico/stdlib.h hardware/gpio.h hardware/structs/sio.h string.h</code></li>
+  <li><b>关键引脚:</b> GP2=SWCLK, GP3=SWDIO</li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path">app/cmsis_dap.h</span> <span class="lines">53 行</span></summary>
+<ul><li>声明</li></ul>
+</details>
+
+<details>
+<summary><span class="path">app/audio_i2s.c</span> <span class="lines">423 行</span></summary>
+<ul>
+  <li><b>导出:</b> <code>audio_i2s_init / play_file / stop</code></li>
+  <li><b>角色:</b> PIO 实现的 I2S 输出 (DMA 双缓冲喂给 PIO TX FIFO)</li>
+  <li><b>依赖:</b> <code>audio_i2s.h ff.h hardware/pio.h hardware/dma.h hardware/clocks.h hardware/irq.h math.h stdlib.h</code></li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path">app/audio_i2s.h</span> <span class="lines">63 行</span></summary>
+<ul><li>声明</li></ul>
+</details>
+
+<details>
+<summary><span class="path">app/swd_flasher.c</span> <span class="lines">393 行</span></summary>
+<ul>
+  <li><b>导出:</b> <code>swd_flasher_erase / program / verify / read</code></li>
+  <li><b>角色:</b> SWD flash 算法实现 (基于 cmsis_dap 底层 + algo_def.h 描述的目标 flash 算法)</li>
+  <li><b>依赖:</b> <code>swd_flasher.h algo_def.h app_swd_probe.h ff.h pico/stdlib.h pico/time.h stdio.h string.h</code></li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path">app/swd_flasher.h</span> <span class="lines">49 行</span></summary>
+<ul><li>声明</li></ul>
+</details>
+
+<details>
+<summary><span class="path">app/usb_descriptors.c</span> <span class="lines">137 行</span></summary>
+<ul>
+  <li><b>导出:</b> TinyUSB 描述符 (VID/PID/字符串)</li>
+  <li><b>角色:</b> USB 设备描述符 (DAP+CDC / MSC+CDC 双 PID)</li>
+  <li><b>依赖:</b> <code>tusb.h cmsis_dap.h pico/time.h string.h</code></li>
+  <li><b>关键 PID:</b> <code>PID_DAP_CDC=0xD003</code>, <code>PID_MSC_CDC=0xD004</code></li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path">app/msc_disk.c</span> <span class="lines">113 行</span></summary>
+<ul>
+  <li><b>导出:</b> <code>tud_msc_*</code> 回调 (TinyUSB SCSI 协议)</li>
+  <li><b>角色:</b> TF 卡 → USB MSC 桥接 (Read10 / Write10 实现走 Drivers/tf.c)</li>
+  <li><b>依赖:</b> <code>tusb.h tf.h pico/time.h string.h</code></li>
+</ul>
+</details>
+
+<details>
+<summary><span class="path">app/tusb_config.h</span> <span class="lines">42 行</span></summary>
+<ul><li>TinyUSB 配置宏 (端点大小 / 描述符布局)</li></ul>
+</details>
+
+<details>
+<summary><span class="path">app/algo_def.h</span> <span class="lines">32 行</span></summary>
+<ul><li>SWD flash 算法结构体定义</li></ul>
+</details>
+
+<details>
+<summary><span class="path">app/dog_data.h</span> <span class="lines">4815 行</span> <span class="pill warn">数据表</span></summary>
+<ul>
+  <li><b>角色:</b> 排针图 / 元件数据库 / 设备字符串表 (纯数据, 不是代码)。所有 SWD 设备 ID / flash 容量 / 算法指针都在这</li>
+</ul>
+</details>
+
+<!-- ============================================================ -->
+<h2>📊 文件大小一览</h2>
+<!-- ============================================================ -->
+
+<table>
+<tr><th>文件</th><th>行数</th><th>角色</th></tr>
+<tr><td>app/dog_data.h</td><td>4815</td><td>数据表</td></tr>
+<tr><td>app/app_uart_term.c</td><td>852</td><td>UART 终端</td></tr>
+<tr><td>app/app_i2c_spi.c</td><td>803</td><td>I2C/SPI 扫描</td></tr>
+<tr><td>app/app_sd_msc.c</td><td>737</td><td>U 盘模式</td></tr>
+<tr><td>app/app_swd_probe.c</td><td>708</td><td>SWD 探测</td></tr>
+<tr><td>app/app_adc.c</td><td>658</td><td>ADC 采样</td></tr>
+<tr><td>app/cmsis_dap.c</td><td>623</td><td>CMSIS-DAP 协议</td></tr>
+<tr><td>app/app_pwm.c</td><td>615</td><td>PWM 输出</td></tr>
+<tr><td>app/app_audio.c</td><td>546</td><td>音频播放</td></tr>
+<tr><td><b>app/app_loader.c</b></td><td>511</td><td><b>plugin 框架 (P0)</b></td></tr>
+<tr><td>app/swd_flasher.c</td><td>393</td><td>flash烧写</td></tr>
+<tr><td>ui/ui_drawer.c</td><td>392</td><td>侧滑抽屉</td></tr>
+<tr><td>ui/ui_draw.c</td><td>371</td><td>像素渲染</td></tr>
+<tr><td>ui/ui_waveform.c</td><td>331</td><td>实时波形</td></tr>
+<tr><td>ui/ui_file_browser.c</td><td>315</td><td>文件浏览器</td></tr>
+<tr><td>ui/ui_numpad.c</td><td>315</td><td>数字键盘</td></tr>
+<tr><td>ui/ui_packet_table.c</td><td>315</td><td>log 表格</td></tr>
+<tr><td>app/app_pinout.c</td><td>316</td><td>排针图</td></tr>
+<tr><td>ui/ui_keyboard.c</td><td>301</td><td>软键盘</td></tr>
+<tr><td>ui/ui_status_bar.c</td><td>285</td><td>顶栏</td></tr>
+<tr><td>app/app_manager.c</td><td>280</td><td>app 调度</td></tr>
+<tr><td>ui/ui_checkbox_group.c</td><td>263</td><td>多选框</td></tr>
+<tr><td>ui/ui_stepper.c</td><td>262</td><td>步进器</td></tr>
+<tr><td>ui/ui_terminal.c</td><td>258</td><td>终端显示</td></tr>
+<tr><td>ui/ui_hex_view.c</td><td>256</td><td>hex dump</td></tr>
+<tr><td>ui/ui_tabview.c</td><td>239</td><td>tab 切换</td></tr>
+<tr><td>app/app_led.c</td><td>231</td><td>LED 控制</td></tr>
+<tr><td>ui/ui_btn.c</td><td>224</td><td>按钮</td></tr>
+<tr><td>ui/ui_dropdown.c</td><td>210</td><td>下拉</td></tr>
+<tr><td>ui/ui_slider.c</td><td>209</td><td>滑块</td></tr>
+<tr><td>ui/ui_modal.c</td><td>183</td><td>模态对话框</td></tr>
+<tr><td>ui/ui_progressbar.c</td><td>169</td><td>进度条</td></tr>
+<tr><td>app/usb_descriptors.c</td><td>137</td><td>USB 描述符</td></tr>
+<tr><td>ui/ui_scrollview.c</td><td>131</td><td>滚动容器</td></tr>
+<tr><td>ui/ui_switch.c</td><td>130</td><td>拨动开关</td></tr>
+<tr><td>ui/ui_picture.c</td><td>127</td><td>图片渲染</td></tr>
+<tr><td>ui/ui_core.c</td><td>125</td><td>渲染流水线</td></tr>
+<tr><td>ui/ui_input.c</td><td>117</td><td>单行输入</td></tr>
+<tr><td>ui/ui_toast.c</td><td>116</td><td>toast 提示</td></tr>
+<tr><td>app/msc_disk.c</td><td>113</td><td>U 盘 SCSI</td></tr>
+<tr><td>app/app_template.c</td><td>101</td><td>app 模板</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>📌 重构优先级提示</h2>
+<!-- ============================================================ -->
+
+<ul>
+  <li><span class="pill warn">P0</span> <b>app/app_api.h</b> — 字段重排 + 完整性检查 + 加 fat_last_error</li>
+  <li><span class="pill warn">P0</span> <b>app/app_loader.c</b> — 拆 4 文件 + .papp size 检查</li>
+  <li><span class="pill warn">P0</span> <b>plugins/novel_reader/plugin_novel_reader.c</b> — 拆 7 文件</li>
+  <li><span class="pill warn">P0</span> <b>plugins/wire_tester/</b> — 建目录</li>
+  <li><span class="pill warn">P1</span> <b>ui/ui_draw.c</b> — 缺字画 '?' 而非静默</li>
+  <li><span class="pill warn">P1</span> <b>app/app_pinout.c</b> — pinout_data 抽出共享</li>
+  <li><span class="pill">P2</span> <b>plugins/led_controller/</b> — 用 ui_btn 替换自写按键</li>
+  <li><span class="pill">P2</span> 所有 plugin — size budget 编译检查</li>
+</ul>
+
+</body>
+</html>

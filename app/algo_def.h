@@ -1,3 +1,22 @@
+/* =============================================================
+ * @file   app/algo_def.h
+ * @brief  Keil Flasher Algorithm(.algo)文件头格式定义
+ *
+ * @section 角色
+ *   - 与 swd_flasher.c 配对的算法数据结构
+ *   - .algo 文件 = 64 字节 algo_header_t(本结构)+ code_size 字节 ARM 代码
+ *   - ALGO_MAGIC = 0x4F474C41("ALGO" 字节序)用于校验
+ *
+ * @section 导出符号
+ *   - ALGO_MAGIC
+ *   - algo_header_t 结构(13 个字段:基址/缓冲/init/uninit/erase/program 偏移 + 代码大小 + 芯片名)
+ *
+ * @section 依赖
+ *   - stdint.h
+ *
+ * @section 待重构 (P2)
+ *   - swd_flasher.c 当前固定 STM32F1 烧录,未真正载入 .algo 文件 — 字段暂未使用
+ * ============================================================= */
 /*
  * @Author: 轩
  * @Date: 2026-08-26 16:43:17

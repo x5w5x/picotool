@@ -48,7 +48,7 @@ void LCD_BulkWriteDMA(const uint8_t *buf, uint32_t len);
  * @brief 核心切片异步推流接口 (Zero-blocking)
  * @note 内部先同步上一批传输，设置新视窗后立刻触发 DMA 并返回，CPU 可立即去合成下一块 Tile
  */
-void LCD_PushTileDMA_Async(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint16_t *buf);
+void LCD_PushTileDMA_Async(uint16_t x, uint16_t y, uint16_t w, uint16_t h,uint16_t *buf);
 
 /* ===================== 图元绘制 API ===================== */
 void LCD_DrawPoint(uint16_t x, uint16_t y, uint16_t color);

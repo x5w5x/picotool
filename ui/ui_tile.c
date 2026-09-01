@@ -18,7 +18,7 @@ ui_tile_t *ui_tile_get_next(uint8_t row_idx)
     s_current_tile.rect = ui_rect_make(0, (int16_t)(row_idx * UI_TILE_H), UI_TILE_W, UI_TILE_H);
     
     // 强制清零当前切片显存，消除上一帧残像
-    memset(s_current_tile.buf, 0, UI_TILE_W * UI_TILE_H * sizeof(uint16_t));
+    //memset(s_current_tile.buf, 0, UI_TILE_W * UI_TILE_H * sizeof(uint16_t));
     
     return &s_current_tile;
 }

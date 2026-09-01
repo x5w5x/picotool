@@ -1,4 +1,30 @@
 # ============================================================
+# @file   plugins/led_controller/CMakeLists.txt
+# @brief  led_controller.papp 独立 freestanding 编译脚本
+#
+# @section 角色
+#   - 编译产物 led_controller.papp 是 raw binary (≤32KB)
+#   - 由 host 在 app_sd_msc 文件浏览器里点 .papp 触发加载
+#   - 与 novel_reader / wire_quality 的 CMakeLists 模板一致
+#
+# @section 关键约束
+#   - bare-metal: -nostartfiles -nodefaultlibs -nostdlib -fno-builtin
+#   - 不链 libuigeom.a / drivelib / pico_stdlib
+#   - UI 函数全部走 host_api 函数指针
+#   - post-build: arm-none-eabi-objcopy -O binary 抽 raw binary
+#
+# @section 头文件依赖
+#   app_api.h → ui_tile.h → ui_geometry.h
+#             → ui_btn.h  → ui_tile.h / chinese.h
+#             → chinese.h
+#   include path 必须覆盖: ${CMAKE_SOURCE_DIR}/app, /ui, /Drivers
+#
+# @section 待重构 (P2)
+#   - 三 plugin (led_controller / novel_reader / wire_quality) 的 CMakeLists
+#     大同小异,只差 plugin 名 + list 源 → 抽成 cmake/plugin.cmake include
+#   - link gcc 用 target_link_libraries;wire_quality 已显式链,本 plugin
+#     实际不链 (无除法),未来若加整数运算要补
+# ============================================================
 # 独立 plugin 编译: led_controller
 # 编译产物 led_controller.papp 是 raw binary,塞到 TF 卡 0:/led_controller.papp
 # 由 host 在 app_sd_msc 文件浏览器里点 .papp 触发加载

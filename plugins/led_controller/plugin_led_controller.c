@@ -1,4 +1,30 @@
 /* =============================================================
+ * @file   plugins/led_controller/plugin_led_controller.c
+ * @brief  演示 plugin:Core 1 周期读 GPIO 25 (PICO_DEFAULT_LED_PIN) 电平并屏显
+ *
+ * @section 角色
+ *   - plugins/led_controller 插件主体 (状态机 + 生命周期 + UI 渲染)
+ *   - 与 host app_led.c 风格对齐:state struct + static 单例 + getter
+ *   - Core 1 跑 update_core1 轮询 GPIO,Core 0 跑 draw + process_touch
+ *
+ * @section 导出符号
+ *   - led_controller_get_descriptor (返回 const app_plugin_t*)
+ *   - 内嵌 static: led_controller_init / update_core1 / process_touch / draw / exit
+ *
+ * @section 依赖
+ *   "plugin_led_controller.h" (声明 + 引 app_api.h)
+ *   <stddef.h>
+ *   host api: ui_btn_* / ui_draw_* / gpio_get / request_redraw / request_exit / post_log / delay_ms / get_time_ms
+ *
+ * @section 待重构 (P2)
+ *   - 自己写"虚拟 LED"用 fill_rect 嵌外圈深色 + 内圈变色,应该抽到 ui_led
+ *     widget,与 ui_btn / ui_switch 同级,统一管理"圆点 + 状态色"
+ *   - update_core1 的 50ms delay 是硬编码;若日后有需要快响应 (>20Hz) 的
+ *     LED,要改成参数化或扩 host_api->set_loop_rate
+ *   - 用 ui_btn 做 STOP 按钮,但 demo 内未提供 ui_btn 替换"自定义按键"实现,
+ *     → 旧代码仍有自写触控分支 (TODO);统一迁移到 ui_btn 后即可消
+ * ============================================================= */
+/* =============================================================
  * 演示 plugin: LED 电平监视器
  *
  * 架构契约:

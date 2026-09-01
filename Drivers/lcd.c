@@ -35,9 +35,6 @@
 
 static int lcd_dma_chan = -1;  //DMA通道号
 static dma_channel_config dma_cfg; 
-//切片缓冲 480 x 320 = 30kb
-static uint16_t s_lcd_dma_buf[LCD_WIDTH * UI_TILE_H] __attribute__((aligned(4)));
-
 static inline void LCD_WaitDMA_Auto(void)
 {
     if (lcd_dma_chan >= 0 && dma_channel_is_busy(lcd_dma_chan)) {
@@ -106,7 +103,7 @@ void LCD_BulkWrite(const uint8_t *buf, uint32_t len)
     LCD_WaitDMA();
 }
 
-void LCD_PushTileDMA_Async(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint16_t *buf)
+void LCD_PushTileDMA_Async(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t *buf)
 {
     if (w == 0 || h == 0 || !buf) return;
     
@@ -116,13 +113,14 @@ void LCD_PushTileDMA_Async(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const
     LCD_WaitDMA();
     // ⚡ 核心优化 2：利用 GCC 内建 rev16 硬件单指令加速大小端翻转
     for (uint32_t i = 0; i < count; i++) {
-        s_lcd_dma_buf[i] = __builtin_bswap16(buf[i]);
+
+         buf[i] = __builtin_bswap16(buf[i]);
     }
 
     LCD_SetWindow(x, y, x + w - 1, y + h - 1);
     LCD_DC_HIGH();
     LCD_CS_LOW();
-    dma_channel_set_read_addr(lcd_dma_chan, s_lcd_dma_buf, false);
+    dma_channel_set_read_addr(lcd_dma_chan, buf, false);
     dma_channel_set_trans_count(lcd_dma_chan, count * 2, true);
 }
 
@@ -131,30 +129,37 @@ void LCD_PushSubTile(uint16_t screen_x, uint16_t screen_y,
                      const uint16_t *tile_buf, uint16_t tile_stride,
                      uint16_t src_offset_x, uint16_t src_offset_y)
 {
-    if (sub_w == 0 || sub_h == 0 || !tile_buf) return;
+   if (sub_w == 0 || sub_h == 0 || !tile_buf) return;
 
+    // 边界裁剪[cite: 4]
     if (screen_x >= LCD_WIDTH || screen_y >= LCD_HEIGHT) return;
     if (screen_x + sub_w > LCD_WIDTH)  sub_w = LCD_WIDTH - screen_x;
     if (screen_y + sub_h > LCD_HEIGHT) sub_h = LCD_HEIGHT - screen_y;
 
-    uint32_t total_pixels = (uint32_t)sub_w * sub_h;
-    if (total_pixels > (LCD_WIDTH * UI_TILE_H)) {
-        total_pixels = LCD_WIDTH * UI_TILE_H;
-    }
-
     LCD_WaitDMA();
 
-    uint32_t dst_idx = 0;
+    // 1. 原地逐行完成大小端翻转
     for (uint16_t row = 0; row < sub_h; row++) {
-        const uint16_t *src = tile_buf + (src_offset_y + row) * tile_stride + src_offset_x;
+        uint16_t *src = tile_buf + (src_offset_y + row) * tile_stride + src_offset_x;
         for (uint16_t col = 0; col < sub_w; col++) {
-            s_lcd_dma_buf[dst_idx++] = __builtin_bswap16(src[col]);
+            src[col] = __builtin_bswap16(src[col]);
         }
     }
 
+    // 2. 设置屏幕目标窗口
     LCD_SetWindow(screen_x, screen_y, screen_x + sub_w - 1, screen_y + sub_h - 1);
-    LCD_BulkWriteDMA((const uint8_t *)s_lcd_dma_buf, total_pixels * 2);
-    LCD_WaitDMA();
+    LCD_DC_HIGH();
+    LCD_CS_LOW();
+
+    // 3. 逐行使用 DMA 发送（正确处理 tile_stride 内存跨度）
+    for (uint16_t row = 0; row < sub_h; row++) {
+        uint16_t *src = tile_buf + (src_offset_y + row) * tile_stride + src_offset_x;
+        dma_channel_set_read_addr(lcd_dma_chan, src, false);
+        dma_channel_set_trans_count(lcd_dma_chan, sub_w * 2, true);
+        LCD_WaitDMA_Auto();
+    }
+
+    LCD_CS_HIGH();
 }
 
 static void LCD_GPIO_Init(void)

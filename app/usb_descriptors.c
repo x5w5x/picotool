@@ -1,3 +1,30 @@
+/* =============================================================
+ * @file   app/usb_descriptors.c
+ * @brief  TinyUSB USB 描述符 + 双 PID 模式切换 + HID DAP 回调入口
+ *
+ * @section 角色
+ *   - VID = 0x2E8A(Raspberry Pi)
+ *   - 双 PID 切换核心:
+ *     PID_DAP_CDC = 0xD003 → HID(DAP) + CDC 串口(默认)
+ *     PID_MSC_CDC = 0xD004 → CDC 串口 + MSC U 盘(打开 TF 卡虚拟磁盘模式)
+ *   - 切换流程:usb_switch_mode → tud_disconnect → sleep 150ms(Windows 完全卸载)
+ *     → 改 s_usb_mode → tud_connect(热插拔)
+ *   - tud_hid_set_report_cb 直接把 64 字节 buffer 喂给 dap_process_command
+ *
+ * @section 导出符号
+ *   - tud_descriptor_device_cb / configuration_cb / string_cb(标准 TinyUSB 回调)
+ *   - tud_hid_descriptor_report_cb / tud_hid_set_report_cb / tud_hid_get_report_cb
+ *   - tud_cdc_rx_cb(空实现)
+ *   - usb_switch_mode(uint8_t mode):双 PID 热切换
+ *
+ * @section 依赖
+ *   - tusb.h / cmsis_dap.h(g_dap_enabled + dap_process_command)
+ *   - pico/time
+ *
+ * @section 待重构 (P2)
+ *   - 字符串描述符硬编码 7 项,加新接口需改两处(desc 配置 + string_desc_arr)
+ *   - PID 切换需 150ms 强延时,实际 Windows 需要时间会因主机而异
+ * ============================================================= */
 #include "tusb.h"
 #include "cmsis_dap.h"
 #include "pico/time.h"

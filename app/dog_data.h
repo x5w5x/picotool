@@ -1,3 +1,23 @@
+/* =============================================================
+ * @file   app/dog_data.h
+ * @brief  纯数据表:240x240 RGB565 静态图像(狗)
+ *
+ * @section 角色
+ *   - 纯数据表,所有 SWD 设备 ID / 算法都在这 — 实际只放一张 RGB565 图像
+ *   - DOG_IMG_W=240 / DOG_IMG_H=240 / DOG_IMG_FRAMES=1 / DOG_IS_ANIM=0
+ *   - g_dog_frame_0[57600] = 240*240 RGB565 像素
+ *
+ * @section 导出符号
+ *   - DOG_IMG_W / H / FRAMES / IS_ANIM 宏
+ *   - g_dog_frame_0[57600] RGB565 数组
+ *
+ * @section 依赖
+ *   - stdint.h
+ *
+ * @section 待重构 (P2)
+ *   - 文件名 dog_data.h 与内容(狗图像)匹配,但模块注释里写的
+ *     "SWD 设备 ID / 算法" 是误标,实际只放图片数据
+ * ============================================================= */
 #pragma once
 #include <stdint.h>
 
