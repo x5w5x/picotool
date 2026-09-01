@@ -132,8 +132,8 @@ CMAKE_INSTALL_PREFIX:PATH=C:/Program Files (x86)/pico
 //Path to a program.
 CMAKE_LINKER:FILEPATH=C:/Users/xwx/.pico-sdk/toolchain/14_2_Rel1/bin/arm-none-eabi-ld.exe
 
-//No help, variable specified on the command line.
-CMAKE_MAKE_PROGRAM:UNINITIALIZED=C:/Users/xwx/.pico-sdk/ninja/v1.12.1/ninja.exe
+//Program used to build from build.ninja files.
+CMAKE_MAKE_PROGRAM:FILEPATH=C:/Users/xwx/.pico-sdk/ninja/v1.12.1/ninja.exe
 
 //Flags used by the linker during the creation of modules during
 // all build types.
@@ -321,6 +321,9 @@ PICO_STDIO_UART:BOOL=ON
 //Globally enable stdio USB
 PICO_STDIO_USB:BOOL=OFF
 
+//No help, variable specified on the command line.
+Python3_EXECUTABLE:UNINITIALIZED=c:/Users/xwx/AppData/Local/Programs/Python/Python312/python.exe
+
 //Value Computed by CMake
 led_controller_BINARY_DIR:STATIC=E:/pico/pico/build/plugins/led_controller
 
@@ -331,13 +334,13 @@ led_controller_IS_TOP_LEVEL:STATIC=OFF
 led_controller_SOURCE_DIR:STATIC=E:/pico/pico/plugins/led_controller
 
 //Value Computed by CMake
-logic_analyzer_BINARY_DIR:STATIC=E:/pico/pico/build/plugins/logic_analyzer
+novel_reader_BINARY_DIR:STATIC=E:/pico/pico/build/plugins/novel_reader
 
 //Value Computed by CMake
-logic_analyzer_IS_TOP_LEVEL:STATIC=OFF
+novel_reader_IS_TOP_LEVEL:STATIC=OFF
 
 //Value Computed by CMake
-logic_analyzer_SOURCE_DIR:STATIC=E:/pico/pico/plugins/logic_analyzer
+novel_reader_SOURCE_DIR:STATIC=E:/pico/pico/plugins/novel_reader
 
 //Value Computed by CMake
 pico_BINARY_DIR:STATIC=E:/pico/pico/build
@@ -356,6 +359,15 @@ pico_sdk_IS_TOP_LEVEL:STATIC=OFF
 
 //Value Computed by CMake
 pico_sdk_SOURCE_DIR:STATIC=C:/Users/xwx/.pico-sdk/sdk/2.2.0
+
+//Value Computed by CMake
+wire_quality_BINARY_DIR:STATIC=E:/pico/pico/build/plugins/wire_quality
+
+//Value Computed by CMake
+wire_quality_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+wire_quality_SOURCE_DIR:STATIC=E:/pico/pico/plugins/wire_quality
 
 
 ########################
@@ -479,7 +491,7 @@ CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_NM
 CMAKE_NM-ADVANCED:INTERNAL=1
 //number of local generators
-CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=103
+CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=105
 //ADVANCED property for variable: CMAKE_OBJCOPY
 CMAKE_OBJCOPY-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_OBJDUMP
@@ -528,7 +540,7 @@ DOXYGEN_DOT_EXECUTABLE-ADVANCED:INTERNAL=1
 DOXYGEN_EXECUTABLE-ADVANCED:INTERNAL=1
 FAMILY_MCUS:INTERNAL=RP2040
 //Details about finding Python3
-FIND_PACKAGE_MESSAGE_DETAILS_Python3:INTERNAL=[C:/Users/xwx/AppData/Local/Programs/Python/Python312/python.exe][cfound components: Interpreter ][v3.12.0()]
+FIND_PACKAGE_MESSAGE_DETAILS_Python3:INTERNAL=[c:/Users/xwx/AppData/Local/Programs/Python/Python312/python.exe][cfound components: Interpreter ][v3.12.0()]
 PICO_32BIT:INTERNAL=1
 PICO_ARM:INTERNAL=1
 PICO_BOOT_STAGE2_DIR:INTERNAL=C:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/boot_stage2
@@ -560,11 +572,10 @@ PICO_TOOLS_DIR:INTERNAL=C:/Users/xwx/.pico-sdk/sdk/2.2.0/tools
 _Python3_Compiler_REASON_FAILURE:INTERNAL=
 //Development reason failure
 _Python3_Development_REASON_FAILURE:INTERNAL=
-//Path to a program.
-_Python3_EXECUTABLE:INTERNAL=C:/Users/xwx/AppData/Local/Programs/Python/Python312/python.exe
+_Python3_EXECUTABLE:INTERNAL=c:/Users/xwx/AppData/Local/Programs/Python/Python312/python.exe
 //Python3 Properties
-_Python3_INTERPRETER_PROPERTIES:INTERNAL=Python;3;12;0;32;64;;;abi3;C:\Users\xwx\AppData\Local\Programs\Python\Python312\Lib;C:\Users\xwx\AppData\Local\Programs\Python\Python312\Lib;C:\Users\xwx\AppData\Local\Programs\Python\Python312\Lib\site-packages;C:\Users\xwx\AppData\Local\Programs\Python\Python312\Lib\site-packages
-_Python3_INTERPRETER_SIGNATURE:INTERNAL=c2f2a676cf245d4a4f9c248db64de5b9
+_Python3_INTERPRETER_PROPERTIES:INTERNAL=Python;3;12;0;32;64;;;abi3;c:\Users\xwx\AppData\Local\Programs\Python\Python312\Lib;c:\Users\xwx\AppData\Local\Programs\Python\Python312\Lib;c:\Users\xwx\AppData\Local\Programs\Python\Python312\Lib\site-packages;c:\Users\xwx\AppData\Local\Programs\Python\Python312\Lib\site-packages
+_Python3_INTERPRETER_SIGNATURE:INTERNAL=77c2a1fc1da077f2cdf6ff1ea2d5d75e
 //NumPy reason failure
 _Python3_NumPy_REASON_FAILURE:INTERNAL=
 

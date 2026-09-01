@@ -45,6 +45,8 @@ if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   include("E:/pico/pico/build/app/cmake_install.cmake")
   include("E:/pico/pico/build/fatfs/cmake_install.cmake")
   include("E:/pico/pico/build/plugins/led_controller/cmake_install.cmake")
+  include("E:/pico/pico/build/plugins/wire_quality/cmake_install.cmake")
+  include("E:/pico/pico/build/plugins/novel_reader/cmake_install.cmake")
 
 endif()
 

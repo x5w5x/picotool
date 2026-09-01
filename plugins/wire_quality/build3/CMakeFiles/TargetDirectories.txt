@@ -1,0 +1,3 @@
+E:/pico/pico/plugins/wire_quality/build3/CMakeFiles/wire_quality.dir
+E:/pico/pico/plugins/wire_quality/build3/CMakeFiles/edit_cache.dir
+E:/pico/pico/plugins/wire_quality/build3/CMakeFiles/rebuild_cache.dir

@@ -23,9 +23,9 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define UART_INST           uart0
-#define PIN_UART_TX         0   // GP0 (TX) -> 接外部模组 RX
-#define PIN_UART_RX         1   // GP1 (RX) -> 接外部模组 TX
+#define UART_INST           uart1
+#define PIN_UART_TX         20  // GP20 (TX) -> 接外部模组/设备 RX
+#define PIN_UART_RX         21  // GP21 (RX) -> 接外部模组/设备 TX
 
 // ⚡ 2048 字节硬件 DMA 环形接收缓冲区
 #define RX_DMA_RING_SIZE    2048
@@ -54,7 +54,7 @@ static const char *s_uart_tabs[] = {
 #define TAB_COUNT (sizeof(s_uart_tabs) / sizeof(s_uart_tabs[0]))
 
 // 下拉菜单预设选项
-static const char *s_dest_options[] = {"目标:GP0", "目标:USB", "目标:双发"};
+static const char *s_dest_options[] = {"目标:GP20", "目标:USB", "目标:双发"};
 #define DEST_OPTION_COUNT 3
 
 static const char *s_mode_options[] = {"ASCII", "HEX"};
@@ -66,7 +66,7 @@ static const uint32_t s_baud_table[] = {9600, 115200, 460800, 921600, 2000000};
 
 typedef enum {
     UART_MODE_IDLE = 0,   // 0: 挂起待机
-    UART_MODE_BRIDGE,     // 1: USB ↔ GP0/GP1 双向透传
+    UART_MODE_BRIDGE,     // 1: USB ↔ GP20/GP21 双向透传
     UART_MODE_ECHO        // 2: 硬件回显测试
 } uart_work_mode_t;
 
@@ -164,14 +164,14 @@ static void queue_push_line(const char *tag, const uint8_t *buf, size_t len, uin
     s_tq_head = next_head;
 }
 
-// 统一指令发送出口 (支持 GP0 / USB / 双发)
+// 统一指令发送出口 (支持 GP20 / USB / 双发)
 static void send_uart_command(app_uart_data_t *data, const char *cmd) {
     if (!data || !cmd || cmd[0] == '\0') return;
 
     int8_t dest = data->dropdown_dest.selected_idx;
     size_t len = strlen(cmd);
 
-    // 1. 发送给 GP0 (UART)
+    // 1. 发送给 GP20 (UART1)
     if (dest == 0 || dest == 2) {
         for (size_t i = 0; i < len; i++) {
             while (!uart_is_writable(UART_INST)) tight_loop_contents();
@@ -198,7 +198,7 @@ static void send_uart_command(app_uart_data_t *data, const char *cmd) {
     }
 
     // 3. 在本地终端打印已发送回显
-    const char *tag = (dest == 0) ? "[TX->GP0]" : ((dest == 1) ? "[TX->USB]" : "[TX->ALL]");
+    const char *tag = (dest == 0) ? "[TX->GP20]" : ((dest == 1) ? "[TX->USB]" : "[TX->ALL]");
     char log_buf[UI_TERM_LINE_LEN];
     snprintf(log_buf, sizeof(log_buf), "%s %s", tag, cmd);
     ui_terminal_write_line(&data->terminal, log_buf, 0xFD20);
@@ -756,10 +756,10 @@ static void app_uart_draw(app_t *self, ui_tile_t *tile) {
 
                 ui_draw_string(tile, 140, 56, "双核高频透传 (DMA 硬件零丢包)", FONT_16, 0x1A7B, 0xEF7D);
 
-                snprintf(str_buf, sizeof(str_buf), "TX (USB->GP0): %lu Bytes", data->tx_bytes_cnt);
+                snprintf(str_buf, sizeof(str_buf), "TX (USB->GP20): %lu Bytes", data->tx_bytes_cnt);
                 ui_draw_string(tile, 140, 80, str_buf, FONT_16, 0x05E0, 0xEF7D);
 
-                snprintf(str_buf, sizeof(str_buf), "RX (GP1->USB): %lu Bytes", data->rx_bytes_cnt);
+                snprintf(str_buf, sizeof(str_buf), "RX (GP21->USB): %lu Bytes", data->rx_bytes_cnt);
                 ui_draw_string(tile, 140, 104, str_buf, FONT_16, 0x03DF, 0xEF7D);
 
                 uint16_t dot_color = (data->work_mode == UART_MODE_BRIDGE) ? 0x05E0 : 0x8410;
@@ -817,7 +817,7 @@ static void app_uart_draw(app_t *self, ui_tile_t *tile) {
                 ui_draw_string(tile, 140, 56, "硬件自测回显模式", FONT_16, 0x1A7B, 0xEF7D);
                 snprintf(str_buf, sizeof(str_buf), "回显吞吐量: %lu Bytes (1:1)", data->tx_bytes_cnt);
                 ui_draw_string(tile, 140, 80, str_buf, FONT_16, 0x05E0, 0xEF7D);
-                ui_draw_string(tile, 140, 104, "USB 输入自动原路回传并打给 GP0", FONT_16, 0x4208, 0xEF7D);
+                ui_draw_string(tile, 140, 104, "USB 输入自动原路回传并打给 GP20", FONT_16, 0x4208, 0xEF7D);
 
                 uint16_t dot_color = (data->work_mode == UART_MODE_ECHO) ? 0x05E0 : 0x8410;
                 ui_draw_fill_circle(tile, 445, 64, 6, dot_color);

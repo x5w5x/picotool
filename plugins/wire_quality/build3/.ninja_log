@@ -1,0 +1,5 @@
+# ninja log v5
+69	473	8098846860743607	build.ninja	fc0c75b4fb8a66e
+22	162	8098846864546193	CMakeFiles/wire_quality.dir/main.c.obj	daad0c0c99a5fbe1
+29	280	8098846865726839	CMakeFiles/wire_quality.dir/plugin_wire_quality.c.obj	7fbccc3b20e29ce9
+281	445	8098846866628496	wire_quality	8f347fd05f681557

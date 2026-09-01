@@ -174,9 +174,11 @@ target_link_libraries(pico PRIVATE
 
 pico_add_extra_outputs(pico)
 
-# 独立 plugin 子工程: 编译 .papp 动态 App,产物 plugins/led_controller/build/led_controller.papp
-# 不影响主 pico 固件构建
+# 独立 plugin 子工程: 编译 .papp 动态 App,产物 plugins/<name>/build/<name>.papp
+# 不影响主 pico 固件构建 — 各自生成独立 .papp 拷到 TF 卡根目录按需加载
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/plugins/led_controller)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/plugins/wire_quality)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/plugins/novel_reader)
 
 # ============================================================
 # 锚定 .app_pool_sec @ 0x20038000

@@ -216,3 +216,9 @@ E:/pico/pico/build/fatfs/CMakeFiles/rebuild_cache.dir
 E:/pico/pico/build/plugins/led_controller/CMakeFiles/led_controller.dir
 E:/pico/pico/build/plugins/led_controller/CMakeFiles/edit_cache.dir
 E:/pico/pico/build/plugins/led_controller/CMakeFiles/rebuild_cache.dir
+E:/pico/pico/build/plugins/wire_quality/CMakeFiles/wire_quality.dir
+E:/pico/pico/build/plugins/wire_quality/CMakeFiles/edit_cache.dir
+E:/pico/pico/build/plugins/wire_quality/CMakeFiles/rebuild_cache.dir
+E:/pico/pico/build/plugins/novel_reader/CMakeFiles/novel_reader.dir
+E:/pico/pico/build/plugins/novel_reader/CMakeFiles/edit_cache.dir
+E:/pico/pico/build/plugins/novel_reader/CMakeFiles/rebuild_cache.dir

@@ -55,6 +55,36 @@ typedef struct {
     void (*ui_btn_set_color)    (ui_btn_t *btn, uint16_t bg, uint16_t active, uint16_t text);
     bool (*ui_btn_process_touch)(ui_btn_t *btn, bool is_touching, int16_t tx, int16_t ty, uint32_t now_tick);
     void (*ui_btn_draw)         (ui_tile_t *tile, const ui_btn_t *btn);
+
+    /* ⚡ 末尾扩展槽:wire_quality 杜邦线测试仪需要主动驱动引脚
+     * (TX 推 HIGH/LOW, RX 回读)。放在结构体末尾以保持现有 plugin
+     * (led_controller) 的所有字段偏移不变 —— 老 .papp 仍然兼容。
+     * ⚠️ 注意:host 必须在 s_host_api_table 里把这两个槽填上 NULL 或真实函数指针,
+     *         老的 led_controller.papp 不会读到这几个槽 */
+    void     (*gpio_set_dir)  (uint32_t pin, bool is_output);
+    void     (*gpio_put)      (uint32_t pin, bool value);
+    void     (*gpio_set_pulls)(uint32_t pin, bool up, bool down);  // RX 上拉,OPEN 判别
+
+    /* ===== FATFS 访问槽:novel_reader 等需要打开 .txt 的 plugin
+     * plugin 是 freestanding,不链 fatfs.a;通过 host 持有的 fd table 访问
+     * 最多同时开 MAX_FAT_FILES 个文件 (host 内部定义)
+     *
+     * fat_open    返 0..MAX-1 = fd,负数 = 失败
+     * fat_read    返读到的字节数,负数 = 失败
+     * fat_seek    返 0 = ok,负数 = 失败
+     * fat_size    返文件字节数,负数 = 失败
+     * fat_close   关闭文件释放 fd
+     * fat_list_dir 列 dir 下文件名(out_buf 每个文件名 \0 结尾,全部写完再加一个 \0),
+     *              max_files 限制返回数量,返实际数,负数 = 失败
+     *
+     * 文件名过滤:list_dir 只返后缀 == ".txt" 的文件 (给小说阅读器用) */
+    int  (*fat_open)(const char *path, uint8_t mode);
+    int  (*fat_read)(int fd, uint8_t *buf, uint32_t len);
+    int  (*fat_write)(int fd, const uint8_t *buf, uint32_t len);
+    int  (*fat_seek)(int fd, uint32_t pos);
+    int  (*fat_size)(int fd);
+    void (*fat_close)(int fd);
+    int  (*fat_list_dir)(const char *dir, char *out_buf, int out_buf_size, int max_files);
 } pico_host_api_t;
 
 /* ================= 动态 App 导出的生命周期接口 ================= */

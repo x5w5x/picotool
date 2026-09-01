@@ -2152,5 +2152,29 @@
   "command": "C:\\Users\\xwx\\.pico-sdk\\toolchain\\14_2_Rel1\\bin\\arm-none-eabi-gcc.exe -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable -finput-charset=UTF-8 -fexec-charset=GBK -o plugins\\led_controller\\CMakeFiles\\led_controller.dir\\plugin_led_controller.c.obj -c E:\\pico\\pico\\plugins\\led_controller\\plugin_led_controller.c",
   "file": "E:\\pico\\pico\\plugins\\led_controller\\plugin_led_controller.c",
   "output": "plugins\\led_controller\\CMakeFiles\\led_controller.dir\\plugin_led_controller.c.obj"
+},
+{
+  "directory": "E:/pico/pico/build",
+  "command": "C:\\Users\\xwx\\.pico-sdk\\toolchain\\14_2_Rel1\\bin\\arm-none-eabi-gcc.exe -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable -finput-charset=UTF-8 -fexec-charset=GBK -o plugins\\wire_quality\\CMakeFiles\\wire_quality.dir\\main.c.obj -c E:\\pico\\pico\\plugins\\wire_quality\\main.c",
+  "file": "E:\\pico\\pico\\plugins\\wire_quality\\main.c",
+  "output": "plugins\\wire_quality\\CMakeFiles\\wire_quality.dir\\main.c.obj"
+},
+{
+  "directory": "E:/pico/pico/build",
+  "command": "C:\\Users\\xwx\\.pico-sdk\\toolchain\\14_2_Rel1\\bin\\arm-none-eabi-gcc.exe -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable -finput-charset=UTF-8 -fexec-charset=GBK -o plugins\\wire_quality\\CMakeFiles\\wire_quality.dir\\plugin_wire_quality.c.obj -c E:\\pico\\pico\\plugins\\wire_quality\\plugin_wire_quality.c",
+  "file": "E:\\pico\\pico\\plugins\\wire_quality\\plugin_wire_quality.c",
+  "output": "plugins\\wire_quality\\CMakeFiles\\wire_quality.dir\\plugin_wire_quality.c.obj"
+},
+{
+  "directory": "E:/pico/pico/build",
+  "command": "C:\\Users\\xwx\\.pico-sdk\\toolchain\\14_2_Rel1\\bin\\arm-none-eabi-gcc.exe -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable -finput-charset=UTF-8 -fexec-charset=GBK -o plugins\\novel_reader\\CMakeFiles\\novel_reader.dir\\main.c.obj -c E:\\pico\\pico\\plugins\\novel_reader\\main.c",
+  "file": "E:\\pico\\pico\\plugins\\novel_reader\\main.c",
+  "output": "plugins\\novel_reader\\CMakeFiles\\novel_reader.dir\\main.c.obj"
+},
+{
+  "directory": "E:/pico/pico/build",
+  "command": "C:\\Users\\xwx\\.pico-sdk\\toolchain\\14_2_Rel1\\bin\\arm-none-eabi-gcc.exe -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable -finput-charset=UTF-8 -fexec-charset=GBK -o plugins\\novel_reader\\CMakeFiles\\novel_reader.dir\\plugin_novel_reader.c.obj -c E:\\pico\\pico\\plugins\\novel_reader\\plugin_novel_reader.c",
+  "file": "E:\\pico\\pico\\plugins\\novel_reader\\plugin_novel_reader.c",
+  "output": "plugins\\novel_reader\\CMakeFiles\\novel_reader.dir\\plugin_novel_reader.c.obj"
 }
 ]
