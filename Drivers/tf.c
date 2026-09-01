@@ -17,19 +17,19 @@
 #define TF_INIT_BAUD       (300 * 1000)     // 初始化低速 (< 400kHz)
 #define TF_RUN_BAUD        SPI_BUS_BAUD_TF  // 运行时高速 (20MHz)
 
-#define CMD0   0   /* GO_IDLE_STATE */
-#define CMD8   8   /* SEND_IF_COND */
-#define CMD9   9   /* SEND_CSD */
-#define CMD10  10  /* SEND_CID */
-#define CMD16  16  /* SET_BLOCKLEN */
-#define CMD17  17  /* READ_SINGLE_BLOCK */
-#define CMD24  24  /* WRITE_BLOCK */
-#define CMD55  55  /* APP_CMD */
-#define CMD58  58  /* READ_OCR */
-#define ACMD41 41  /* SD_SEND_OP_COND */
+#define CMD0   0  
+#define CMD8   8   
+#define CMD9   9   
+#define CMD10  10  
+#define CMD16  16  
+#define CMD17  17  
+#define CMD24  24 
+#define CMD55  55  
+#define CMD58  58  
+#define ACMD41 41  
 
-#define R1_IDLE           (1 << 0)
-#define R1_ILLEGAL_CMD    (1 << 2)
+#define R1_IDLE           (1 << 0)  //空闲
+#define R1_ILLEGAL_CMD    (1 << 2)  //非法
 
 static uint8_t tf_ready  = 0;
 static uint8_t card_type = TF_CT_NONE;
@@ -270,7 +270,7 @@ int TF_ReadCSD(uint8_t buf[16])
     SPI_Bus_High();
     return TF_OK;
 }
-
+//扇区数
 int TF_GetSectors(uint32_t *sectors)
 {
     if (!sectors) return TF_ERR_CMD;
@@ -279,15 +279,12 @@ int TF_GetSectors(uint32_t *sectors)
     int rc = TF_ReadCSD(csd);
     if (rc != TF_OK) return rc;
 
-    // CSD Structure: csd[0] 7:6
     if ((csd[0] >> 6) == 1) {
-        // CSD Version 2.0 (SDHC / SDXC)
         uint32_t c_size = ((uint32_t)(csd[7] & 0x3F) << 16) |
                           ((uint32_t)csd[8] << 8) |
                           (uint32_t)csd[9];
         *sectors = (c_size + 1) * 1024;
     } else {
-        // CSD Version 1.0 (SDSC)
         uint32_t c_size = ((uint32_t)(csd[6] & 0x03) << 10) |
                           ((uint32_t)csd[7] << 2) |
                           ((uint32_t)(csd[8] & 0xC0) >> 6);

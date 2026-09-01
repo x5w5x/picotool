@@ -388,3 +388,5 @@
 31	2263	8099441031127255	build.ninja	8c01b435b2b2f6b8
 122	206	8098862364972230	plugins/wire_quality/CMakeFiles/wire_quality.dir/main.c.obj	121be9404204213d
 265	388	8099438740598307	plugins/novel_reader/novel_reader.elf	5bd84f079ba32d4e
+29	215	8099457166079411	blink.pio.h	5a7845f2675f2a8a
+29	215	8099457166079411	E:/pico/pico/build/blink.pio.h	5a7845f2675f2a8a

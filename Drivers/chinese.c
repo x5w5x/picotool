@@ -9,20 +9,20 @@ static uint8_t hz_pixel_buf[24 * 24 * 2];
 /* ASCII 字符全高整块渲染缓冲区 (最大 12 宽 * 24 高 * 2 字节 = 576 字节) */
 static uint8_t ascii_pixel_buf[12 * 24 * 2];
 
-/* ===================== 64 槽位 RAM LRU 字形缓存池 ===================== */
 #define FONT_CACHE_SIZE   64
 
 typedef struct {
-    uint16_t gb_code;
+    uint16_t gb_code; 
     uint8_t  size;
     uint8_t  data[72];
     uint32_t last_used;
 } font_cache_t;
 
-static font_cache_t g_font_cache[FONT_CACHE_SIZE];
+static font_cache_t g_font_cache[FONT_CACHE_SIZE]; 
 static uint32_t     g_cache_timer = 0;
 
 /* ===================== GB2312 区位码偏移换算 ===================== */
+// 偏移计算公式： (区码 - 0xA1) * 94 + (位码 - 0xA1)
 static uint32_t GB2312_GetOffset(uint8_t high, uint8_t low)
 {
     if (high < 0xA1 || high > 0xF7 || low < 0xA1 || low > 0xFE) return 0xFFFFFFFF;
@@ -104,19 +104,19 @@ static void DrawHZSize(uint16_t x, uint16_t y, uint16_t gb, FontSize_t size, uin
     uint8_t bg_hi  = (uint8_t)(bg >> 8);
     uint8_t bg_lo  = (uint8_t)(bg & 0xFF);
 
-    uint16_t bytes_per_row = (size + 7) / 8;
+    uint16_t bytes_per_row = (size + 7) / 8; //每行数据字节数
     uint32_t idx = 0;
 
-    // 100% 还原你最初完全正确的取模解算公式
+    
     for (uint16_t row = 0; row < size; row++) {
         for (uint16_t col = 0; col < size; col++) {
             uint8_t byte_val = dot_buf[row * bytes_per_row + (col / 8)];
             if (byte_val & (0x80 >> (col % 8))) {
                 hz_pixel_buf[idx++] = col_hi;
-                hz_pixel_buf[idx++] = col_lo;
+                hz_pixel_buf[idx++] = col_lo;  //字体色
             } else {
                 hz_pixel_buf[idx++] = bg_hi;
-                hz_pixel_buf[idx++] = bg_lo;
+                hz_pixel_buf[idx++] = bg_lo;   //背景色
             }
         }
     }
@@ -209,7 +209,7 @@ void Chinese_ShowStringSize(uint16_t x, uint16_t y, const char *str, FontSize_t 
         }
         if (*str == '\n') {
             cx = x;
-            cy += size + 4;
+            cy += size + 4; //换行
             str++;
             continue;
         }
@@ -222,7 +222,7 @@ void Chinese_ShowStringSize(uint16_t x, uint16_t y, const char *str, FontSize_t 
             }
             if (cy + size > LCD_HEIGHT) break;
 
-            if (c >= 0x20) {
+            if (c >= 0x20) { //忽略控制字符
                 DrawAsciiChar(cx, cy, c, size, color, bg);
                 cx += asc_step;
             }

@@ -22,9 +22,9 @@
 #define ST7796_COLMOD    0x3A
 
 #define LCD_SPI          spi1
-#define LCD_SPI_BAUD     SPI_BUS_BAUD_HIGH
+#define LCD_SPI_BAUD     SPI_BUS_BAUD_HIGH 
 
-#define UI_TILE_H        32
+#define UI_TILE_H        32 //切片高度
 
 #define LCD_CS_LOW()     gpio_put(PIN_LCD_CS, 0)
 #define LCD_CS_HIGH()    gpio_put(PIN_LCD_CS, 1)
@@ -33,10 +33,9 @@
 #define LCD_RST_LOW()    gpio_put(PIN_LCD_RST, 0)
 #define LCD_RST_HIGH()   gpio_put(PIN_LCD_RST, 1)
 
-static int lcd_dma_chan = -1;
-static dma_channel_config dma_cfg;
-
-// ⚡ 核心优化 1：合并为唯一的 DMA 推流/字节翻转共享缓冲 (立省 30.72 KB RAM)
+static int lcd_dma_chan = -1;  //DMA通道号
+static dma_channel_config dma_cfg; 
+//切片缓冲 480 x 320 = 30kb
 static uint16_t s_lcd_dma_buf[LCD_WIDTH * UI_TILE_H] __attribute__((aligned(4)));
 
 static inline void LCD_WaitDMA_Auto(void)
@@ -114,9 +113,7 @@ void LCD_PushTileDMA_Async(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const
     uint32_t count = (uint32_t)w * h;
     if (count > LCD_WIDTH * UI_TILE_H) count = LCD_WIDTH * UI_TILE_H;
 
-    // ⚡ 必须先等上一帧 DMA 搬运完毕，再安全复用共享缓冲
     LCD_WaitDMA();
-
     // ⚡ 核心优化 2：利用 GCC 内建 rev16 硬件单指令加速大小端翻转
     for (uint32_t i = 0; i < count; i++) {
         s_lcd_dma_buf[i] = __builtin_bswap16(buf[i]);
@@ -145,7 +142,6 @@ void LCD_PushSubTile(uint16_t screen_x, uint16_t screen_y,
         total_pixels = LCD_WIDTH * UI_TILE_H;
     }
 
-    // ⚡ 必须先等上一帧 DMA 搬运完毕，再安全复用共享缓冲
     LCD_WaitDMA();
 
     uint32_t dst_idx = 0;
@@ -164,9 +160,7 @@ void LCD_PushSubTile(uint16_t screen_x, uint16_t screen_y,
 static void LCD_GPIO_Init(void)
 {
     gpio_init(PIN_W25_CS); gpio_set_dir(PIN_W25_CS, GPIO_OUT); gpio_put(PIN_W25_CS, 1);
-#ifdef PIN_TF_CS
     gpio_init(PIN_TF_CS);  gpio_set_dir(PIN_TF_CS,  GPIO_OUT); gpio_put(PIN_TF_CS,  1);
-#endif
 
     gpio_set_function(PIN_SPI_SCK,  GPIO_FUNC_SPI);
     gpio_set_function(PIN_SPI_MOSI, GPIO_FUNC_SPI);
@@ -201,14 +195,14 @@ void LCD_Init(void)
     LCD_WriteCmd(ST7796_SWRESET); sleep_ms(120);
     LCD_WriteCmd(ST7796_SLPOUT);  sleep_ms(100);
 
-    const uint8_t madctl = 0xE8; LCD_WriteCmdData(ST7796_MADCTL, &madctl, 1);
-    const uint8_t colmod = 0x55; LCD_WriteCmdData(ST7796_COLMOD, &colmod, 1);
+    const uint8_t madctl = 0xE8; LCD_WriteCmdData(ST7796_MADCTL, &madctl, 1);  //显示方向
+    const uint8_t colmod = 0x55; LCD_WriteCmdData(ST7796_COLMOD, &colmod, 1);  //像素格式
     const uint8_t pwr1 = 0x23;   LCD_WriteCmdData(0xC0, &pwr1, 1);
     const uint8_t pwr2 = 0x10;   LCD_WriteCmdData(0xC1, &pwr2, 1);
     const uint8_t vcom[2] = {0x3E, 0x28}; LCD_WriteCmdData(0xC5, vcom, 2);
 
-    LCD_WriteCmd(ST7796_INVON);
-    LCD_WriteCmd(ST7796_DISPON);
+    LCD_WriteCmd(ST7796_INVON); //开启反色
+    LCD_WriteCmd(ST7796_DISPON); //开启显示
     sleep_ms(20);
 }
 

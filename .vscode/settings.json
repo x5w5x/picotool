@@ -55,6 +55,7 @@
         "cstdlib": "c",
         "stdio.h": "c",
         "lcd.h": "c",
-        "app_manager.h": "c"
+        "app_manager.h": "c",
+        "board_pins.h": "c"
     }
 }

@@ -7,7 +7,7 @@
 #include "pico/time.h"
 
 #define TOUCH_I2C       i2c0
-#define TOUCH_I2C_BAUD  (400 * 1000)
+#define TOUCH_I2C_BAUD  (400 * 1000) //iic时钟频率
 
 #define TOUCH_RST_LOW()  gpio_put(PIN_TOUCH_RST, 0)
 #define TOUCH_RST_HIGH() gpio_put(PIN_TOUCH_RST, 1)
@@ -106,7 +106,7 @@ bool Touch_ReadData(Touch_Data_t *data)
     g_has_touch_irq = false;
 
     uint8_t raw[14];
-    uint8_t start_reg = FT_REG_GEST_ID;
+    uint8_t start_reg = FT_REG_GEST_ID; //连续读14字节
 
     if (i2c_write_timeout_us(TOUCH_I2C, FT6336_ADDR, &start_reg, 1, true, 10000) < 0 ||
         i2c_read_timeout_us(TOUCH_I2C, FT6336_ADDR, raw, sizeof(raw), false, 10000) < 0) {
@@ -114,7 +114,7 @@ bool Touch_ReadData(Touch_Data_t *data)
         return false;
     }
 
-    data->gesture   = raw[0];
+    data->gesture   = raw[0];  
     data->touch_num = raw[1] & 0x0F;
 
     if (data->touch_num == 0 || data->touch_num > 2) {
@@ -206,7 +206,6 @@ uint8_t Touch_GetChipID(void)
     id = Touch_ReadReg(0xA6);
     if (id != 0xFF && id != 0x00) return id;
 
-    // 如果芯片 ID 区域未烧录，但 0x00 (Dev Mode) 能正常读写，也视为主机在线 (返回 0x63 代号)
     uint8_t dev_mode = Touch_ReadReg(0x00);
     if (dev_mode != 0xFF) {
         return 0x63; // 标明 FT6336 在线

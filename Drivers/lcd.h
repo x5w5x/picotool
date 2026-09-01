@@ -15,8 +15,8 @@ extern "C" {
 #include <stdbool.h>
 #include <stddef.h>
 
-#define LCD_WIDTH       480
-#define LCD_HEIGHT      320
+#define LCD_WIDTH       480  //横屏宽
+#define LCD_HEIGHT      320   //横屏高
 
 /* ===================== RGB565 常用颜色 ===================== */
 #define WHITE           0xFFFF
