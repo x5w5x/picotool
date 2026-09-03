@@ -1,7 +1,7 @@
 /*
  * @Author: 轩
  * @Date: 2026-08-19 19:58:59
- * @LastEditTime: 2026-08-21 10:35:49
+ * @LastEditTime: 2026-09-02 19:50:02
  * @FilePath: \pico\ui\ui_btn.h
  */
 #ifndef UI_BUTTON_H
@@ -11,14 +11,11 @@
 #include <stdbool.h>
 #include "ui_geometry.h"
 #include "ui_tile.h"
-#include "chinese.h" // 提供 FontSize_t 定义
+#include "chinese.h" 
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/* ================= 1. 交互模式与外观样式枚举 ================= */
-
 /** 按钮交互模式 */
 typedef enum {
     UI_BTN_MODE_PUSH = 0, // 普通点按：松手触发回调
@@ -34,7 +31,7 @@ typedef enum {
 
 /* 前向声明与回调函数类型 */
 struct ui_btn;
-typedef void (*ui_btn_cb_t)(struct ui_btn *btn, void *user_data);
+typedef void (*ui_btn_cb_t)(struct ui_btn *btn, void *user_data); //回调
 
 /* ================= 2. 按钮控件结构体 ================= */
 
@@ -56,7 +53,7 @@ typedef struct ui_btn {
     uint32_t        last_tick;      // 防抖时间戳
     uint32_t        debounce_ms;    // 防抖冷却周期 (默认 50ms)
 
-    // ⚡ 触控手势保护与防抖状态机
+    //手势保护与防抖状态机
     int16_t         down_x;
     int16_t         down_y;
     bool            is_touch_down;

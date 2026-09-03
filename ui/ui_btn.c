@@ -29,7 +29,6 @@ static int16_t ui_btn_measure_string_width(const char *str, FontSize_t size) {
 
     while (*str) {
         if ((uint8_t)*str >= 0x80) {
-            // GB2312 双字节汉字
             if (*(str + 1) == '\0') break;
             width += font_h;
             str += 2;
@@ -51,7 +50,7 @@ void ui_btn_init(ui_btn_t *btn, int16_t x, int16_t y, int16_t w, int16_t h,
     btn->rect = ui_rect_make(x, y, w, h);
 
     btn->text           = text;
-    btn->font_size      = FONT_16;
+    btn->font_size      = FONT_16; //默认最小
     btn->mode           = UI_BTN_MODE_PUSH;
     btn->style          = UI_BTN_STYLE_RECT;
 
@@ -122,7 +121,7 @@ bool ui_btn_process_touch(ui_btn_t *btn, bool is_touching, int16_t tx, int16_t t
             }
         }
     } else {
-        // C. ⚡ 手指松开 (Touch Up): 唯一允许触发业务回调的时机
+        // C.手指松开 (Touch Up): 唯一允许触发业务回调的时机
         if (btn->is_touch_down) {
             btn->is_touch_down = false;
 
@@ -158,25 +157,25 @@ bool ui_btn_process_touch(ui_btn_t *btn, bool is_touching, int16_t tx, int16_t t
     return need_redraw;
 }
 
-/* ================= 4. 切片安全光栅化渲染 ================= */
+/* =================切片安全光栅化渲染================= */
 
 void ui_btn_draw(ui_tile_t *tile, const ui_btn_t *btn) {
     if (!tile || !btn) return;
 
-    // 1. 📐 与当前切片显存求物理交集 (Early Exit)
+    // 与当前切片显存求物理交集
     ui_rect_t overlap;
     if (!ui_rect_intersect(&tile->rect, &btn->rect, &overlap)) {
         return;
     }
 
-    // 2. 🎨 状态颜色解析
+    //状态颜色解析
     bool is_active = btn->is_pressed || btn->is_checked;
     uint16_t current_bg = (btn->style == UI_BTN_STYLE_TEXT) ? btn->color_bg 
                                                              : (is_active ? btn->color_active : btn->color_bg);
     uint16_t current_fg = (btn->style == UI_BTN_STYLE_TEXT && is_active) ? btn->color_active 
                                                                          : btn->color_text;
 
-    // 3. 🖌️ 形状光栅化 (背景仅填充与 Tile 相交的 overlap 区域)
+    //形状光栅化
     if (btn->style == UI_BTN_STYLE_RECT) {
         ui_draw_fill_rect(tile, &overlap, current_bg);
         ui_draw_rect(tile, &btn->rect, is_active ? 0x07FF : 0x4208);
@@ -213,7 +212,7 @@ void ui_btn_draw(ui_tile_t *tile, const ui_btn_t *btn) {
         if ((ty + font_h) > tile->rect.y && ty < (tile->rect.y + tile->rect.h)) {
             ui_draw_string(tile, tx, ty, btn->text, btn->font_size, current_fg, current_bg);
 
-            // 5. ➖ 选中下划线
+            // 5选中下划线
             if (is_active && btn->show_underline) {
                 int16_t line_y = ty + font_h + 2;
                 if (line_y >= tile->rect.y && line_y < (tile->rect.y + tile->rect.h)) {

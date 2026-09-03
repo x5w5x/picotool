@@ -111,7 +111,7 @@ void LCD_PushTileDMA_Async(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint1
     if (count > LCD_WIDTH * UI_TILE_H) count = LCD_WIDTH * UI_TILE_H;
 
     LCD_WaitDMA();
-    // ⚡ 核心优化 2：利用 GCC 内建 rev16 硬件单指令加速大小端翻转
+    
     for (uint32_t i = 0; i < count; i++) {
 
          buf[i] = __builtin_bswap16(buf[i]);

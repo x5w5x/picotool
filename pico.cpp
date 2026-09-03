@@ -8,7 +8,7 @@
 #include "hardware/clocks.h"
 #include "pico/bootrom.h"
 #include "hardware/adc.h"
-
+#include "config.h"
 // 硬件驱动层
 #include "board_pins.h"
 #include "spi_bus.h"
@@ -41,6 +41,7 @@
 #include "app_pinout.h"
 #include "app_audio.h"
 #include "app_loader.h"
+#include "app_settings.h"
 #define LED_PIN PICO_DEFAULT_LED_PIN
 
 // 屏幕物理背景色: 纯白 (0xFFFF)
@@ -134,7 +135,8 @@ void app_ui_custom_init(void)
 
     // 2. 注册已开发的独立 App (按顺序在抽屉菜单中排列)
     app_manager_register(&g_app_mgr, app_led_get_instance());
-    app_manager_register(&g_app_mgr, app_template_get_instance());
+    // app_manager_register(&g_app_mgr, app_template_get_instance());
+     app_manager_register(&g_app_mgr, app_settings_get_instance());
 
     app_manager_register(&g_app_mgr, app_uart_term_get_instance());
     app_manager_register(&g_app_mgr, app_swd_probe_get_instance());
@@ -359,7 +361,7 @@ int main(void)
         app_manager_update(&g_app_mgr, now);
 
         // C. 心跳指示灯 (500ms 翻转)
-        if (now - last_led_tick >= 500)
+        if (sys_led_blink&& now - last_led_tick >= 500)
         {
             last_led_tick = now; //
             gpio_xor_mask(1u << LED_PIN);

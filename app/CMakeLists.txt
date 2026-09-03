@@ -25,10 +25,13 @@ add_library(appmgr STATIC
     audio_i2s.c
     app_audio.c
     app_loader.c
+    app_settings.c
 )
 
 target_include_directories(appmgr PUBLIC
     ${CMAKE_CURRENT_LIST_DIR}
+    # 项目根目录包含 config.h 等全局配置头文件。
+    ${CMAKE_CURRENT_LIST_DIR}/..
     # ui/ 是 app/ 的兄弟目录,app_base.h 直接 #include "ui_tile.h"
     ${CMAKE_CURRENT_LIST_DIR}/../ui
     # app_led.c 通过 ui_btn.h / ui_draw.h 链上 chinese.h → Drivers/

@@ -15,8 +15,8 @@ extern "C" {
 #define UI_CHECK_MAX_ITEMS 32
 
 typedef enum {
-    UI_CHECK_MODE_MULTI = 0,    // 多选复选框模式 (Checkbox, 方形勾选框)
-    UI_CHECK_MODE_SINGLE        // 互斥单选钮模式 (Radio Button, 圆形单选钮)
+    UI_CHECK_MODE_MULTI = 0,    // 多选复选框模式 
+    UI_CHECK_MODE_SINGLE        // 互斥单选钮模式
 } ui_check_mode_t;
 
 typedef struct {

@@ -99,7 +99,7 @@ def flash_once(uf2_path, flash_count):
             break
         # Heartbeat every 5s so user knows we're alive.
         if time.time() >= next_heartbeat:
-            print(f"  ... waiting (elapsed {int(time.time())}s)")
+            # print(f"  ... waiting (elapsed {int(time.time())}s)")
             next_heartbeat = time.time() + 5.0
         interruptible_sleep(SCAN_INTERVAL_SEC)
 

@@ -120,7 +120,7 @@ project(pico C CXX ASM)
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
-add_executable(pico pico.cpp)
+add_executable(pico pico.cpp config.c)
 
 pico_set_program_name(pico "pico")
 pico_set_program_version(pico "0.1")

@@ -1,7 +1,7 @@
 /*
  * @Author: 轩
  * @Date: 2026-08-19 18:50:20
- * @LastEditTime: 2026-08-21 10:44:40
+ * @LastEditTime: 2026-09-02 17:13:27
  * @FilePath: \pico\ui\ui_core.h
  */
 #ifndef UI_CORE_H
@@ -18,17 +18,17 @@
 extern "C" {
 #endif
 
-// 场景与控件切片光栅化回调函数类型[cite: 9]
+// 场景与控件切片光栅化回调函数类型
 typedef void (*ui_scene_draw_cb_t)(ui_tile_t *tile);
 
 /**
- * @brief 全屏切片流水线渲染 (遍历全部 10 个切片行)[cite: 9]
+ * @brief 全屏切片流水线渲染 (遍历全部 10 个切片行)
  * @param draw_scene 场景绘制回调
  */
 void ui_render_frame(ui_scene_draw_cb_t draw_scene);
 
 /**
- * @brief 指定切片行范围渲染 (全屏行宽推流，例如顶部状态栏仅刷 row 0)[cite: 9]
+ * @brief 指定切片行范围渲染 (全屏行宽推流，例如顶部状态栏仅刷 row 0)
  * @param start_row 起始切片索引 (0 ~ UI_TILE_ROWS-1)
  * @param end_row   结束切片索引 (0 ~ UI_TILE_ROWS-1)
  * @param draw_scene 场景绘制回调
