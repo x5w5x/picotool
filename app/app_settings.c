@@ -10,14 +10,22 @@
 #include "chinese.h"
 
 #include "pico/stdlib.h"
+#include "pico/unique_id.h"
+#include "hardware/clocks.h"
 #include <stdio.h>
 #include <string.h>
 #include "config.h"
 
+
 /* =========================================================================
  * 0. 基础常量与选项配置
  * ========================================================================= */
-
+extern char __data_start__;
+extern char __bss_end__;
+extern char __end__;
+extern char __HeapLimit;
+extern char __flash_binary_start;
+extern char __flash_binary_end;
 // 侧边栏
 static const char *s_settings_tabs[] = {
     "系统状态", // Tab 0
@@ -27,9 +35,10 @@ static const char *s_settings_tabs[] = {
 };
 #define TAB_COUNT (sizeof(s_settings_tabs) / sizeof(s_settings_tabs[0]))
 
-#define SETTINGS_CONTENT_H       520
-#define SETTINGS_CARD_Y          16
-#define SETTINGS_SWITCH_Y        78
+#define STATUS_CONTENT_H 520
+#define SETTINGS_CONTENT_H 520
+#define SETTINGS_CARD_Y 16
+#define SETTINGS_SWITCH_Y 78
 
 /* =========================================================================
  * 1. App 私有数据结构体
@@ -44,14 +53,27 @@ typedef struct
     ui_tabview_t tabview;
     uint8_t last_tab_idx;
 
-    // --- Tab 0 专属控件 (滚动视口 + 视口外部固定按钮) ---
-    ui_scrollview_t scroll_view; // 滚动视口容器 (虚拟长画布)
-    ui_btn_t btn_tab0_fixed;     // 视口外部的固定操作按钮 (不随滚动条位移)
+    // --- Tab 0 系统状态 ---
+    ui_scrollview_t status_scroll;
 
     // --- Tab 1 专属控件 (常规静态参数配置) ---
     ui_scrollview_t setting_scroll;
     ui_rect_t card_settings; // 配置底板卡片
     ui_switch_t sw_feature;  // 开关控件
+
+    char device_serial[PICO_UNIQUE_BOARD_ID_SIZE_BYTES * 2 + 1]; // 序列号
+    uint32_t uptime_seconds;
+    uint32_t last_updata_seconds;
+
+    uint32_t static_ram;
+    uint32_t heap;
+
+    uint32_t flash_size;
+    uint32_t flash_total;
+    uint8_t flash_usage;
+
+    uint32_t sys_clock_hz;
+    uint32_t peri_clock_hz;
 } settings_data_t;
 
 static app_t s_settings;
@@ -78,9 +100,14 @@ static void format_build_date(char *out, size_t out_size)
                                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
     char month[4] = {0};
     int day = 0, year = 0, month_idx = 0;
-    if (sscanf(FW_BUILD_DATE, "%3s %d %d", month, &day, &year) == 3) {
+    if (sscanf(FW_BUILD_DATE, "%3s %d %d", month, &day, &year) == 3)
+    {
         for (int i = 0; i < 12; ++i)
-            if (strcmp(month, months[i]) == 0) { month_idx = i + 1; break; }
+            if (strcmp(month, months[i]) == 0)
+            {
+                month_idx = i + 1;
+                break;
+            }
     }
     if (month_idx)
         snprintf(out, out_size, "%04d年%02d月%02d日", year, month_idx, day);
@@ -103,68 +130,218 @@ static void on_tab_changed(ui_tabview_t *tv, uint8_t old_tab, uint8_t new_tab, v
     settings_data_t *data = (settings_data_t *)user_data;
     if (data)
     {
-        // 标签切换时，整个右侧内容工作区标记为脏区域，触发重新光栅化
         data->dirty_rect = tv->content_rect;
     }
 }
 
-// 全局按钮点击回调 (位于 TabView 外部)
-static void on_global_btn_click(ui_btn_t *btn, void *user_data)
+// Tab 0 系统状态内容。状态项使用虚拟内容坐标，在这里逐步添加。
+static void on_status_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
+                                   int16_t scroll_y, void *user_data)
 {
-    (void)btn;
     settings_data_t *data = (settings_data_t *)user_data;
     if (!data)
         return;
+    // x/y 是虚拟内容原点映射到屏幕后的坐标。
+    const int16_t x = viewport->x;
+    const int16_t y = viewport->y - scroll_y;
+    uint32_t total = data->uptime_seconds;
+    uint32_t hours = (total / 3600) % 24;
+    uint32_t minutes = (total / 60) % 60;
+    uint32_t seconds = total % 60;
+    char uptime_text[32];
+    char ram_text[24];
+    char heap_text[24];
+    char flash_size_t[24];
+    char flash_total_t[24];
+    char flash_usage_t[16];
+    char sys_clock_text[24];
+    char peri_clock_text[24];
 
-    printf("点击了全局常驻按钮！\r\n");
-    // 刷新自身按压态
-    data->dirty_rect = rect_union_box(data->dirty_rect, ui_btn_get_dirty_rect(btn));
-}
+    snprintf(uptime_text,
+             sizeof(uptime_text),
+             "%02lu:%02lu:%02lu",
+             (unsigned long)hours,
+             (unsigned long)minutes,
+             (unsigned long)seconds);
+    snprintf(ram_text, sizeof(ram_text),
+             "%lu KB",
+             (unsigned long)((data->static_ram + 1023) / 1024));
 
-// Tab 0 内部滚动视口的内容绘制代理回调
-static void on_scrollview_draw_content(ui_tile_t *tile, const ui_rect_t *viewport, int16_t scroll_y, void *user_data)
-{
-    (void)user_data;
+    snprintf(heap_text, sizeof(heap_text),
+             "%lu KB",
+             (unsigned long)(data->heap / 1024));
+    snprintf(flash_size_t,
+         sizeof(flash_size_t),
+         "%lu KiB",
+         (unsigned long)
+         ((data->flash_size + 1023u) / 1024u));
 
-    // 假设长画布排布 6 个信息卡片，每个卡片高 36px，间距 8px
-    const int16_t item_h = 36;
-    const int16_t item_gap = 8;
-    const int16_t item_w = viewport->w - 18; // 预留右侧滚动条滑块空间
+snprintf(flash_total_t,
+         sizeof(flash_total_t),
+         "%lu KiB",
+         (unsigned long)
+         (data->flash_total / 1024u));
 
-    for (int i = 0; i < 6; i++)
-    {
-        // 1. 换算当前卡片在屏幕上的绝对物理 Y 坐标
-        int16_t screen_y = viewport->y + i * (item_h + item_gap) - scroll_y;
+    snprintf(flash_usage_t,
+         sizeof(flash_usage_t),
+         "%u%%",
+         data->flash_usage);
+    snprintf(sys_clock_text, sizeof(sys_clock_text),
+             "%lu MHz", (unsigned long)(data->sys_clock_hz / 1000000u));
+    snprintf(peri_clock_text, sizeof(peri_clock_text),
+             "%lu MHz", (unsigned long)(data->peri_clock_hz / 1000000u));
 
-        // 2. 算术剪枝：超出物理视口上下边界的不参与计算
-        if (screen_y + item_h <= viewport->y || screen_y >= viewport->y + viewport->h)
-        {
-            continue;
-        }
-
-        ui_rect_t item_rect = ui_rect_make(viewport->x + 4, screen_y, item_w, item_h);
-        ui_rect_t overlap;
-
-        // 3. 切片安全相交裁剪光栅化
-        if (ui_rect_intersect(&tile->rect, &item_rect, &overlap))
-        {
-            ui_draw_fill_rect(tile, &overlap, 0xEF7D); // 底板浅灰
-            ui_draw_rect(tile, &item_rect, 0xC618);    // 边框灰
-
-            char buf[32];
-            snprintf(buf, sizeof(buf), "监控节点 #%d 运行正常", i + 1);
-            ui_draw_string(tile, item_rect.x + 8, item_rect.y + 10, buf, FONT_16, 0x1A7B, 0xEF7D);
-        }
+    // 用轻量分组面板组织状态信息，避免整页散落纯文本。
+    ui_rect_t overview = ui_rect_make(x + 8, y + 32, 326, 82);
+    ui_rect_t memory = ui_rect_make(x + 8, y + 124, 326, 92);
+    ui_rect_t flash = ui_rect_make(x + 8, y + 226, 326, 126);
+    ui_rect_t clocks = ui_rect_make(x + 8, y + 362, 326, 112);
+    ui_rect_t panel_overlap;
+    if (ui_rect_intersect(&tile->rect, &overview, &panel_overlap)) {
+        ui_draw_fill_rect(tile, &panel_overlap, 0xEF7D);
+        ui_draw_rect(tile, &overview, 0xC618);
     }
+    if (ui_rect_intersect(&tile->rect, &memory, &panel_overlap)) {
+        ui_draw_fill_rect(tile, &panel_overlap, 0xEF7D);
+        ui_draw_rect(tile, &memory, 0xC618);
+    }
+    if (ui_rect_intersect(&tile->rect, &flash, &panel_overlap)) {
+        ui_draw_fill_rect(tile, &panel_overlap, 0xEF7D);
+        ui_draw_rect(tile, &flash, 0xC618);
+    }
+    if (ui_rect_intersect(&tile->rect, &clocks, &panel_overlap)) {
+        ui_draw_fill_rect(tile, &panel_overlap, 0xEF7D);
+        ui_draw_rect(tile, &clocks, 0xC618);
+    }
+    ui_draw_string(tile,
+                   x + 16,
+                   y + 6,
+                   "系统概览",
+                   FONT_20,
+                   0x4A69,
+                   0xEF7D);
+
+    ui_draw_string(tile,
+                   x + 20,
+                   y + 62,
+                   "运行时间",
+                   FONT_16,
+                   0x632C,
+                   0xEF7D);
+
+    ui_draw_string(tile,
+                   x + 180,
+                   y + 62,
+                   uptime_text,
+                   FONT_16,
+                   0x4A69,
+                   0xEF7D);
+    ui_draw_string(tile,
+                   x + 20,
+                   y + 158,
+                   "RAM 固定占用",
+                   FONT_16,
+                   0x632C,
+                   0xEF7D);
+    ui_draw_string(tile,
+                   x + 220,
+                   y + 158,
+                   ram_text,
+                   FONT_16,
+                   0x4A69,
+                   0xEF7D);
+
+    ui_draw_string(tile,
+                   x + 20,
+                   y + 192,
+                   "Heap 容量",
+                   FONT_16,
+                   0x632C,
+                   0xEF7D);
+
+    ui_draw_string(tile,
+                   x + 220,
+                   y + 192,
+                   heap_text,
+                   FONT_16,
+                   0x4A69,
+                   0xEF7D);
+    ui_draw_string(tile,
+                   x + 20,
+                   y + 260,
+                   "固件大小",
+                   FONT_16,
+                   0x632C,
+                   0xEF7D);
+
+    ui_draw_string(tile,
+                   x + 220,
+                   y + 260,
+                   flash_size_t,
+                   FONT_16,
+                   0x4A69,
+                   0xEF7D);
+
+    ui_draw_string(tile,
+                   x + 20,
+                   y + 294,
+                   "Flash 容量",
+                   FONT_16,
+                   0x632C,
+                   0xEF7D);
+
+    ui_draw_string(tile,
+                   x + 220,
+                   y + 294,
+                   flash_total_t,
+                   FONT_16,
+                   0x4A69,
+                   0xEF7D);
+
+    ui_draw_string(tile,
+                   x + 20,
+                   y + 328,
+                   "Flash 使用率",
+                   FONT_16,
+                   0x632C,
+                   0xEF7D);
+
+    ui_draw_string(tile,
+                   x + 220,
+                   y + 328,
+                   flash_usage_t,
+                   FONT_16,
+                   0x4A69,
+                   0xF7BE);
+
+    ui_draw_string(tile, x + 16, y + 374,
+                   "时钟频率", FONT_20, 0x4A69, 0xEF7D);
+    ui_draw_string(tile, x + 20, y + 418,
+                   "系统时钟", FONT_16, 0x632C, 0xEF7D);
+    ui_draw_string(tile, x + 220, y + 418,
+                   sys_clock_text, FONT_16, 0x4A69, 0xEF7D);
+    ui_draw_string(tile, x + 20, y + 452,
+                   "外设时钟", FONT_16, 0x632C, 0xEF7D);
+    ui_draw_string(tile, x + 220, y + 452,
+                   peri_clock_text, FONT_16, 0x4A69, 0xEF7D);
 }
 
 // Tab 1 使用虚拟内容坐标；所有子控件随 scroll_y 一起换算到屏幕坐标。
 static void layout_settings_content(settings_data_t *data)
 {
-    const int16_t y = data->setting_scroll.view_rect.y - data->setting_scroll.scroll_y;
-    data->card_settings = ui_rect_make(125, y + SETTINGS_CARD_Y, 330, 112);
-    data->sw_feature.rect.x = 385;
-    data->sw_feature.rect.y = y + SETTINGS_SWITCH_Y;
+    data->card_settings = ui_scrollview_content_rect_to_screen(
+        &data->setting_scroll, ui_rect_make(5, SETTINGS_CARD_Y, 330, 112));
+}
+
+static bool on_settings_touch_content(bool is_touching, int16_t content_x,
+                                      int16_t content_y, uint32_t now_tick,
+                                      void *user_data)
+{
+    settings_data_t *data = (settings_data_t *)user_data;
+    if (!data)
+        return false;
+    return ui_switch_process_touch(&data->sw_feature, is_touching,
+                                   content_x, content_y, now_tick);
 }
 
 static void on_settings_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
@@ -173,32 +350,24 @@ static void on_settings_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
     (void)viewport;
     (void)scroll_y;
     settings_data_t *data = (settings_data_t *)user_data;
-    if (!data) return;
+    if (!data)
+        return;
 
     layout_settings_content(data);
     ui_rect_t overlap;
-    if (ui_rect_intersect(&tile->rect, &data->card_settings, &overlap)) {
+    if (ui_rect_intersect(&tile->rect, &data->card_settings, &overlap))
+    {
         ui_draw_fill_rect(tile, &overlap, 0xF7BE);
         ui_draw_rect(tile, &data->card_settings, 0xD69A);
         ui_draw_string(tile, 140, data->card_settings.y + 14,
                        "系统行为", FONT_20, 0x4A69, 0xF7BE);
         ui_draw_string(tile, 140, data->card_settings.y + 66,
-                       "LED 状态灯", FONT_16, 0x632C, 0xF7BE);
+                       "系统呼吸灯", FONT_16, 0x632C, 0xF7BE);
     }
-    ui_switch_draw(tile, &data->sw_feature);
-}
-
-// Tab 0 视口外部的固定按钮点击回调
-static void on_tab0_fixed_btn_click(ui_btn_t *btn, void *user_data)
-{
-    (void)btn;
-    settings_data_t *data = (settings_data_t *)user_data;
-    if (!data)
-        return;
-
-    printf("点击了 Tab 0 视口外的固定操作按钮！\r\n");
-    // 重绘整个滚动视口区域 (例如模拟刷新了数据)
-    data->dirty_rect = rect_union_box(data->dirty_rect, data->scroll_view.view_rect);
+    ui_switch_t screen_switch = data->sw_feature;
+    screen_switch.rect = ui_scrollview_content_rect_to_screen(
+        &data->setting_scroll, data->sw_feature.rect);
+    ui_switch_draw(tile, &screen_switch);
 }
 
 // Tab 1 开关切换回调
@@ -209,7 +378,7 @@ static void on_switch_toggled(ui_switch_t *sw, bool state, void *user_data)
     if (!data)
         return;
 
-    sys_led_blink = !state;
+    sys_led_blink = state;
     // 将开关卡片合入脏矩形
     data->dirty_rect = rect_union_box(data->dirty_rect, data->card_settings);
 }
@@ -220,39 +389,44 @@ static void on_switch_toggled(ui_switch_t *sw, bool state, void *user_data)
 
 static void settings_init(app_t *self)
 {
-    self->user_data = g_static_app_ram; // 挂载共享内存基址
+    self->user_data = g_static_app_ram;
 }
 
 static void settings_enter(app_t *self)
 {
-    // ⚡ 进入时从共享静态池格式化，清零历史残留
+
     settings_data_t *data = (settings_data_t *)g_static_app_ram;
     self->user_data = data;
     memset(data, 0, sizeof(settings_data_t));
+    // 获取运行时间
+    data->uptime_seconds = to_ms_since_boot(get_absolute_time()) / 1000;
+    data->last_updata_seconds = to_ms_since_boot(get_absolute_time());
+
+    data->static_ram = (uint32_t)(&__bss_end__ - &__data_start__);
+    data->heap = (uint32_t)(&__HeapLimit - &__end__);
+
+    data->flash_size = (uint32_t)(&__flash_binary_end - &__flash_binary_start);
+    data->flash_total = BOARD_FLASH_SIZE_BYTES;
+    data->flash_usage = (uint8_t)(((uint64_t)data->flash_size * 100u) / data->flash_total);
+    data->sys_clock_hz = clock_get_hz(clk_sys);
+    data->peri_clock_hz = clock_get_hz(clk_peri);
+
+    pico_get_unique_board_id_string(data->device_serial, sizeof(data->device_serial));
 
     // 首屏默认全量重绘一次
     data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
     data->last_tab_idx = 0;
-
-    // 2. TabView 侧边栏容器：(X:0, Y:32, 宽:480, 高:288)，侧边栏宽 110px
-    // 工作区 content_rect 自动计算为 (X:110, Y:32, 宽:370, 高:288)
     ui_tabview_init(&data->tabview, 0, 32, LCD_WIDTH, LCD_HEIGHT - 32,
                     110, 48, s_settings_tabs, TAB_COUNT, 0, on_tab_changed);
     data->tabview.user_data = data;
 
-    // 3. Tab 0 控件排版：
-    // A. 滚动视口：物理窗口放置在 (X:125, Y:42)，宽 340，高 195；虚拟内容长画布高 280px
-    ui_scrollview_init(&data->scroll_view, 125, 42, 340, 195, 280, on_scrollview_draw_content);
-    data->scroll_view.user_data = data;
-    data->scroll_view.color_bg = 0xFFFF;        // 视口纯白底
-    data->scroll_view.color_scrollbar = 0x8410; // 暗灰滚动条
-    data->scroll_view.show_scrollbar = true;
-
-    // B. 视口外部固定按钮：放置在视口下方 (X:125, Y:248)，宽 340，高 40 (不随视口滚动)
-    ui_btn_init(&data->btn_tab0_fixed, 125, 248, 340, 40, "刷新列表数据", on_tab0_fixed_btn_click);
-    data->btn_tab0_fixed.user_data = data;
-    data->btn_tab0_fixed.style = UI_BTN_STYLE_ROUND;
-    ui_btn_set_color(&data->btn_tab0_fixed, 0x05E0, 0x03E0, 0xFFFF);
+    // Tab 0 系统状态滚动视图，与偏好设置保持相同的视口规格。
+    ui_scrollview_init(&data->status_scroll, 120, 40, 350, 260,
+                       STATUS_CONTENT_H, on_status_draw_content);
+    data->status_scroll.user_data = data;
+    data->status_scroll.color_bg = 0xFFFF;
+    data->status_scroll.color_scrollbar = 0xA514;
+    data->status_scroll.show_scrollbar = true;
 
     // 4. Tab 1 控件排版：
     ui_scrollview_init(&data->setting_scroll, 120, 40, 350, 260,
@@ -261,8 +435,9 @@ static void settings_enter(app_t *self)
     data->setting_scroll.color_bg = 0xFFFF;
     data->setting_scroll.color_scrollbar = 0xA514;
     data->setting_scroll.show_scrollbar = true;
+    ui_scrollview_set_touch_cb(&data->setting_scroll, on_settings_touch_content);
 
-    ui_switch_init(&data->sw_feature, 385, 0, 64, 32,
+    ui_switch_init(&data->sw_feature, 265, SETTINGS_SWITCH_Y, 64, 32,
                    sys_led_blink, on_switch_toggled);
     data->sw_feature.user_data = data;
     layout_settings_content(data);
@@ -288,6 +463,18 @@ static void settings_update(app_t *self, uint32_t now_tick)
     data->dirty_rect = ui_rect_make(0, 0, 0, 0);
 
     // 若有后台数据需要定时刷新，在此按需标脏对应卡片或视口
+    uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+    if (now_ms - data->last_updata_seconds >= 1000)
+    {
+        data->last_updata_seconds = now_ms;
+        data->uptime_seconds = now_ms / 1000;
+        data->sys_clock_hz = clock_get_hz(clk_sys);
+        data->peri_clock_hz = clock_get_hz(clk_peri);
+        if (data->tabview.active_tab_idx == 0)
+        {
+            data->dirty_rect = data->status_scroll.view_rect;
+        }
+    }
 }
 
 /* =========================================================================
@@ -323,36 +510,19 @@ static bool settings_process_touch(app_t *self, bool is_touching, int16_t tx, in
     // 3. 根据当前激活的 Tab 分层分流
     switch (data->tabview.active_tab_idx)
     {
-    case 0: // --- Tab 0: 滚动列表与固定按钮 ---
-        // A. 处理视口外固定按钮
-        if (ui_btn_process_touch(&data->btn_tab0_fixed, is_touching, tx, ty, now_tick))
+    case 0: // --- Tab 0: 系统状态滚动视图 ---
+        if (ui_scrollview_process_touch(&data->status_scroll, is_touching, tx, ty, now_tick))
         {
-            data->dirty_rect = rect_union_box(data->dirty_rect, ui_btn_get_dirty_rect(&data->btn_tab0_fixed));
-            handled = true;
-        }
-        // B. 处理视口拖拽滚动
-        else if (ui_scrollview_process_touch(&data->scroll_view, is_touching, tx, ty, now_tick))
-        {
-            data->dirty_rect = rect_union_box(data->dirty_rect, data->scroll_view.view_rect);
+            data->dirty_rect = rect_union_box(data->dirty_rect, data->status_scroll.view_rect);
             handled = true;
         }
         break;
 
     case 1: // --- Tab 1: 可滚动偏好设置 ---
-        layout_settings_content(data);
-
-        // ScrollView 始终先接收完整手势，以便识别拖动并取得触控捕获。
-        if (ui_scrollview_process_touch(&data->setting_scroll, is_touching, tx, ty, now_tick)) {
+        // ScrollView 统一完成坐标转换、拖动识别和子控件事件分发。
+        if (ui_scrollview_process_touch(&data->setting_scroll, is_touching, tx, ty, now_tick))
+        {
             layout_settings_content(data);
-            data->dirty_rect = rect_union_box(data->dirty_rect, data->setting_scroll.view_rect);
-            handled = true;
-        }
-
-        // 仅当没有形成滚动手势且控件仍位于视口内时才允许开关响应。
-        if (!data->setting_scroll.is_dragged &&
-            (ui_rect_contains_point(&data->setting_scroll.view_rect, tx, ty) ||
-             data->sw_feature.is_touch_down) &&
-            ui_switch_process_touch(&data->sw_feature, is_touching, tx, ty, now_tick)) {
             data->dirty_rect = rect_union_box(data->dirty_rect, data->setting_scroll.view_rect);
             handled = true;
         }
@@ -399,10 +569,7 @@ static void settings_draw(app_t *self, ui_tile_t *tile)
     switch (data->tabview.active_tab_idx)
     {
     case 0:
-        // A. 光栅化滚动视口
-        ui_scrollview_draw(tile, &data->scroll_view);
-        // B. 光栅化外部固定按钮
-        ui_btn_draw(tile, &data->btn_tab0_fixed);
+        ui_scrollview_draw(tile, &data->status_scroll);
         break;
 
     case 1:
@@ -413,65 +580,93 @@ static void settings_draw(app_t *self, ui_tile_t *tile)
     //     ui_draw_string(tile,260,58,"PICO",FONT_24,0xC618,0xFFFF);
     //     ui_draw_string(tile,188,82,"多功能嵌入式工具",FONT_24,0xC618,0XFFFF);
 
-    
-
     //     break;
-    case 2: {
-    const int16_t x = data->tabview.content_rect.x + 28;
-    const int16_t y = data->tabview.content_rect.y + 28;
-    char build_date[32];
-    format_build_date(build_date, sizeof(build_date));
+    case 2:
+    {
+        const int16_t x = data->tabview.content_rect.x + 8;
+        const int16_t y = data->tabview.content_rect.y + 28;
+        char build_date[32];
+        format_build_date(build_date, sizeof(build_date));
 
-    ui_draw_string(tile,
-                   x + 125,
-                   y,
-                   "PICO",
-                   FONT_24,
-                   0xC618,
-                   0xFFFF);
+        // About 页不是滚动视图，两个面板必须完整落在 288px 内容区内。
+        ui_rect_t brand = ui_rect_make(x + 4, y + 2, 342, 80);
+        ui_rect_t info = ui_rect_make(x + 4, y + 92, 342, 160);
+        ui_rect_t panel;
+        if (ui_rect_intersect(&tile->rect, &brand, &panel)) {
+            ui_draw_fill_rect(tile, &panel, 0xE71C);
+            ui_draw_rect(tile, &brand, 0xC618);
+        }
+        if (ui_rect_intersect(&tile->rect, &info, &panel)) {
+            ui_draw_fill_rect(tile, &panel, 0xF7BE);
+            ui_draw_rect(tile, &info, 0xC618);
+        }
 
-    ui_draw_string(tile,x + 53,y + 30,
-                   "多功能嵌入式工具",
-                   FONT_20,
-                   0xC618,
-                   0xFFFF);
+        ui_draw_string(tile,
+                       x + 125,
+                       y + 8,
+                       "PICO",
+                       FONT_24,
+                       0xC618,
+                       0xE71C);
 
-    ui_draw_string(tile, x, y + 78,
-                   "固件版本: " FW_VERSION_STRING,
-                   FONT_20,
-                   0x632C,
-                   0xFFFF);
+        ui_draw_string(tile, x + 53, y + 28,
+                       "多功能嵌入式工具",
+                       FONT_20,
+                       0xC618,
+                   0xE71C);
+        ui_draw_string(tile, x + 53 + 7 * 24, y + 28 + 22,
+                       "__轩",
+                       FONT_20,
+                       0xC618,
+                   0xE71C);
 
-    ui_draw_string(tile, x, y + 104,
-                   "硬件版本: " HW_VERSION_STRING,
-                   FONT_20,
-                   0x632C,
-                   0xFFFF);
+        ui_draw_string(tile, x + 18, y + 98,
+                       "固件版本: " FW_VERSION_STRING,
+                       FONT_20,
+                       0x632C,
+                   0xF7BE);
 
-    ui_draw_string(tile, x, y + 130,
-                   "SDK 版本: " SDK_VERSION_STRING,
-                   FONT_20,
-                   0x632C,
-                   0xFFFF);
-    ui_draw_string(tile, x, y + 156,
-                   "构建时间: ",
-                   FONT_20,
-                   0x632C,
-                   0xFFFF);
-    ui_draw_string(tile, x+96, y + 156,
-                   build_date,
-                   FONT_20,
-                   0x632C,
-                   0xFFFF);
+        ui_draw_string(tile, x + 18, y + 126,
+                       "硬件版本: " HW_VERSION_STRING,
+                       FONT_20,
+                       0x632C,
+                   0xF7BE);
 
-    ui_draw_string(tile, x+108, y + 182,
-                   FW_BUILD_TIME,
-                   FONT_20,
-                   0x632C,
-                   0xFFFF);
+        ui_draw_string(tile, x + 18, y + 154,
+                       "SDK 版本: " SDK_VERSION_STRING,
+                       FONT_20,
+                       0x632C,
+                   0xF7BE);
+        ui_draw_string(tile, x + 18, y + 182,
+                       "构建时间: ",
+                       FONT_20,
+                       0x632C,
+                   0xF7BE);
+        ui_draw_string(tile, x + 114, y + 182,
+                       build_date,
+                       FONT_20,
+                       0x632C,
+                   0xF7BE);
 
-    break;
-}
+        ui_draw_string(tile, x + 126, y + 204,
+                       FW_BUILD_TIME,
+                       FONT_20,
+                       0x632C,
+                   0xEF7D);
+
+        ui_draw_string(tile, x + 18, y + 230,
+                       "设备序列号: ",
+                       FONT_16,
+                       0x632C,
+                       0xFFFF);
+        ui_draw_string(tile, x + 114, y + 230,
+                       data->device_serial,
+                       FONT_16,
+                       0x4A69,
+                       0xFFFF);
+
+        break;
+    }
     default:
         break;
     }

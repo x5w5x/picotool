@@ -16,6 +16,7 @@ extern "C" {
 #define FW_VERSION_STRING    "v1.0.0"
 #define HW_VERSION_STRING    "Pico Board Rev A"
 #define SDK_VERSION_STRING   "Pico SDK 2.2.0"
+#define BOARD_FLASH_SIZE_BYTES (2u * 1024u * 1024u)
 
 #define FW_BUILD_DATE        __DATE__
 #define FW_BUILD_TIME        __TIME__

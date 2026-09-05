@@ -48,6 +48,7 @@ target_include_directories(appmgr PUBLIC
 # 注意:pico_stdlib 是 INTERFACE 库,它会 PUBLIC 暴露所有 SDK include 路径。
 target_link_libraries(appmgr PUBLIC pico_stdlib hardware_gpio pico_multicore 
 pico_stdio_usb 
+pico_unique_id
 hardware_dma
  hardware_pio 
 hardware_adc

@@ -14,6 +14,9 @@ typedef struct ui_scrollview ui_scrollview_t;
 
 // 内容切片绘制回调函数原型
 typedef void (*ui_scrollview_draw_cb_t)(ui_tile_t *tile, const ui_rect_t *viewport, int16_t scroll_y, void *user_data);
+typedef bool (*ui_scrollview_touch_cb_t)(bool is_touching, int16_t content_x,
+                                         int16_t content_y, uint32_t now_tick,
+                                         void *user_data);
 
 struct ui_scrollview {
     ui_rect_t               view_rect;          // 视口在屏幕上的绝对物理矩形
@@ -30,6 +33,7 @@ struct ui_scrollview {
 
     // 绘制回调与上下文
     ui_scrollview_draw_cb_t draw_content;
+    ui_scrollview_touch_cb_t touch_content;
     void                   *user_data;
 
     // 配色与指示条
@@ -41,6 +45,9 @@ struct ui_scrollview {
 // 初始化滚动视口
 void ui_scrollview_init(ui_scrollview_t *sv, int16_t x, int16_t y, int16_t w, int16_t h,
                         int16_t content_h, ui_scrollview_draw_cb_t draw_content);
+
+void ui_scrollview_set_touch_cb(ui_scrollview_t *sv, ui_scrollview_touch_cb_t touch_content);
+ui_rect_t ui_scrollview_content_rect_to_screen(const ui_scrollview_t *sv, ui_rect_t content_rect);
 
 // 视口触控调度 (集成 8px 死区保护与 Touch Capture 全局捕获)
 bool ui_scrollview_process_touch(ui_scrollview_t *sv, bool is_touching, int16_t tx, int16_t ty, uint32_t now_tick);
