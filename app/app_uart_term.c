@@ -23,9 +23,9 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define UART_INST           uart1
-#define PIN_UART_TX         20  // GP20 (TX) -> 接外部模组/设备 RX
-#define PIN_UART_RX         21  // GP21 (RX) -> 接外部模组/设备 TX
+#define UART_INST           uart0
+#define PIN_UART_TX         0  // GP20 (TX) -> 接外部模组/设备 RX
+#define PIN_UART_RX         1  // GP21 (RX) -> 接外部模组/设备 TX
 
 // ⚡ 2048 字节硬件 DMA 环形接收缓冲区
 #define RX_DMA_RING_SIZE    2048

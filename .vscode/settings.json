@@ -58,6 +58,10 @@
         "app_manager.h": "c",
         "board_pins.h": "c",
         "ui_geometry.h": "c",
-        "config.h": "c"
+        "config.h": "c",
+        "pio_manager.h": "c",
+        "text_encoding": "c",
+        "app_shared_ram.h": "c",
+        "gpio.h": "c"
     }
 }

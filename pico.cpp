@@ -15,6 +15,7 @@
 #include "lcd.h"
 #include "touch.h"
 #include "chinese.h"
+#include "fun_esp.h"
 
 // UI 核心渲染套件
 #include "ui_geometry.h"
@@ -42,6 +43,7 @@
 #include "app_audio.h"
 #include "app_loader.h"
 #include "app_settings.h"
+#include "app_uart.h"
 #define LED_PIN PICO_DEFAULT_LED_PIN
 
 // 屏幕物理背景色: 纯白 (0xFFFF)
@@ -135,21 +137,28 @@ void app_ui_custom_init(void)
 
     // 2. 注册已开发的独立 App (按顺序在抽屉菜单中排列)
     app_manager_register(&g_app_mgr, app_led_get_instance());
-    // app_manager_register(&g_app_mgr, app_template_get_instance());
+    app_manager_register(&g_app_mgr, app_template_get_instance());
      app_manager_register(&g_app_mgr, app_settings_get_instance());
 
-    app_manager_register(&g_app_mgr, app_uart_term_get_instance());
-    app_manager_register(&g_app_mgr, app_swd_probe_get_instance());
-    app_manager_register(&g_app_mgr, app_sd_msc_get_instance());
+    // app_manager_register(&g_app_mgr, app_uart_term_get_instance());
+    // app_manager_register(&g_app_mgr, app_swd_probe_get_instance());
+    // app_manager_register(&g_app_mgr, app_sd_msc_get_instance());
 
-    app_manager_register(&g_app_mgr, app_adc_get_instance());
+    // app_manager_register(&g_app_mgr, app_adc_get_instance());
 
-    app_manager_register(&g_app_mgr, app_pwm_get_instance());
-    app_manager_register(&g_app_mgr, app_i2c_spi_get_instance());
-    app_manager_register(&g_app_mgr, app_pinout_get_instance());
-    app_manager_register(&g_app_mgr, app_audio_get_instance());
-    app_manager_register(&g_app_mgr, app_loader_get_instance());
+    // app_manager_register(&g_app_mgr, app_pwm_get_instance());
+    // app_manager_register(&g_app_mgr, app_i2c_spi_get_instance());
+    // app_manager_register(&g_app_mgr, app_pinout_get_instance());
+    // app_manager_register(&g_app_mgr, app_audio_get_instance());
+    // app_manager_register(&g_app_mgr, app_loader_get_instance());
     // 3. 初始化顶部状态栏 (X:0, Y:0, W:480, H:32)
+
+
+
+
+
+ 
+    // app_manager_register(&g_app_mgr, app_uart_get_instance());
     ui_status_bar_init(&g_status_bar, 0, 0, LCD_WIDTH, 32, "多功能嵌入式终端", on_status_bar_click);
 
     // 4. 初始化更新按键 (X:54, Y:280, W:75, H:36)
@@ -287,12 +296,18 @@ int main(void)
     set_sys_clock_khz(240000, true);
 
     stdio_init_all();
+    if(fun_esp_init())esp_send_string("\r\n");
+    
+    
+//    esp_send_string("#PWM:10\r\n");
+//    esp_send_string("#PWM:10\r\n");
+//    esp_send_string("#PWM:10\r\n");
 
     // 2. 心跳指示灯初始化
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, GPIO_OUT);
     gpio_put(LED_PIN, 1);
-
+   
     // 3. SPI 片选保护锁定
     gpio_init(PIN_W25_CS);
     gpio_set_dir(PIN_W25_CS, GPIO_OUT);
@@ -325,7 +340,8 @@ int main(void)
 
     Touch_Data_t tp;
     int16_t last_tx = 0, last_ty = 0;
-
+esp_send_string("#PWM:204\r\n"); //80%亮度
+// esp_send_string("#PWM:10\r\n");
     // 7. 纯局部切片剪裁事件驱动主循环
     while (1)
     {

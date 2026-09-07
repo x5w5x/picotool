@@ -168,16 +168,15 @@ def main() -> int:
         raise SystemExit(f"输出文件已存在: {c_path} 或 {h_path}")
     values = dict(header=h_path.name, symbol=symbol, macro=macro,
                   guard=guard, display_name=display_name)
-    # Keep app/app_template.c as the single source of truth for comments,
-    # lifecycle conventions, TabView flow, and component examples.
-    template_path = Path(__file__).resolve().parents[1] / "app" / "app_template.c"
+    # Keep app/app_settings.c as the single source of truth for the current
+    # TabView + ScrollView layout and touch/dirty-rectangle behavior.
+    template_path = Path(__file__).resolve().parents[1] / "app" / "app_settings.c"
     if not template_path.exists():
         raise SystemExit(f"找不到模板文件: {template_path}")
     source = template_path.read_text(encoding="utf-8")
     source = source.replace('"app_template.h"', f'"{h_path.name}"')
     source = source.replace('"app_settings.h"', f'"{h_path.name}"')
-    # Support both the original app_template.c and the current settings-based
-    # mother template without touching Chinese comments or user-facing text.
+    # Rename the settings implementation while preserving its ScrollView code.
     source = source.replace("app_template", f"app_{symbol}")
     source = source.replace("app_settings", f"app_{symbol}")
     source = source.replace("settings_data_t", f"{symbol}_data_t")
@@ -188,6 +187,7 @@ def main() -> int:
     source = source.replace("settings_process_touch", f"{symbol}_process_touch")
     source = source.replace("settings_draw", f"{symbol}_draw")
     source = source.replace("s_settings", f"s_{symbol}")
+    source = source.replace("APP_ID_SETTINGS", "APP_ID_CUSTOM_0")
     source = source.replace('"系统设置"', f'"{display_name}"')
     c_path.write_text(source, encoding="utf-8")
     h_path.write_text(H_TEMPLATE.format(**values), encoding="utf-8")

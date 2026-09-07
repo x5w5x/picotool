@@ -126,7 +126,10 @@ pico_set_program_name(pico "pico")
 pico_set_program_version(pico "0.1")
 
 # Generate PIO header
-pico_generate_pio_header(pico ${CMAKE_CURRENT_LIST_DIR}/blink.pio)
+pico_generate_pio_header(pico ${CMAKE_CURRENT_LIST_DIR}/blink.pio
+ ${CMAKE_CURRENT_LIST_DIR}/pio/uart.pio
+
+)
 
 # USB CDC 1ms 超时保护 + 关闭 SDK 默认描述符(让 app/usb_descriptors.c 接管 USB 复合设备描述符)
 # 关闭后 SDK 不再提供 tud_descriptor_device_cb/configuration_cb/string_cb,
@@ -136,7 +139,9 @@ target_compile_definitions(pico PRIVATE
     PICO_STDIO_USB_USE_DEFAULT_DESCRIPTORS=0
 )
 
-pico_enable_stdio_uart(pico 1)
+# USB CDC 是系统常开调试/终端通道；关闭 SDK 默认 UART stdout，
+# 避免它自动占用 UART0 的 GP0/GP1（后续预留给 ESP32-C3）。
+pico_enable_stdio_uart(pico 0)
 pico_enable_stdio_usb(pico 1)
 
 # Add the standard include files to the build
@@ -151,6 +156,8 @@ target_include_directories(pico PRIVATE
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/Drivers)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/ui)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/app)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/pio)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/fun)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/fatfs)
 
 # 关键修复：仅对 minirtos 使用 --whole-archive，drivelib 和 SDK 库放在常规链接区
@@ -162,6 +169,8 @@ target_link_libraries(pico PRIVATE
     drivelib
     uigeom
     appmgr
+    pio_manager
+    fun
     FatFs_SPI
     -Wl,--end-group
     pico_stdlib

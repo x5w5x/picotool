@@ -8,6 +8,7 @@
 cmake_minimum_required(VERSION 3.13)
 
 add_library(appmgr STATIC
+    app_uart.c
     app_manager.c
     app_led.c
     app_template.c
@@ -34,6 +35,7 @@ target_include_directories(appmgr PUBLIC
     ${CMAKE_CURRENT_LIST_DIR}/..
     # ui/ 是 app/ 的兄弟目录,app_base.h 直接 #include "ui_tile.h"
     ${CMAKE_CURRENT_LIST_DIR}/../ui
+    ${CMAKE_CURRENT_LIST_DIR}/../fun
     # app_led.c 通过 ui_btn.h / ui_draw.h 链上 chinese.h → Drivers/
     ${CMAKE_CURRENT_LIST_DIR}/../Drivers
      ${CMAKE_CURRENT_LIST_DIR}/../fatfs

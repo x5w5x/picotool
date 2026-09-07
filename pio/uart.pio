@@ -1,0 +1,11 @@
+.program uart_tx
+.side_set 1 opt
+
+.wrap_target
+    pull         side 1 [7]
+    set x, 7     side 0 [7]
+
+bitloop:
+    out pins, 1              [6]
+    jmp x-- bitloop          [6]
+.wrap
