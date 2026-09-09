@@ -29,30 +29,30 @@ typedef struct {
 
 // 逆时针旋转 90 度后的上排 (偶数引脚: Pin 2, 4, 6 ... 20)
 static const pin_desc_t s_top_row_pins[COLS_COUNT] = {
-    { 2,  "3.3V", "系统 3.3V 主电源输出 (最大 300mA)",             PIN_TYPE_3V3  },
-    { 4,  "GND",  "系统电源地 (Ground)",                           PIN_TYPE_GND  },
-    { 6,  "GP1",  "数字IO | UART0_RX / SPI0_CS / I2C0_SCL",        PIN_TYPE_GPIO },
-    { 8,  "GP3",  "数字IO | SWDIO / SPI0_TX / I2C1_SCL",           PIN_TYPE_GPIO },
-    { 10, "GP5",  "数字IO | I2C0_SCL / UART1_RX / PWM4B",          PIN_TYPE_GPIO },
-    { 12, "GP7",  "数字IO | SPI0_TX / I2C1_SCL / PWM6B",           PIN_TYPE_GPIO },
-    { 14, "GP21", "数字IO | I2C0_SCL / UART1_RX / PWM4B",          PIN_TYPE_GPIO },
-    { 16, "GND",  "系统电源地 (Ground)",                           PIN_TYPE_GND  },
-    { 18, "GP27", "模拟IO | ADC1 模拟输入通道 / PWM10B",           PIN_TYPE_ADC  },
-    { 20, "GND",  "系统电源地 (Ground)",                           PIN_TYPE_GND  },
+    { 2,  "VBUS", "USB 5V 电源输出 / 输入 (最大 500mA)",            PIN_TYPE_VBUS },
+    { 4,  "3.3V",  "系统 3.3V 主电源输出 (最大 300mA)",             PIN_TYPE_3V3  },
+    { 6,  "GND",  "系统电源地 (Ground)",                            PIN_TYPE_GND },
+    { 8,  "GP3",  "数字IO | SWDIO / SPI0_TX / I2C1_SCL",            PIN_TYPE_GPIO },
+    { 10, "GP5",  "数字IO | I2C0_SCL / UART1_RX / PWM4B",           PIN_TYPE_GPIO },
+    { 12, "GP7",  "数字IO | SPI0_TX / I2C1_SCL / PWM6B",            PIN_TYPE_GPIO },
+    { 14, "GP21", "数字IO | I2C0_SCL / UART1_RX / PWM4B",           PIN_TYPE_GPIO },
+    { 16, "GND",  "系统电源地 (Ground)",                            PIN_TYPE_GND  },
+    { 18, "GP27", "模拟IO | ADC1 模拟输入通道 / PWM10B",            PIN_TYPE_ADC  },
+    { 20, "GND",  "系统电源地 (Ground)",                            PIN_TYPE_GND  },
 };
 
 // 逆时针旋转 90 度后的下排 (奇数引脚: Pin 1, 3, 5 ... 19)
 static const pin_desc_t s_bot_row_pins[COLS_COUNT] = {
     { 1,  "VBUS", "USB 5V 电源输出 / 输入 (最大 500mA)",           PIN_TYPE_VBUS },
-    { 3,  "GND",  "系统电源地 (Ground)",                           PIN_TYPE_GND  },
-    { 5,  "GP0",  "数字IO | UART0_TX / SPI0_RX / I2C0_SDA",        PIN_TYPE_GPIO },
+    { 3,  "3.3V",  "系统 3.3V 主电源输出 (最大 300mA)",            PIN_TYPE_3V3  },
+    { 5,  "GND",  "系统电源地 (Ground)",                           PIN_TYPE_GND },
     { 7,  "GP2",  "数字IO | SWCLK / SPI0_SCK / I2C1_SDA",          PIN_TYPE_GPIO },
     { 9,  "GP4",  "数字IO | I2C0_SDA / UART1_TX / PWM4A",          PIN_TYPE_GPIO },
     { 11, "GP6",  "数字IO | SPI0_SCK / I2C1_SDA / PWM6A",          PIN_TYPE_GPIO },
     { 13, "GP20", "数字IO | I2C0_SDA / UART1_TX / PWM4A",          PIN_TYPE_GPIO },
     { 15, "GP22", "数字IO | SPI0_SCK / I2C1_SDA / PWM6A",          PIN_TYPE_GPIO },
-    { 17, "GP26", "模拟IO | ADC0 模拟输入通道 / PWM10A",           PIN_TYPE_ADC  },
-    { 19, "GP28", "模拟IO | ADC2 模拟输入通道 / PWM11A",           PIN_TYPE_ADC  },
+    { 17, "GP26", "模拟IO | ADC0 模拟输入通道 / PWM10A",            PIN_TYPE_ADC  },
+    { 19, "GP28", "模拟IO | ADC2 模拟输入通道 / PWM11A",            PIN_TYPE_ADC  },
 };
 
 typedef struct {

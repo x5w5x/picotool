@@ -62,6 +62,7 @@
         "pio_manager.h": "c",
         "text_encoding": "c",
         "app_shared_ram.h": "c",
-        "gpio.h": "c"
+        "gpio.h": "c",
+        "chinese.h": "c"
     }
 }

@@ -20,6 +20,7 @@ extern "C" {
 #define ESP_UART uart0
 #define ESP_BAUD 921600
 bool fun_esp_init();
+bool esp_readable();
 size_t esp_read(uint8_t *data,size_t len);
 size_t esp_send_string(const char *text);
 #ifdef __cplusplus

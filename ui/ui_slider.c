@@ -173,11 +173,14 @@ void ui_slider_draw(ui_tile_t *tile, const ui_slider_t *slider) {
             ui_draw_fill_rect(tile, &fill_track, slider->color_fill);
         }
 
-        // C. 绘制圆形手柄 (拖拽时金黄高亮，静止时纯白，内部带黑心造型)
-        uint16_t k_color = slider->is_dragging ? 0xFFE0 : slider->color_knob;
-        ui_draw_fill_circle(tile, knob_x, knob_y, slider->knob_r, k_color);
-        if (slider->knob_r > 3) {
-            ui_draw_fill_circle(tile, knob_x, knob_y, slider->knob_r - 3, 0x10A2); // 极深蓝黑心造型
+        // C. 绘制圆形手柄 (微边框悬浮实心球，彻底去除黑心)
+        uint16_t k_color = slider->is_dragging ? 0xDEFB : slider->color_knob;
+        // uint16_t k_color = slider->color_knob;
+        // 外层：1px 浅灰阴影轮廓 (防止白色背景下隐形)
+        ui_draw_fill_circle(tile, knob_x, knob_y, slider->knob_r, 0xC618);
+        // 内层：填充手柄主体实心色 (k_color 纯白)
+        if (slider->knob_r > 1) {
+            ui_draw_fill_circle(tile, knob_x, knob_y, slider->knob_r - 1, k_color);
         }
     }
     // 3. 垂直滑动条绘制
@@ -201,10 +204,11 @@ void ui_slider_draw(ui_tile_t *tile, const ui_slider_t *slider) {
         }
 
         // C. 绘制垂直圆形手柄
-        uint16_t k_color = slider->is_dragging ? 0xFFE0 : slider->color_knob;
-        ui_draw_fill_circle(tile, knob_x, knob_y, slider->knob_r, k_color);
-        if (slider->knob_r > 3) {
-            ui_draw_fill_circle(tile, knob_x, knob_y, slider->knob_r - 3, 0x10A2);
+        uint16_t k_color = slider->is_dragging ? 0xDEFB : slider->color_knob;
+        // uint16_t k_color = slider->color_knob;
+        ui_draw_fill_circle(tile, knob_x, knob_y, slider->knob_r, 0xC618);
+        if (slider->knob_r > 1) {
+            ui_draw_fill_circle(tile, knob_x, knob_y, slider->knob_r - 1, k_color);
         }
     }
 }

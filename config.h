@@ -23,6 +23,7 @@ extern "C"
 #define FW_BUILD_TIME __TIME__
 
     extern bool sys_led_blink; // 系统灯
+    extern uint8_t led_brigthness;
     typedef enum
     {
         PIN_FUNC_NONE = 0,

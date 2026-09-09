@@ -6,6 +6,7 @@
 #include "ui_switch.h"
 #include "ui_scrollview.h"
 #include "ui_tabview.h"
+#include "ui_slider.h"
 #include "lcd.h"
 #include "chinese.h"
 
@@ -15,7 +16,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "config.h"
-
+#include "fun_esp.h"
 
 /* =========================================================================
  * 0. 基础常量与选项配置
@@ -40,6 +41,13 @@ static const char *s_settings_tabs[] = {
 #define SETTINGS_CARD_Y 16
 #define SETTINGS_SWITCH_Y 78
 
+#define BRIGHTNESS_CARD_Y      148
+#define BRIGHTNESS_CARD_H      130
+
+#define BRIGHTNESS_SLIDER_X    35
+#define BRIGHTNESS_SLIDER_Y    220
+#define BRIGHTNESS_SLIDER_W    270
+#define BRIGHTNESS_SLIDER_H    28
 /* =========================================================================
  * 1. App 私有数据结构体
  *
@@ -61,6 +69,10 @@ typedef struct
     ui_rect_t card_settings; // 配置底板卡片
     ui_switch_t sw_feature;  // 开关控件
 
+    ui_rect_t card_brightness;
+    ui_slider_t brightness_slider;
+    uint8_t brightness_percent;
+    //
     char device_serial[PICO_UNIQUE_BOARD_ID_SIZE_BYTES * 2 + 1]; // 序列号
     uint32_t uptime_seconds;
     uint32_t last_updata_seconds;
@@ -171,21 +183,19 @@ static void on_status_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
              "%lu KB",
              (unsigned long)(data->heap / 1024));
     snprintf(flash_size_t,
-         sizeof(flash_size_t),
-         "%lu KiB",
-         (unsigned long)
-         ((data->flash_size + 1023u) / 1024u));
+             sizeof(flash_size_t),
+             "%lu KiB",
+             (unsigned long)((data->flash_size + 1023u) / 1024u));
 
-snprintf(flash_total_t,
-         sizeof(flash_total_t),
-         "%lu KiB",
-         (unsigned long)
-         (data->flash_total / 1024u));
+    snprintf(flash_total_t,
+             sizeof(flash_total_t),
+             "%lu KiB",
+             (unsigned long)(data->flash_total / 1024u));
 
     snprintf(flash_usage_t,
-         sizeof(flash_usage_t),
-         "%u%%",
-         data->flash_usage);
+             sizeof(flash_usage_t),
+             "%u%%",
+             data->flash_usage);
     snprintf(sys_clock_text, sizeof(sys_clock_text),
              "%lu MHz", (unsigned long)(data->sys_clock_hz / 1000000u));
     snprintf(peri_clock_text, sizeof(peri_clock_text),
@@ -197,19 +207,23 @@ snprintf(flash_total_t,
     ui_rect_t flash = ui_rect_make(x + 8, y + 226, 326, 126);
     ui_rect_t clocks = ui_rect_make(x + 8, y + 362, 326, 112);
     ui_rect_t panel_overlap;
-    if (ui_rect_intersect(&tile->rect, &overview, &panel_overlap)) {
+    if (ui_rect_intersect(&tile->rect, &overview, &panel_overlap))
+    {
         ui_draw_fill_rect(tile, &panel_overlap, 0xEF7D);
         ui_draw_rect(tile, &overview, 0xC618);
     }
-    if (ui_rect_intersect(&tile->rect, &memory, &panel_overlap)) {
+    if (ui_rect_intersect(&tile->rect, &memory, &panel_overlap))
+    {
         ui_draw_fill_rect(tile, &panel_overlap, 0xEF7D);
         ui_draw_rect(tile, &memory, 0xC618);
     }
-    if (ui_rect_intersect(&tile->rect, &flash, &panel_overlap)) {
+    if (ui_rect_intersect(&tile->rect, &flash, &panel_overlap))
+    {
         ui_draw_fill_rect(tile, &panel_overlap, 0xEF7D);
         ui_draw_rect(tile, &flash, 0xC618);
     }
-    if (ui_rect_intersect(&tile->rect, &clocks, &panel_overlap)) {
+    if (ui_rect_intersect(&tile->rect, &clocks, &panel_overlap))
+    {
         ui_draw_fill_rect(tile, &panel_overlap, 0xEF7D);
         ui_draw_rect(tile, &clocks, 0xC618);
     }
@@ -331,6 +345,8 @@ static void layout_settings_content(settings_data_t *data)
 {
     data->card_settings = ui_scrollview_content_rect_to_screen(
         &data->setting_scroll, ui_rect_make(5, SETTINGS_CARD_Y, 330, 112));
+         data->card_brightness =
+        ui_scrollview_content_rect_to_screen(&data->setting_scroll,ui_rect_make(5,BRIGHTNESS_CARD_Y,330,BRIGHTNESS_CARD_H));
 }
 
 static bool on_settings_touch_content(bool is_touching, int16_t content_x,
@@ -340,8 +356,10 @@ static bool on_settings_touch_content(bool is_touching, int16_t content_x,
     settings_data_t *data = (settings_data_t *)user_data;
     if (!data)
         return false;
-    return ui_switch_process_touch(&data->sw_feature, is_touching,
-                                   content_x, content_y, now_tick);
+    bool handled =ui_switch_process_touch(&data->sw_feature,is_touching,content_x,content_y,now_tick);
+    if (handled) return true;
+    return ui_slider_process_touch(&data->brightness_slider,is_touching,content_x,content_y,now_tick);
+    
 }
 
 static void on_settings_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
@@ -368,6 +386,18 @@ static void on_settings_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
     screen_switch.rect = ui_scrollview_content_rect_to_screen(
         &data->setting_scroll, data->sw_feature.rect);
     ui_switch_draw(tile, &screen_switch);
+
+    if(ui_rect_intersect(&tile->rect,&data->card_brightness,&overlap)){
+        ui_draw_fill_rect(tile,&overlap,0xF7BE);
+        ui_draw_rect(tile,&data->card_brightness,0xD69A);
+        ui_draw_string(tile,140,data->card_brightness.y+14,"显示亮度",FONT_20,0x4A69,0xF7BE);
+        char brightness_text[16];
+        snprintf(brightness_text,sizeof(brightness_text),"%u%%",(unsigned)data->brightness_percent);
+        ui_draw_string(tile,data->card_brightness.x+260,data->card_brightness.y+18,brightness_text,FONT_16,0x4A69,0xF7BE);
+    }
+    ui_slider_t slider = data->brightness_slider;
+    slider.rect=ui_scrollview_content_rect_to_screen(&data->setting_scroll,data->brightness_slider.rect);
+    ui_slider_draw(tile,&slider);
 }
 
 // Tab 1 开关切换回调
@@ -383,6 +413,46 @@ static void on_switch_toggled(ui_switch_t *sw, bool state, void *user_data)
     data->dirty_rect = rect_union_box(data->dirty_rect, data->card_settings);
 }
 
+static void send_brightness_to_esp(uint8_t percent)
+{
+    if (percent > 90)
+        percent = 90;
+    else if (percent < 10)
+        percent = 10;
+    uint32_t pwm = ((uint32_t)percent * 255u + 50u) / 100u;
+    char cmd[24];
+
+    snprintf(cmd,sizeof(cmd),"#PWM:%lu\r\n",(unsigned long)pwm
+);
+    esp_send_string(cmd);
+    // if(esp_readable()){
+    //     uint8_t rx_buff[64];
+    //     size_t rx_len= esp_read(rx_buff,sizeof(rx_buff)-1);
+    //     rx_buff[rx_len]='\0';
+    //      printf(
+    //     "ESP RX: %s\r\n",
+    //     (char *)rx_buff
+    // );
+    // }
+}
+static void on_brightness_change(ui_slider_t *slider, int32_t value, void *user_data)
+{
+    settings_data_t *data =
+        (settings_data_t *)user_data;
+
+    if (data == NULL)
+    {
+        return;
+    }
+    if (value < 10)
+        value = 10;
+    else if (value > 90)
+        value = 90;
+    data->brightness_percent=(uint8_t)value;
+    led_brigthness=data->brightness_percent;
+    send_brightness_to_esp(data->brightness_percent);
+    data->dirty_rect=rect_union_box(data->dirty_rect,data->card_brightness);
+}
 /* =========================================================================
  * 3. App 生命周期管理
  * ========================================================================= */
@@ -440,7 +510,15 @@ static void settings_enter(app_t *self)
     ui_switch_init(&data->sw_feature, 265, SETTINGS_SWITCH_Y, 64, 32,
                    sys_led_blink, on_switch_toggled);
     data->sw_feature.user_data = data;
+
+    data->brightness_percent=led_brigthness;
+    ui_slider_init(&data->brightness_slider,BRIGHTNESS_SLIDER_X,BRIGHTNESS_SLIDER_Y,BRIGHTNESS_SLIDER_W,BRIGHTNESS_SLIDER_H,0,100,data->brightness_percent,on_brightness_change);
+    data->brightness_slider.user_data=data;
+    // ui_slider_set_color(&data->brightness_slider, 0xD69A, 0x04BF, 0xFFFF);
+    ui_slider_set_color(&data->brightness_slider, 0xDEFB, 0xBF5E, 0xFFFF);
     layout_settings_content(data);
+
+
 }
 
 static void settings_exit(app_t *self)
@@ -592,12 +670,14 @@ static void settings_draw(app_t *self, ui_tile_t *tile)
         ui_rect_t brand = ui_rect_make(x + 4, y + 2, 342, 80);
         ui_rect_t info = ui_rect_make(x + 4, y + 92, 342, 160);
         ui_rect_t panel;
-        if (ui_rect_intersect(&tile->rect, &brand, &panel)) {
+        if (ui_rect_intersect(&tile->rect, &brand, &panel))
+        {
             ui_draw_fill_rect(tile, &panel, 0xE71C);
             ui_draw_rect(tile, &brand, 0xC618);
         }
-        if (ui_rect_intersect(&tile->rect, &info, &panel)) {
-            ui_draw_fill_rect(tile, &panel, 0xF7BE);
+        if (ui_rect_intersect(&tile->rect, &info, &panel))
+        {
+            ui_draw_fill_rect(tile, &panel, 0xE71C);
             ui_draw_rect(tile, &info, 0xC618);
         }
 
@@ -613,57 +693,57 @@ static void settings_draw(app_t *self, ui_tile_t *tile)
                        "多功能嵌入式工具",
                        FONT_20,
                        0xC618,
-                   0xE71C);
+                       0xE71C);
         ui_draw_string(tile, x + 53 + 7 * 24, y + 28 + 22,
                        "__轩",
                        FONT_20,
                        0xC618,
-                   0xE71C);
+                       0xE71C);
 
         ui_draw_string(tile, x + 18, y + 98,
                        "固件版本: " FW_VERSION_STRING,
                        FONT_20,
                        0x632C,
-                   0xF7BE);
+                       0xE71C);
 
         ui_draw_string(tile, x + 18, y + 126,
                        "硬件版本: " HW_VERSION_STRING,
                        FONT_20,
                        0x632C,
-                   0xF7BE);
+                       0xE71C);
 
         ui_draw_string(tile, x + 18, y + 154,
                        "SDK 版本: " SDK_VERSION_STRING,
                        FONT_20,
                        0x632C,
-                   0xF7BE);
+                       0xE71C);
         ui_draw_string(tile, x + 18, y + 182,
                        "构建时间: ",
                        FONT_20,
                        0x632C,
-                   0xF7BE);
+                       0xE71C);
         ui_draw_string(tile, x + 114, y + 182,
                        build_date,
                        FONT_20,
                        0x632C,
-                   0xF7BE);
+                       0xE71C);
 
         ui_draw_string(tile, x + 126, y + 204,
                        FW_BUILD_TIME,
                        FONT_20,
                        0x632C,
-                   0xEF7D);
+                       0xE71C);
 
         ui_draw_string(tile, x + 18, y + 230,
                        "设备序列号: ",
                        FONT_16,
                        0x632C,
-                       0xFFFF);
+                       0xE71C);
         ui_draw_string(tile, x + 114, y + 230,
                        data->device_serial,
                        FONT_16,
                        0x4A69,
-                       0xFFFF);
+                       0xE71C);
 
         break;
     }

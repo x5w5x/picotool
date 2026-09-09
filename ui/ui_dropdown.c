@@ -21,11 +21,19 @@ static uint8_t ui_dd_get_font_height(FontSize_t size) {
     }
 }
 
+static uint8_t ui_dd_visible_count(const ui_dropdown_t *dd) {
+    if (!dd || dd->item_count == 0) return 0;
+    if (dd->max_visible_items == 0 || dd->max_visible_items >= dd->item_count) {
+        return dd->item_count;
+    }
+    return dd->max_visible_items;
+}
+
 ui_rect_t ui_dropdown_get_total_rect(const ui_dropdown_t *dd) {
     if (!dd) return ui_rect_make(0, 0, 0, 0);
     ui_rect_t r = dd->rect;
     if (dd->is_open && dd->items && dd->item_count > 0) {
-        r.h = (int16_t)(dd->rect.h * (1 + dd->item_count));
+        r.h = (int16_t)(dd->rect.h * (1 + ui_dd_visible_count(dd)));
     }
     return r;
 }
@@ -41,6 +49,10 @@ void ui_dropdown_init(ui_dropdown_t *dd, int16_t x, int16_t y, int16_t w, int16_
     dd->items         = items;
     dd->item_count    = item_count;
     dd->selected_idx  = (default_idx >= 0 && default_idx < item_count) ? default_idx : 0;
+    dd->max_visible_items = 0;
+    dd->first_visible_idx = 0;
+    dd->list_scroll_y = 0;
+    dd->scroll_start_y = 0;
 
     dd->is_open       = false;
     dd->font_size     = FONT_16;
@@ -67,6 +79,24 @@ void ui_dropdown_set_color(ui_dropdown_t *dd, uint16_t bg, uint16_t border, uint
     dd->color_active = active;
 }
 
+void ui_dropdown_set_max_visible_items(ui_dropdown_t *dd, uint8_t max_visible_items) {
+    if (!dd) return;
+
+    dd->max_visible_items = max_visible_items;
+    uint8_t visible_count = ui_dd_visible_count(dd);
+    uint8_t max_first = (dd->item_count > visible_count)
+        ? (uint8_t)(dd->item_count - visible_count)
+        : 0;
+
+    if (dd->selected_idx >= 0 && (uint8_t)dd->selected_idx >= visible_count) {
+        dd->first_visible_idx = (uint8_t)dd->selected_idx - visible_count + 1u;
+    }
+    if (dd->first_visible_idx > max_first) {
+        dd->first_visible_idx = max_first;
+    }
+    dd->list_scroll_y = (int16_t)(dd->first_visible_idx * dd->rect.h);
+}
+
 /* ================= 3. 触控状态机 (Touch Slop + Touch-Up 触发) ================= */
 
 bool ui_dropdown_process_touch(ui_dropdown_t *dd, bool is_touching, int16_t tx, int16_t ty, uint32_t now_tick) {
@@ -75,11 +105,17 @@ bool ui_dropdown_process_touch(ui_dropdown_t *dd, bool is_touching, int16_t tx, 
 
     if (is_touching) {
         if (!dd->is_touch_down) {
-            // A. 初次按下 (Touch Down): 仅记录起点坐标
+            ui_rect_t hit_rect = dd->is_open
+                ? ui_dropdown_get_total_rect(dd)
+                : dd->rect;
+            if (!ui_dd_hit_rect(&hit_rect, tx, ty)) return false;
+
+            // A. 初次按下 (Touch Down): 仅在控件范围内记录起点坐标
             dd->is_touch_down = true;
             dd->is_dragged    = false;
             dd->down_x        = tx;
             dd->down_y        = ty;
+            dd->scroll_start_y = dd->list_scroll_y;
         } else {
             // B. 持续移动 (Touch Move): 8px 防抖死区判定
             int16_t dx = abs(tx - dd->down_x);
@@ -87,12 +123,37 @@ bool ui_dropdown_process_touch(ui_dropdown_t *dd, bool is_touching, int16_t tx, 
             if (!dd->is_dragged && (dx >= TOUCH_SLOP_PX || dy >= TOUCH_SLOP_PX)) {
                 dd->is_dragged = true; // 锁定为滑动，禁止触发选择
             }
+
+            uint8_t visible_count = ui_dd_visible_count(dd);
+            if (dd->is_open && dd->item_count > visible_count && dd->is_dragged) {
+                int16_t max_scroll = (int16_t)(
+                    (dd->item_count - visible_count) * dd->rect.h);
+                int16_t new_scroll = (int16_t)(
+                    dd->scroll_start_y - (ty - dd->down_y));
+
+                if (new_scroll < 0) new_scroll = 0;
+                if (new_scroll > max_scroll) new_scroll = max_scroll;
+
+                if (new_scroll != dd->list_scroll_y) {
+                    dd->list_scroll_y = new_scroll;
+                    dd->first_visible_idx = (uint8_t)(new_scroll / dd->rect.h);
+                    return true;
+                }
+            }
         }
         return false;
     } else {
         // C. ⚡ 手指松开 (Touch Up): 唯一允许触发展开、收起或选中的时机
         if (dd->is_touch_down) {
             dd->is_touch_down = false;
+
+            if (dd->is_dragged && dd->rect.h > 0) {
+                /* 松手后吸附到最近一行，避免停在半行位置。 */
+                dd->list_scroll_y = (int16_t)(
+                    ((dd->list_scroll_y + dd->rect.h / 2) / dd->rect.h) *
+                    dd->rect.h);
+                dd->first_visible_idx = (uint8_t)(dd->list_scroll_y / dd->rect.h);
+            }
 
             // 只有未发生滑动的纯点按才执行动作
             if (!dd->is_dragged) {
@@ -115,7 +176,8 @@ bool ui_dropdown_process_touch(ui_dropdown_t *dd, bool is_touching, int16_t tx, 
                     // 点击在下拉选项列表中 -> 选中并收起
                     else if (ui_dd_hit_rect(&total_rect, tx, ty)) {
                         int16_t rel_y = ty - (dd->rect.y + dd->rect.h);
-                        int8_t clicked_idx = (int8_t)(rel_y / dd->rect.h);
+                        int8_t clicked_idx = (int8_t)(
+                            (rel_y + dd->list_scroll_y) / dd->rect.h);
 
                         if (clicked_idx >= 0 && clicked_idx < dd->item_count) {
                             dd->selected_idx = clicked_idx;
@@ -188,20 +250,47 @@ void ui_dropdown_draw(ui_tile_t *tile, const ui_dropdown_t *dd) {
 
     // 3. 📜 绘制下拉选项列表
     if (dd->is_open && dd->items) {
+        uint8_t visible_count = ui_dd_visible_count(dd);
+        ui_rect_t list_rect = ui_rect_make(
+            dd->rect.x,
+            (int16_t)(dd->rect.y + dd->rect.h),
+            dd->rect.w,
+            (int16_t)(visible_count * dd->rect.h));
+
         for (uint8_t i = 0; i < dd->item_count; i++) {
-            ui_rect_t item_rect = ui_rect_make(dd->rect.x, (int16_t)(dd->rect.y + (i + 1) * dd->rect.h), dd->rect.w, dd->rect.h);
+            ui_rect_t item_rect = ui_rect_make(
+                dd->rect.x,
+                (int16_t)(dd->rect.y + dd->rect.h +
+                          i * dd->rect.h - dd->list_scroll_y),
+                dd->rect.w,
+                dd->rect.h);
             ui_rect_t item_ov;
 
-            if (ui_rect_intersect(&tile->rect, &item_rect, &item_ov)) {
+            ui_rect_t visible_item;
+            if (ui_rect_intersect(&item_rect, &list_rect, &visible_item) &&
+                ui_rect_intersect(&tile->rect, &visible_item, &item_ov)) {
                 bool is_cur = (i == dd->selected_idx);
-                uint16_t item_bg = is_cur ? 0x000F : dd->color_bg;
-                uint16_t item_fg = is_cur ? dd->color_active : dd->color_text;
+                uint16_t item_bg = is_cur ? 0xE71C : dd->color_bg;
+                uint16_t item_fg = dd->color_text;
 
                 ui_draw_fill_rect(tile, &item_ov, item_bg);
                 ui_draw_rect(tile, &item_rect, dd->color_border);
 
+                if (is_cur) {
+                    ui_rect_t active_bar = ui_rect_make(
+                        item_rect.x, item_rect.y, 3, item_rect.h);
+                    ui_rect_t active_ov;
+                    if (ui_rect_intersect(&active_bar, &list_rect, &active_bar) &&
+                        ui_rect_intersect(&tile->rect, &active_bar, &active_ov)) {
+                        ui_draw_fill_rect(tile, &active_ov, dd->color_active);
+                    }
+                }
+
                 int16_t ty = item_rect.y + text_pad_y;
-                if ((ty + font_h) > tile->rect.y && ty < (tile->rect.y + tile->rect.h)) {
+                if (item_rect.y >= list_rect.y &&
+                    item_rect.y + item_rect.h <= list_rect.y + list_rect.h &&
+                    (ty + font_h) > tile->rect.y &&
+                    ty < (tile->rect.y + tile->rect.h)) {
                     ui_draw_string(tile, item_rect.x + 6, ty,
                                    dd->items[i], dd->font_size, item_fg, item_bg);
                 }

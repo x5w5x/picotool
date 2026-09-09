@@ -11,7 +11,7 @@ void ui_toast_init(ui_toast_t *toast) {
     toast->message[0]  = '\0';
     toast->type        = UI_TOAST_INFO;
     toast->start_tick  = 0;
-    toast->duration_ms = 2300; // 150ms滑入 + 2000ms驻留 + 150ms滑出
+    toast->duration_ms = 2000; // 150ms滑入 + 1700ms驻留 + 150ms滑出
 
     toast->w = 240;
     toast->h = 34;
@@ -77,17 +77,18 @@ void ui_toast_draw(ui_tile_t *tile, const ui_toast_t *toast) {
     // 1. 切片相交快速裁剪
     if (!ui_rect_intersect(&tile->rect, &toast->rect, &overlap)) return;
 
-    uint16_t bg_col   = 0x1082; // 极深蓝黑底
-    uint16_t bdr_col  = 0x07FF; // 青蓝框
-    uint16_t icon_col = 0x07FF;
+    uint16_t bg_col   = 0xE73C; // 浅银灰背景
+    uint16_t bdr_col  = 0xC618; // 中浅灰边框
+    uint16_t icon_col = 0xE73C; // 深灰状态指示
+    uint16_t text_col = 0x0000; // 深灰正文
     const char *tag   = "[INFO]";
 
     if (toast->type == UI_TOAST_SUCCESS) {
-        bdr_col = 0x07E0; icon_col = 0x07E0; tag = "[OK]";
+        icon_col = 0x2945; tag = "[OK]";
     } else if (toast->type == UI_TOAST_WARN) {
-        bdr_col = 0xFFE0; icon_col = 0xFFE0; tag = "[WARN]";
+        icon_col = 0x2945; tag = "[WARN]";
     } else if (toast->type == UI_TOAST_ERROR) {
-        bdr_col = 0xF800; icon_col = 0xF800; tag = "[ERR]";
+        icon_col = 0x2945; tag = "[ERR]";
     }
 
     // 2. 填充气泡背景与发光外框
@@ -98,11 +99,11 @@ void ui_toast_draw(ui_tile_t *tile, const ui_toast_t *toast) {
     ui_draw_set_clip(&toast->rect);
 
     // 左侧彩色指示条 (宽 4px)
-    ui_rect_t left_bar = ui_rect_make((int16_t)(toast->rect.x + 1), (int16_t)(toast->rect.y + 1), 4, (int16_t)(toast->rect.h - 2));
-    ui_rect_t bar_ov;
-    if (ui_rect_intersect(&tile->rect, &left_bar, &bar_ov)) {
-        ui_draw_fill_rect(tile, &bar_ov, icon_col);
-    }
+    // ui_rect_t left_bar = ui_rect_make((int16_t)(toast->rect.x + 1), (int16_t)(toast->rect.y + 1), 2, (int16_t)(toast->rect.h - 2));
+    // ui_rect_t bar_ov;
+    // if (ui_rect_intersect(&tile->rect, &left_bar, &bar_ov)) {
+    //     ui_draw_fill_rect(tile, &bar_ov, icon_col);
+    // }
 
     int16_t text_y = (int16_t)(toast->rect.y + 9);
     if ((text_y + 16) > tile->rect.y && text_y < (tile->rect.y + tile->rect.h)) {
@@ -110,7 +111,7 @@ void ui_toast_draw(ui_tile_t *tile, const ui_toast_t *toast) {
         ui_draw_string(tile, (int16_t)(toast->rect.x + 10), text_y, tag, FONT_16, icon_col, bg_col);
 
         // 提示正文文本
-        ui_draw_string(tile, (int16_t)(toast->rect.x + 62), text_y, toast->message, FONT_16, 0xFFFF, bg_col);
+        ui_draw_string(tile, (int16_t)(toast->rect.x + 62), text_y, toast->message, FONT_16, text_col, bg_col);
     }
 
     ui_draw_reset_clip();

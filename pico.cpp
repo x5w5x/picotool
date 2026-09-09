@@ -124,7 +124,6 @@ static void on_btn_click(ui_btn_t *btn, void *user_data)
 {
     (void)btn;
     (void)user_data;
-    LCD_WaitDMA(); //
     reset_usb_boot(1u << LED_PIN, 0);
 }
 
@@ -136,8 +135,8 @@ void app_ui_custom_init(void)
     app_manager_init(&g_app_mgr);
 
     // 2. 注册已开发的独立 App (按顺序在抽屉菜单中排列)
-    app_manager_register(&g_app_mgr, app_led_get_instance());
-    app_manager_register(&g_app_mgr, app_template_get_instance());
+    // app_manager_register(&g_app_mgr, app_led_get_instance());
+    // app_manager_register(&g_app_mgr, app_template_get_instance());
      app_manager_register(&g_app_mgr, app_settings_get_instance());
 
     // app_manager_register(&g_app_mgr, app_uart_term_get_instance());
@@ -148,7 +147,7 @@ void app_ui_custom_init(void)
 
     // app_manager_register(&g_app_mgr, app_pwm_get_instance());
     // app_manager_register(&g_app_mgr, app_i2c_spi_get_instance());
-    // app_manager_register(&g_app_mgr, app_pinout_get_instance());
+    app_manager_register(&g_app_mgr, app_pinout_get_instance());
     // app_manager_register(&g_app_mgr, app_audio_get_instance());
     // app_manager_register(&g_app_mgr, app_loader_get_instance());
     // 3. 初始化顶部状态栏 (X:0, Y:0, W:480, H:32)
@@ -158,7 +157,7 @@ void app_ui_custom_init(void)
 
 
  
-    // app_manager_register(&g_app_mgr, app_uart_get_instance());
+    app_manager_register(&g_app_mgr, app_uart_get_instance());
     ui_status_bar_init(&g_status_bar, 0, 0, LCD_WIDTH, 32, "多功能嵌入式终端", on_status_bar_click);
 
     // 4. 初始化更新按键 (X:54, Y:280, W:75, H:36)

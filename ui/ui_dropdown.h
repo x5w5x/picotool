@@ -21,6 +21,10 @@ struct ui_dropdown {
     const char        **items;          // 选项字符串数组[cite: 17]
     uint8_t             item_count;     // 选项总数[cite: 17]
     int8_t              selected_idx;   // 当前选中的索引 (0 ~ item_count-1)[cite: 17]
+    uint8_t             max_visible_items; // 展开时最多显示几项，0 表示全部
+    uint8_t             first_visible_idx; // 当前可见列表的首项索引
+    int16_t             list_scroll_y;     // 展开列表的像素滚动偏移
+    int16_t             scroll_start_y;    // 本次拖动开始时的滚动偏移
 
     bool                is_open;        // 是否处于展开状态[cite: 17]
     FontSize_t          font_size;      // 字体大小[cite: 17]
@@ -47,6 +51,9 @@ void ui_dropdown_init(ui_dropdown_t *dd, int16_t x, int16_t y, int16_t w, int16_
 
 // 设置下拉菜单配色[cite: 17]
 void ui_dropdown_set_color(ui_dropdown_t *dd, uint16_t bg, uint16_t border, uint16_t text, uint16_t active);
+
+// 限制展开列表高度；超过可见数量的选项可在列表内上下滑动
+void ui_dropdown_set_max_visible_items(ui_dropdown_t *dd, uint8_t max_visible_items);
 
 // 触控驱动状态机 (集成 8px 死区保护与 Touch-Up 松手触发)
 bool ui_dropdown_process_touch(ui_dropdown_t *dd, bool is_touching, int16_t tx, int16_t ty, uint32_t now_tick);
