@@ -1,3 +1,9 @@
+/*
+ * @Author: 轩
+ * @Date: 2026-09-06 12:31:01
+ * @LastEditTime: 2026-09-09 19:58:03
+ * @FilePath: \pico\pio\pio_manager.h
+ */
 #ifndef PIO_MANAGER_H
 #define PIO_MANAGER_H
 
@@ -53,6 +59,7 @@ extern "C"
     } pio_manager_t;
     /* 系统启动时调用一次，初始化软件表并绑定 pio0、pio1。 */
     void pio_manager_init(pio_manager_t *manager);
+
 
     /* 返回全局 SM 编号：0~3 为 PIO0，4~7 为 PIO1；失败返回 -1。 */
     int pio_manager_claim_sm(pio_manager_t *manager, const char *owner_name);

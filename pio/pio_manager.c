@@ -1,7 +1,7 @@
 /*
  * @Author: 轩
  * @Date: 2026-09-06 12:40:44
- * @LastEditTime: 2026-09-06 13:06:29
+ * @LastEditTime: 2026-09-09 19:58:13
  * @FilePath: \pico\pio\pio_manager.c
  */
 #include "pio_manager.h"
@@ -245,12 +245,29 @@ bool pio_manager_release_program(pio_manager_t *manager,
         block->instruction_used = 0;
     }
 
-    state->loaded = false;
-    state->name = NULL;
-    state->offset = 0;
-    state->length = 0;
-    state->ref_count = 0;
-    state->program = NULL;
+    /*
+     * programs[0..program_count-1] 始终保持连续。删除中间记录后，
+     * 将后续记录前移，保证 find/load 仍可按 program_count 遍历。
+     */
+    for (uint8_t i = (uint8_t)index;
+         i + 1 < block->program_count;
+         ++i) {
+        block->programs[i] = block->programs[i + 1];
+    }
+
+    /* 清空原来的最后一项，并缩小有效记录范围。 */
+    if (block->program_count > 0) {
+        block->program_count--;
+
+        pio_program_state_t *last =
+            &block->programs[block->program_count];
+        last->loaded = false;
+        last->name = NULL;
+        last->offset = 0;
+        last->length = 0;
+        last->ref_count = 0;
+        last->program = NULL;
+    }
 
     return true;
 }

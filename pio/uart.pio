@@ -2,10 +2,34 @@
 .side_set 1 opt
 
 .wrap_target
-    pull         side 1 [7]
-    set x, 7     side 0 [7]
+    ; 空闲状态和停止位保持高电平。
+    ; TX FIFO 没有数据时，状态机会阻塞在这里。
+    pull block          side 1 [7]
+
+    ; 发送起始位：低电平持续 8 个 PIO 时钟周期。
+    set x, 7            side 0 [7]
 
 bitloop:
-    out pins, 1              [6]
-    jmp x-- bitloop          [6]
+    ; OSR 最低位输出到 TX 引脚。
+    out pins, 1
+
+    ; 一位总共占用 8 个周期：out 1 周期 + jmp 7 周期。
+    jmp x-- bitloop            [6]
+.wrap
+
+.program uart_rx
+
+.wrap_target
+    ; 等待起始位下降到低电平。
+    wait 0 pin 0
+
+    ; 延迟到第一个数据位中央，随后接收 8 位数据。
+    set x, 7 [10]
+
+bitloop:
+    in pins, 1
+    jmp x-- bitloop [6]
+
+    ; 将收到的字节送入 RX FIFO。
+    push block
 .wrap

@@ -1,0 +1,701 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RP2040 PIO UART 注释学习页</title>
+  <style>
+    :root {
+      --page: #eef1f3;
+      --paper: #ffffff;
+      --ink: #20262b;
+      --muted: #657078;
+      --line: #d9dfe3;
+      --accent: #087f8c;
+      --accent-soft: #e1f3f4;
+      --code: #171b1e;
+      --code-ink: #e8edef;
+      --amber: #9a6200;
+      --amber-soft: #fff3d6;
+      --red: #9b3a35;
+      --red-soft: #fbe9e7;
+      --green: #2d7055;
+      --green-soft: #e5f3ec;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--page);
+      font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+      line-height: 1.65;
+      letter-spacing: 0;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 250px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    aside {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      padding: 24px 18px;
+      color: #eaf2f3;
+      background: #253137;
+      border-right: 1px solid #3a474d;
+    }
+
+    aside h1 {
+      margin: 0 0 4px;
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    aside p {
+      margin: 0 0 22px;
+      color: #b9c5ca;
+      font-size: 13px;
+    }
+
+    nav a {
+      display: block;
+      padding: 8px 10px;
+      margin: 2px 0;
+      color: #dbe5e8;
+      text-decoration: none;
+      border-left: 3px solid transparent;
+    }
+
+    nav a:hover,
+    nav a.active {
+      color: #ffffff;
+      background: #34444b;
+      border-left-color: #50bdc6;
+    }
+
+    main {
+      width: min(1120px, 100%);
+      padding: 34px 38px 80px;
+    }
+
+    section {
+      padding: 28px 0;
+      border-bottom: 1px solid var(--line);
+      scroll-margin-top: 18px;
+    }
+
+    h2 {
+      margin: 0 0 8px;
+      font-size: 26px;
+    }
+
+    h3 {
+      margin: 28px 0 8px;
+      font-size: 18px;
+    }
+
+    p { margin: 8px 0 14px; }
+    code, pre { font-family: Consolas, "Cascadia Code", monospace; }
+    :not(pre) > code {
+      padding: 1px 5px;
+      color: #075d66;
+      background: #dcebed;
+      border-radius: 3px;
+    }
+
+    pre {
+      overflow: auto;
+      margin: 12px 0;
+      padding: 18px;
+      color: var(--code-ink);
+      background: var(--code);
+      border: 1px solid #30383c;
+      border-radius: 6px;
+      line-height: 1.55;
+      tab-size: 4;
+    }
+
+    .lead {
+      max-width: 820px;
+      color: #465159;
+      font-size: 17px;
+    }
+
+    .file-path {
+      color: var(--accent);
+      font-family: Consolas, monospace;
+      font-size: 14px;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(120px, 1fr));
+      gap: 8px;
+      margin: 20px 0;
+    }
+
+    .flow div {
+      min-height: 88px;
+      padding: 12px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-top: 4px solid var(--accent);
+      border-radius: 5px;
+    }
+
+    .flow strong { display: block; margin-bottom: 5px; }
+    .flow span { color: var(--muted); font-size: 13px; }
+
+    .note {
+      margin: 14px 0;
+      padding: 13px 15px;
+      background: var(--accent-soft);
+      border-left: 4px solid var(--accent);
+    }
+
+    .note.warn {
+      background: var(--amber-soft);
+      border-left-color: var(--amber);
+    }
+
+    .note.danger {
+      background: var(--red-soft);
+      border-left-color: var(--red);
+    }
+
+    .note.ok {
+      background: var(--green-soft);
+      border-left-color: var(--green);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--paper);
+    }
+
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+      border: 1px solid var(--line);
+    }
+
+    th { background: #e7ecef; }
+    .tag {
+      display: inline-block;
+      padding: 1px 7px;
+      margin-right: 5px;
+      color: #164c52;
+      background: #d5ecee;
+      border-radius: 3px;
+      font-size: 12px;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(240px, .65fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .annotation {
+      padding: 14px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+
+    .annotation h4 { margin: 0 0 8px; }
+    .annotation ol { margin: 8px 0; padding-left: 22px; }
+    .annotation li { margin: 6px 0; }
+
+    @media (max-width: 860px) {
+      .layout { grid-template-columns: 1fr; }
+      aside { position: relative; height: auto; }
+      nav { display: grid; grid-template-columns: repeat(2, 1fr); }
+      main { padding: 24px 18px 60px; }
+      .flow { grid-template-columns: 1fr 1fr; }
+      .split { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside>
+      <h1>PIO UART 学习页</h1>
+      <p>对应当前工程中已经通过回环测试的代码</p>
+      <nav>
+        <a href="#overview">整体结构</a>
+        <a href="#cmake">pio/CMakeLists.txt</a>
+        <a href="#manager-h">pio_manager.h</a>
+        <a href="#manager-c">pio_manager.c</a>
+        <a href="#pio-code">uart.pio</a>
+        <a href="#fun-h">fun_pio_uart.h</a>
+        <a href="#fun-c">fun_pio_uart.c</a>
+        <a href="#usage">实际调用</a>
+        <a href="#limits">当前限制</a>
+      </nav>
+    </aside>
+
+    <main>
+      <section id="overview">
+        <span class="tag">RP2040</span><span class="tag">PIO</span><span class="tag">UART</span>
+        <h2>先理解四层职责</h2>
+        <p class="lead">这套代码没有把所有事情塞进一个文件。PIO 汇编负责精确时序，资源管理器避免冲突，功能层把底层细节包装成 C 接口，App 最终只负责选择配置和调用接口。</p>
+
+        <div class="flow">
+          <div><strong>App</strong><span>决定引脚、波特率和使用场景</span></div>
+          <div><strong>fun_pio_uart</strong><span>申请资源、配置状态机、提供收发 API</span></div>
+          <div><strong>pio_manager</strong><span>统计 SM 和 32 条指令空间</span></div>
+          <div><strong>uart.pio</strong><span>按固定周期输出或采样电平</span></div>
+          <div><strong>PIO 硬件</strong><span>独立于 CPU 执行状态机程序</span></div>
+        </div>
+
+        <div class="note ok">已经验证：PIO0 上同时加载 TX 与 RX 程序、申请两个状态机，GP6 发送到 GP7 后逐字节校验通过。</div>
+      </section>
+
+      <section id="cmake">
+        <div class="file-path">pio/CMakeLists.txt</div>
+        <h2>把管理器编译成独立库</h2>
+        <div class="split">
+<pre><code>add_library(pio_manager STATIC
+    pio_manager.c
+)
+
+target_include_directories(pio_manager PUBLIC
+    ${CMAKE_CURRENT_LIST_DIR}
+)
+
+target_link_libraries(pio_manager PUBLIC
+    pico_stdlib
+    hardware_pio
+)</code></pre>
+          <div class="annotation">
+            <h4>逐段理解</h4>
+            <ol>
+              <li><code>add_library</code> 生成静态库，不创建独立固件。</li>
+              <li><code>PUBLIC</code> 让链接该库的模块也能找到 <code>pio_manager.h</code>。</li>
+              <li><code>hardware_pio</code> 提供 claim、加载程序和状态机控制函数。</li>
+            </ol>
+          </div>
+        </div>
+        <p>PIO 汇编头由 <code>fun/CMakeLists.txt</code> 针对 <code>fun</code> 目标生成：</p>
+<pre><code>pico_generate_pio_header(fun
+    ${CMAKE_CURRENT_LIST_DIR}/../pio/uart.pio
+)</code></pre>
+        <div class="note">生成的 <code>uart.pio.h</code> 包含指令数组、<code>pio_program</code> 描述和默认状态机配置函数。不要手写这个生成文件。</div>
+      </section>
+
+      <section id="manager-h">
+        <div class="file-path">pio/pio_manager.h</div>
+        <h2>资源表的数据模型</h2>
+<pre><code>#define PIO_COUNT 2
+#define PIO_SM_COUNT 4
+#define PIO_PROGRAM_MAX_COUNT 8
+
+#define PIO_MANAGER_ID_TO_BLOCK(id) \
+    ((uint8_t)((id) / PIO_SM_COUNT))
+
+#define PIO_MANAGER_ID_TO_SM(id) \
+    ((uint8_t)((id) % PIO_SM_COUNT))</code></pre>
+        <p>RP2040 有 PIO0、PIO1 两个块，每块 4 个状态机。管理器把它们编码为全局编号：</p>
+        <table>
+          <thead><tr><th>全局 ID</th><th>PIO 块</th><th>状态机</th></tr></thead>
+          <tbody>
+            <tr><td>0～3</td><td>PIO0</td><td>SM0～SM3</td></tr>
+            <tr><td>4～7</td><td>PIO1</td><td>SM0～SM3</td></tr>
+          </tbody>
+        </table>
+
+<pre><code>typedef struct {
+    bool used;          // 软件是否认为该 SM 已占用
+    const char *label;  // 谁在使用，例如 "pio_uart_tx"
+} pio_sm_state_t;
+
+typedef struct {
+    bool loaded;
+    const char *name;
+    uint8_t offset;
+    uint8_t length;
+    uint8_t ref_count;
+    const struct pio_program *program;
+} pio_program_state_t;
+
+typedef struct {
+    PIO pio;
+    pio_sm_state_t sm[PIO_SM_COUNT];
+    pio_program_state_t programs[PIO_PROGRAM_MAX_COUNT];
+    uint8_t program_count;
+    uint8_t instruction_used;
+} pio_state_t;
+
+typedef struct {
+    pio_state_t block[PIO_COUNT];
+} pio_manager_t;</code></pre>
+
+        <div class="note warn"><strong>状态机和程序不是一回事：</strong>状态机是运行者；程序位于每个 PIO 独有的 32 条指令 RAM 中。同一个 TX 程序可以被多个 SM 共用，所以需要 <code>ref_count</code>。</div>
+      </section>
+
+      <section id="manager-c">
+        <div class="file-path">pio/pio_manager.c</div>
+        <h2>状态机和程序的生命周期</h2>
+
+        <h3>1. 初始化软件资源表</h3>
+<pre><code>void pio_manager_init(pio_manager_t *manager)
+{
+    if (manager == NULL)
+        return;
+
+    manager->block[0].pio = pio0;
+    manager->block[1].pio = pio1;
+
+    for (uint8_t pio_index = 0; pio_index &lt; PIO_COUNT; ++pio_index) {
+        for (uint8_t sm = 0; sm &lt; PIO_SM_COUNT; ++sm) {
+            manager->block[pio_index].sm[sm].used = false;
+            manager->block[pio_index].sm[sm].label = NULL;
+        }
+
+        manager->block[pio_index].program_count = 0;
+        manager->block[pio_index].instruction_used = 0;
+        // programs[] 的每个记录也全部清零
+    }
+}</code></pre>
+        <p>它初始化的是软件账本。系统应只初始化一次；运行途中重复初始化会丢失软件记录，但 SDK 中真实 claim 的状态不会自动消失。</p>
+
+        <h3>2. 从指定 PIO 申请状态机</h3>
+<pre><code>int pio_manager_claim_sm_from(pio_manager_t *manager,
+                              uint8_t pio_index,
+                              const char *owner_name)
+{
+    PIO pio = manager->block[pio_index].pio;
+
+    for (uint8_t sm = 0; sm &lt; PIO_SM_COUNT; ++sm) {
+        pio_sm_state_t *state = manager->block[pio_index].sm + sm;
+
+        if (!state->used &amp;&amp; !pio_sm_is_claimed(pio, sm)) {
+            pio_sm_claim(pio, sm);
+            state->used = true;
+            state->label = owner_name;
+            return pio_index * PIO_SM_COUNT + sm;
+        }
+    }
+    return -1;
+}</code></pre>
+        <p>这里做双重检查：自己的 <code>used</code> 账本和 Pico SDK 的真实 claim 状态必须都空闲。</p>
+
+        <h3>3. 加载程序并共享</h3>
+<pre><code>int existing = pio_manager_find_program(
+    manager, pio_index, program_name);
+
+if (existing &gt;= 0) {
+    block-&gt;programs[existing].ref_count++;
+    return block-&gt;programs[existing].offset;
+}
+
+if (!pio_can_add_program(block-&gt;pio, program))
+    return -1;
+
+uint offset = pio_add_program(block-&gt;pio, program);
+state-&gt;offset = (uint8_t)offset;
+state-&gt;length = (uint8_t)program-&gt;length;
+state-&gt;ref_count = 1;</code></pre>
+        <p>第二个 UART TX 状态机加载同名程序时不会再占指令空间，只增加引用计数并复用原来的 <code>offset</code>。</p>
+
+        <h3>4. 释放最后一个引用</h3>
+<pre><code>if (state-&gt;ref_count &gt; 1) {
+    state-&gt;ref_count--;
+    return true;
+}
+
+pio_remove_program(block-&gt;pio,
+                   state-&gt;program,
+                   state-&gt;offset);
+block-&gt;instruction_used -= state-&gt;length;
+
+for (uint8_t i = (uint8_t)index;
+     i + 1 &lt; block-&gt;program_count;
+     ++i) {
+    block-&gt;programs[i] = block-&gt;programs[i + 1];
+}
+block-&gt;program_count--;</code></pre>
+        <p>只有最后一个使用者关闭后才删除 PIO 指令。数组前移保证有效记录始终位于 <code>0..program_count-1</code>。</p>
+      </section>
+
+      <section id="pio-code">
+        <div class="file-path">pio/uart.pio</div>
+        <h2>真正执行 UART 时序的程序</h2>
+        <h3>TX：起始位、8 个数据位、停止位</h3>
+<pre><code>.program uart_tx
+.side_set 1 opt
+
+.wrap_target
+    ; TX FIFO 为空时阻塞，并让线路保持高电平。
+    ; [7] 加上指令本身，共 8 个 PIO 时钟周期。
+    pull block          side 1 [7]
+
+    ; 起始位拉低。X=7 表示后面循环 8 次。
+    set x, 7            side 0 [7]
+
+bitloop:
+    ; 从 OSR 最低位开始输出，指令本身占 1 周期。
+    out pins, 1
+
+    ; jmp 占 1 周期，[6] 再延迟 6 周期。
+    ; out + jmp 总计 8 周期，也就是一个数据位。
+    jmp x-- bitloop            [6]
+.wrap</code></pre>
+
+        <h3>RX：等待下降沿并在位中心采样</h3>
+<pre><code>.program uart_rx
+
+.wrap_target
+    ; UART 空闲为高，起始位为低。
+    wait 0 pin 0
+
+    ; 等待到第一个数据位中央，并准备接收 8 位。
+    set x, 7 [10]
+
+bitloop:
+    ; 将当前 RX 电平移入 ISR。
+    in pins, 1
+
+    ; 每隔 8 个 PIO 周期采样下一位。
+    jmp x-- bitloop [6]
+
+    ; 8 位完成后写入 RX FIFO。
+    push block
+.wrap</code></pre>
+
+        <table>
+          <thead><tr><th>参数</th><th>计算</th><th>115200 示例</th></tr></thead>
+          <tbody>
+            <tr><td>PIO 周期/位</td><td>固定 8</td><td>8</td></tr>
+            <tr><td>状态机频率</td><td>baud × 8</td><td>921600 Hz</td></tr>
+            <tr><td>分频值</td><td>clk_sys / (baud × 8)</td><td>125 MHz 时约 135.63</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="fun-h">
+        <div class="file-path">fun/fun_pio_uart.h</div>
+        <h2>功能层保存哪些运行状态</h2>
+<pre><code>typedef struct {
+    bool opened;              // 是否已成功打开
+    pio_manager_t *manager;   // 用于关闭时归还资源
+    PIO pio;                  // pio0 或 pio1
+    uint8_t pio_index;        // 0 或 1
+    uint8_t sm;               // 当前块内的 SM0～SM3
+    uint8_t program_offset;   // 程序在指令 RAM 中的起点
+    uint8_t tx_gpio;
+    uint32_t baudrate;
+} fun_pio_uart_tx_t;
+
+typedef struct {
+    bool opened;
+    pio_manager_t *manager;
+    PIO pio;
+    uint8_t pio_index;
+    uint8_t sm;
+    uint8_t program_offset;
+    uint8_t rx_gpio;
+    uint32_t baudrate;
+} fun_pio_uart_rx_t;</code></pre>
+        <p>对象必须长期存在，不能在初始化函数中声明成临时局部变量后返回。因为后续收发与关闭都需要其中保存的 PIO、SM 和管理器指针。</p>
+
+<pre><code>bool fun_pio_uart_tx_open(...);
+void fun_pio_uart_tx_close(...);
+bool fun_pio_uart_tx_putc(...);
+size_t fun_pio_uart_tx_write(...);
+
+bool fun_pio_uart_rx_open(...);
+void fun_pio_uart_rx_close(...);
+bool fun_pio_uart_rx_is_readable(...);
+int fun_pio_uart_rx_getc(...);
+int fun_pio_uart_rx_getc_blocking(...);
+size_t fun_pio_uart_rx_read(...);</code></pre>
+      </section>
+
+      <section id="fun-c">
+        <div class="file-path">fun/fun_pio_uart.c</div>
+        <h2>从配置参数到运行中的状态机</h2>
+
+        <h3>TX open 的资源申请顺序</h3>
+<pre><code>// 1. 校验 PIO、GPIO 和波特率
+if (pio_index &gt;= PIO_COUNT ||
+    tx_gpio &gt;= NUM_BANK0_GPIOS ||
+    baudrate == 0) {
+    return false;
+}
+
+// 2. 根据 8 个 PIO 周期/位计算分频
+float clkdiv = (float)clock_get_hz(clk_sys) /
+               ((float)baudrate * 8.0f);
+
+// 3. 申请一个状态机
+int sm_id = pio_manager_claim_sm_from(
+    manager, pio_index, "pio_uart_tx");
+
+// 4. 将 TX 程序加载进同一个 PIO
+int offset = pio_manager_load_program(
+    manager, pio_index, "uart_tx", &amp;uart_tx_program);
+
+// 5. 如果加载失败，必须归还刚申请的状态机
+if (offset &lt; 0) {
+    pio_manager_release_sm(manager, pio_index, sm);
+    return false;
+}</code></pre>
+        <div class="note danger">申请多个资源时要有回滚路径。否则程序加载失败后，状态机会永远留在“已占用”状态。</div>
+
+        <h3>配置 TX 状态机</h3>
+<pre><code>pio_sm_config config =
+    uart_tx_program_get_default_config((uint)offset);
+
+sm_config_set_out_pins(&amp;config, tx_gpio, 1);
+sm_config_set_sideset_pins(&amp;config, tx_gpio);
+sm_config_set_out_shift(&amp;config, true, false, 32);
+sm_config_set_clkdiv(&amp;config, clkdiv);
+
+pio_gpio_init(pio, tx_gpio);
+pio_sm_set_enabled(pio, sm, false);
+pio_sm_clear_fifos(pio, sm);
+pio_sm_init(pio, sm, (uint)offset, &amp;config);
+
+// UART 空闲必须为高，随后才启用状态机。
+pio_sm_set_pins_with_mask(pio, sm,
+                          1u &lt;&lt; tx_gpio,
+                          1u &lt;&lt; tx_gpio);
+pio_sm_set_pindirs_with_mask(pio, sm,
+                             1u &lt;&lt; tx_gpio,
+                             1u &lt;&lt; tx_gpio);
+pio_sm_set_enabled(pio, sm, true);</code></pre>
+        <p><code>shift_right=true</code> 使 OSR 从最低位开始输出，符合 UART 的 LSB first。</p>
+
+        <h3>配置 RX 状态机</h3>
+<pre><code>pio_sm_config config =
+    uart_rx_program_get_default_config((uint)offset);
+
+sm_config_set_in_pins(&amp;config, rx_gpio);
+sm_config_set_in_shift(&amp;config, true, false, 32);
+sm_config_set_fifo_join(&amp;config, PIO_FIFO_JOIN_RX);
+sm_config_set_clkdiv(&amp;config, clkdiv);
+
+pio_gpio_init(pio, rx_gpio);
+gpio_pull_up(rx_gpio);
+pio_sm_set_consecutive_pindirs(pio, sm, rx_gpio, 1, false);
+pio_sm_init(pio, sm, (uint)offset, &amp;config);
+pio_sm_set_enabled(pio, sm, true);</code></pre>
+        <p><code>PIO_FIFO_JOIN_RX</code> 将 TX/RX 两侧 FIFO 合并成更深的 RX FIFO。RX 不发送数据，所以可以把空间全部给接收端。</p>
+
+        <h3>为什么读取后要右移 24 位</h3>
+<pre><code>return (int)(pio_sm_get(rx-&gt;pio, rx-&gt;sm) &gt;&gt; 24);</code></pre>
+        <p>RX 配置为向右移位，8 次采样最终位于 ISR 的最高 8 位；FIFO 读出的是 32 位，因此需要右移 24 位得到字节。</p>
+
+        <h3>关闭时按相反顺序释放</h3>
+<pre><code>pio_sm_set_enabled(pio, sm, false);
+pio_sm_clear_fifos(pio, sm);
+gpio_set_function(gpio, GPIO_FUNC_NULL);
+
+pio_manager_release_sm(manager, pio_index, sm);
+pio_manager_release_program(manager, pio_index, "uart_tx");
+memset(channel, 0, sizeof(*channel));</code></pre>
+        <p>先停止硬件，再释放软件资源。程序的引用计数归零后，管理器才会从指令 RAM 删除它。</p>
+      </section>
+
+      <section id="usage">
+        <h2>在业务代码中的正确调用顺序</h2>
+<pre><code>static pio_manager_t g_pio_manager;
+static fun_pio_uart_tx_t g_tx;
+static fun_pio_uart_rx_t g_rx;
+
+void system_pio_init(void)
+{
+    // 整个系统只调用一次
+    pio_manager_init(&amp;g_pio_manager);
+}
+
+bool channel_open(void)
+{
+    if (!fun_pio_uart_rx_open(
+            &amp;g_rx, &amp;g_pio_manager, 0, 7, 115200)) {
+        return false;
+    }
+
+    if (!fun_pio_uart_tx_open(
+            &amp;g_tx, &amp;g_pio_manager, 0, 6, 115200)) {
+        fun_pio_uart_rx_close(&amp;g_rx); // 回滚 RX
+        return false;
+    }
+
+    return true;
+}
+
+void channel_poll(void)
+{
+    uint8_t buffer[64];
+    size_t count = fun_pio_uart_rx_read(
+        &amp;g_rx, buffer, sizeof(buffer));
+
+    if (count &gt; 0) {
+        // 处理收到的数据
+    }
+}
+
+void channel_send(const uint8_t *data, size_t length)
+{
+    fun_pio_uart_tx_write(&amp;g_tx, data, length);
+}
+
+void channel_close(void)
+{
+    fun_pio_uart_tx_close(&amp;g_tx);
+    fun_pio_uart_rx_close(&amp;g_rx);
+}</code></pre>
+        <div class="note">正式接入 App 时，管理器应归系统所有；App 只持有 TX/RX 通道或句柄。否则两个 App 各自维护一份资源表，会认为同一个 SM 都是空闲的。</div>
+      </section>
+
+      <section id="limits">
+        <h2>当前实现边界</h2>
+        <table>
+          <thead><tr><th>项目</th><th>当前状态</th><th>后续方向</th></tr></thead>
+          <tbody>
+            <tr><td>数据格式</td><td>固定 8-N-1</td><td>另写 7 位、校验位版本或在 PIO 程序中扩展</td></tr>
+            <tr><td>TX 写入</td><td>阻塞 FIFO 写入</td><td>增加非阻塞接口或 DMA</td></tr>
+            <tr><td>RX 读取</td><td>轮询 FIFO</td><td>增加 DMA 环形缓冲</td></tr>
+            <tr><td>错误检测</td><td>不检查停止位和校验</td><td>扩展 PIO 程序并上报 framing/parity error</td></tr>
+            <tr><td>资源所有权</td><td>接口接收 manager 指针</td><td>系统创建唯一管理器并向各功能层传递</td></tr>
+            <tr><td>引脚冲突</td><td>仅排除 GP0/GP1</td><td>接入 config.h 的功能引脚分配表</td></tr>
+          </tbody>
+        </table>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const links = [...document.querySelectorAll('nav a')];
+    const sections = links
+      .map(link => document.querySelector(link.getAttribute('href')))
+      .filter(Boolean);
+
+    const observer = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        links.forEach(link => {
+          link.classList.toggle(
+            'active',
+            link.getAttribute('href') === `#${entry.target.id}`
+          );
+        });
+      }
+    }, { rootMargin: '-20% 0px -70% 0px' });
+
+    sections.forEach(section => observer.observe(section));
+  </script>
+</body>
+</html>

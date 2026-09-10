@@ -257,6 +257,19 @@ void ui_dropdown_draw(ui_tile_t *tile, const ui_dropdown_t *dd) {
             dd->rect.w,
             (int16_t)(visible_count * dd->rect.h));
 
+        /*
+         * 选项在列表内滚动时，item_rect 会暂时越过列表边界。
+         * 保存外层（例如 ScrollView）的裁剪区，并临时收紧到列表区，
+         * 这样边框、文字和选中指示条都不会画进上面的数值表头。
+         */
+        ui_rect_t old_clip = ui_draw_get_clip();
+        ui_rect_t list_clip;
+        if (ui_rect_intersect(&old_clip, &list_rect, &list_clip)) {
+            ui_draw_set_clip(&list_clip);
+        } else {
+            ui_draw_set_clip(&list_rect);
+        }
+
         for (uint8_t i = 0; i < dd->item_count; i++) {
             ui_rect_t item_rect = ui_rect_make(
                 dd->rect.x,
@@ -296,5 +309,8 @@ void ui_dropdown_draw(ui_tile_t *tile, const ui_dropdown_t *dd) {
                 }
             }
         }
+
+        /* 恢复调用者的裁剪区，不能直接 reset 到全屏。 */
+        ui_draw_set_clip(&old_clip);
     }
 }

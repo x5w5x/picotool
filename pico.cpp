@@ -155,6 +155,7 @@ void app_ui_custom_init(void)
 
 
 
+    
 
  
     app_manager_register(&g_app_mgr, app_uart_get_instance());

@@ -126,10 +126,7 @@ pico_set_program_name(pico "pico")
 pico_set_program_version(pico "0.1")
 
 # Generate PIO header
-pico_generate_pio_header(pico ${CMAKE_CURRENT_LIST_DIR}/blink.pio
- ${CMAKE_CURRENT_LIST_DIR}/pio/uart.pio
-
-)
+pico_generate_pio_header(pico ${CMAKE_CURRENT_LIST_DIR}/blink.pio)
 
 # USB CDC 1ms 超时保护 + 关闭 SDK 默认描述符(让 app/usb_descriptors.c 接管 USB 复合设备描述符)
 # 关闭后 SDK 不再提供 tud_descriptor_device_cb/configuration_cb/string_cb,

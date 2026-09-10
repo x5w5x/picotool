@@ -67,7 +67,13 @@ static const char *s_uart_tabs[] = {
 #define UART_DATA_Y       68
 #define UART_PARITY_Y     120
 #define UART_STOP_Y       172
-#define UART_APPLY_Y      224
+#define UART_PIN_Y        224
+#define UART_APPLY_Y      276
+
+#define UART_OPTION_X     95
+#define UART_OPTION_W     68
+#define UART_OPTION_H     32
+#define UART_OPTION_GAP   6
 
 typedef struct
 {
@@ -103,16 +109,6 @@ static const uint32_t s_baud_values[] = {
     9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600
 };
 
-static const char* s_data_bits_options[] = {
-    "7", "8"
-};
-static const char *s_parity_options[] = {
-    "无校验", "偶校验", "奇校验"
-};
-static const char *s_stop_bits_options[] = {
-    "1", "2"
-};
-
 typedef struct
 {
     ui_rect_t dirty_rect;
@@ -129,9 +125,15 @@ typedef struct
     ui_btn_t btn_send;
 
     ui_dropdown_t baud;
-    ui_dropdown_t data_bits;
-    ui_dropdown_t parity;
-    ui_dropdown_t stop_bits;
+    ui_btn_t data_bit7;
+    ui_btn_t data_bit8;
+    ui_btn_t parity_none;
+    ui_btn_t parity_even;
+    ui_btn_t parity_odd;
+    ui_btn_t stop_bit1;
+    ui_btn_t stop_bit2;
+    ui_btn_t pin_0405;
+    ui_btn_t pin_2021;
     ui_btn_t apply_config;
     ui_toast_t toast;
 
@@ -389,9 +391,6 @@ static void on_tab_changed(ui_tabview_t *tv, uint8_t old_tab, uint8_t new_tab, v
         }
         // 切页时确保关闭所有展开的下拉框
         data->baud.is_open = false;
-        data->data_bits.is_open = false;
-        data->parity.is_open = false;
-        data->stop_bits.is_open = false;
         data->dirty_rect = tv->content_rect;
     }
 }
@@ -451,7 +450,80 @@ static void on_keyboard(ui_keyboard_t *keyboard, const char *text, void *user_da
     data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
 }
 
-/* ⚡ 修复：真正实现串口参数的硬件重设与生效 *//* ⚡ 修复：真正实现串口参数的硬件重设与生效 */
+static void on_data_bit7(ui_btn_t* btn,void *user_data){
+    uart_data_t *data = (uart_data_t *)user_data;
+    if(data==NULL) return;
+    data->data_bit7.is_checked=true;
+    data->data_bit8.is_checked=false;
+
+    data->dirty_rect = data->setting_scroll.view_rect;
+}
+static void on_data_bit8(ui_btn_t *btn,void *user_data){
+    uart_data_t *data = (uart_data_t *)user_data;
+    if(data==NULL) return;
+    data->data_bit7.is_checked=false;
+    data->data_bit8.is_checked=true;
+    data->dirty_rect = data->setting_scroll.view_rect;
+}
+
+static void on_par_none(ui_btn_t *btn,void *user_data)
+{
+    uart_data_t *data=(uart_data_t *)user_data;
+    if(!data) return;
+    data->parity_none.is_checked=true;
+    data->parity_even.is_checked=false;
+    data->parity_odd.is_checked=false;
+    data->dirty_rect = data->setting_scroll.view_rect;
+}
+static void on_par_even(ui_btn_t *btn,void *user_data)
+{
+    uart_data_t *data=(uart_data_t *)user_data;
+    if(!data) return;
+    data->parity_none.is_checked=false;
+    data->parity_even.is_checked=true;
+    data->parity_odd.is_checked=false;
+    data->dirty_rect = data->setting_scroll.view_rect;
+}
+static void on_par_odd(ui_btn_t *btn,void *user_data)
+{
+    uart_data_t *data=(uart_data_t *)user_data;
+    if(!data) return;
+    data->parity_none.is_checked=false;
+    data->parity_even.is_checked=false;
+    data->parity_odd.is_checked=true;
+    data->dirty_rect = data->setting_scroll.view_rect;
+}
+static void on_stop_bit1(ui_btn_t *btn,void *user_data){
+    uart_data_t *data=(uart_data_t *)user_data;
+    if(!data) return;
+    data->stop_bit1.is_checked=true;
+    data->stop_bit2.is_checked=false;
+    data->dirty_rect = data->setting_scroll.view_rect;
+}
+static void on_stop_bit2(ui_btn_t *btn,void *user_data){
+    uart_data_t *data=(uart_data_t *)user_data;
+    if(!data) return;
+    data->stop_bit1.is_checked=false;
+    data->stop_bit2.is_checked=true;
+    data->dirty_rect = data->setting_scroll.view_rect;
+}
+static void on_pins_45(ui_btn_t *btn, void *user_data)
+{
+    uart_data_t *data = (uart_data_t *)user_data;
+    if (!data) return;
+    data->pin_0405.is_checked = true;
+    data->pin_2021.is_checked = false;
+    data->dirty_rect = data->setting_scroll.view_rect;
+}
+
+static void on_pins_2021(ui_btn_t *btn, void *user_data)
+{
+    uart_data_t *data = (uart_data_t *)user_data;
+    if (!data)return;
+    data->pin_0405.is_checked = false;
+    data->pin_2021.is_checked = true;
+    data->dirty_rect = data->setting_scroll.view_rect;
+}
 static void on_apply_config(ui_btn_t *btn, void *user_data)
 {
     (void)btn;
@@ -461,9 +533,22 @@ static void on_apply_config(ui_btn_t *btn, void *user_data)
     uint8_t b_idx = (data->baud.selected_idx >= 0 && (size_t)data->baud.selected_idx < sizeof(s_baud_values)/sizeof(s_baud_values[0]))
                     ? (uint8_t)data->baud.selected_idx : 4;
     uint32_t baudrate = s_baud_values[b_idx];
-    uint8_t data_bits = (data->data_bits.selected_idx == 0) ? 7 : 8;
-    fun_uart_parity_t parity = (fun_uart_parity_t)data->parity.selected_idx;
-    uint8_t stop_bits = (data->stop_bits.selected_idx == 0) ? 1 : 2;
+    /* 数据位/校验位/停止位按钮尚未接入，当前保持标准 8-N-1。 */
+    uint8_t data_bits = data->data_bit7.is_checked?7:8;
+    fun_uart_parity_t parity=FUN_UART_PARITY_NONE;
+    if(data->parity_none.is_checked)
+        parity=FUN_UART_PARITY_NONE;
+    else if(data->parity_even.is_checked)
+        parity=FUN_UART_PARITY_EVEN;
+    else if(data->parity_odd.is_checked)
+        parity=FUN_UART_PARITY_ODD;
+    uint8_t stop_bits = data->stop_bit2.is_checked ? 2:1;
+    uint8_t tx_gpio =20;
+    uint8_t rx_gpio =21;
+    if(data->pin_0405.is_checked){
+        tx_gpio=4;
+        rx_gpio=5;
+    }
 
     // 1. 短暂暂停传输
     data->io_enable = false;
@@ -476,6 +561,8 @@ static void on_apply_config(ui_btn_t *btn, void *user_data)
     data->uart_config.data_bits = data_bits;
     data->uart_config.stop_bits = stop_bits;
     data->uart_config.parity = parity;
+    data->uart_config.tx_gpio=tx_gpio;
+    data->uart_config.rx_gpio=rx_gpio;
 
     if (fun_uart_open(&data->uart, &data->uart_config)) {
       
@@ -484,10 +571,12 @@ static void on_apply_config(ui_btn_t *btn, void *user_data)
 
         // 3. 在终端追加一条绿色状态反馈
         char apply_msg[64];
-        snprintf(apply_msg, sizeof(apply_msg), "[CFG] %lu %d-%s-%d",
+        snprintf(apply_msg, sizeof(apply_msg), "[CFG] %lu %d-%s-%d TX%u RX%u",
                  baudrate, data_bits,
                  parity == FUN_UART_PARITY_NONE ? "N" : (parity == FUN_UART_PARITY_EVEN ? "E" : "O"),
-                 stop_bits);
+                 stop_bits,
+                 tx_gpio,
+                 rx_gpio);
                  
         ui_terminal_write_line(&data->terminal, apply_msg, 0xBDF7);
         ui_toast_show(&data->toast,"串口配置已生效",UI_TOAST_SUCCESS,to_ms_since_boot(get_absolute_time()));
@@ -498,10 +587,30 @@ static void on_apply_config(ui_btn_t *btn, void *user_data)
     data->dirty_rect = rect_union_box(data->dirty_rect, data->setting_scroll.view_rect);
 }
 
-static void on_status_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
-                                   int16_t scroll_y, void *user_data)
+static void on_status_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,int16_t scroll_y, void *user_data)
 {
-    (void)tile; (void)viewport; (void)scroll_y; (void)user_data;
+    uart_data_t *data = (uart_data_t *)user_data;
+    if(!data) return;
+    const int16_t x = viewport->x + 18;
+    const int16_t y = viewport->y - scroll_y + 18;
+    const uint16_t title_color = 0x4208;
+    const uint16_t value_color = 0x632C;
+    const uint16_t bg_color = 0xFFFF;
+    char text[64];
+    ui_draw_string(tile,x,y,"串口运行状态",FONT_20,title_color,bg_color);
+    snprintf(text,sizeof(text),"状态: %s",data->uart.opened ? "已运行":"未运行");
+    ui_draw_string(tile,x,y+34,text,FONT_16,value_color,bg_color);
+    snprintf(text,sizeof(text),"引脚: TX GP%u / RX GP%u",data->uart_config.tx_gpio,data->uart_config.rx_gpio);
+    ui_draw_string(tile,x, y + 60,text,FONT_16, value_color,bg_color);
+    snprintf(text, sizeof(text), "格式: %lu-%u-%s-%u",(unsigned long)data->uart_config.baudrate,data->uart_config.data_bits, data->uart_config.parity == FUN_UART_PARITY_NONE ? "N" :
+    data->uart_config.parity == FUN_UART_PARITY_EVEN ? "E" : "O",data->uart_config.stop_bits);
+    ui_draw_string(tile,x,y + 86,text, FONT_16,value_color,bg_color);
+    snprintf(text,sizeof(text),"RX 字节: %lu",(unsigned long)data->uart_to_usb_count);
+    ui_draw_string(tile,x,y + 112,text,FONT_16,value_color,bg_color);
+    snprintf(text,sizeof(text),"TX 字节: %lu",(unsigned long)data->usb_to_uart_count);
+    ui_draw_string(tile,x, y + 138,text, FONT_16,value_color, bg_color);
+    snprintf(text,sizeof(text),"DMA: %s",s_uart_dma_channel>=0 ? "运行中" : "已停止");
+    ui_draw_string(tile, x,y + 164,text,FONT_16,value_color, bg_color);
 }
 
 /* ⚡ 修复：独占弹出层事件处理，彻底消除多下拉框同时打开与穿透点击问题 */
@@ -513,9 +622,6 @@ static bool on_uart_settings_touch_content(bool is_touching, int16_t content_x, 
     // 1. 查找当前是否已存在展开的下拉框
     ui_dropdown_t *active_dd = NULL;
     if (data->baud.is_open) active_dd = &data->baud;
-    else if (data->data_bits.is_open) active_dd = &data->data_bits;
-    else if (data->parity.is_open) active_dd = &data->parity;
-    else if (data->stop_bits.is_open) active_dd = &data->stop_bits;
 
     if (active_dd != NULL) {
         ui_rect_t total_r = ui_dropdown_get_total_rect(active_dd);
@@ -533,15 +639,28 @@ static bool on_uart_settings_touch_content(bool is_touching, int16_t content_x, 
     bool handled = false;
     if (ui_dropdown_process_touch(&data->baud, is_touching, content_x, content_y, now_tick)) {
         handled = true;
-    } else if (ui_dropdown_process_touch(&data->data_bits, is_touching, content_x, content_y, now_tick)) {
-        handled = true;
-    } else if (ui_dropdown_process_touch(&data->parity, is_touching, content_x, content_y, now_tick)) {
-        handled = true;
-    } else if (ui_dropdown_process_touch(&data->stop_bits, is_touching, content_x, content_y, now_tick)) {
-        handled = true;
     }else if (ui_btn_process_touch(&data->apply_config, is_touching, content_x, content_y, now_tick)) {
         handled = true;
     }
+    if(ui_btn_process_touch(&data->data_bit7,is_touching,content_x,content_y,now_tick))
+        handled=true;
+    else if (ui_btn_process_touch(&data->data_bit8,is_touching,content_x,content_y,now_tick))
+        handled=true;
+    else if (ui_btn_process_touch(&data->parity_none,is_touching,content_x,content_y,now_tick))
+        handled=true;
+    else if (ui_btn_process_touch(&data->parity_even,is_touching,content_x,content_y,now_tick))
+        handled=true;
+    else if (ui_btn_process_touch(&data->parity_odd,is_touching,content_x,content_y,now_tick))
+        handled=true;
+    else if (ui_btn_process_touch(&data->stop_bit1,is_touching,content_x,content_y,now_tick))
+        handled=true;
+    else if (ui_btn_process_touch(&data->stop_bit2,is_touching,content_x,content_y,now_tick))
+        handled=true;
+    else if (ui_btn_process_touch(&data->pin_0405,is_touching,content_x,content_y,now_tick))
+        handled=true;
+    else if (ui_btn_process_touch(&data->pin_2021,is_touching,content_x,content_y,now_tick))
+        handled=true;
+        
 
     if (handled) {
         data->dirty_rect = rect_union_box(data->dirty_rect, data->setting_scroll.view_rect);
@@ -567,34 +686,45 @@ static void on_uart_settings_draw_content(ui_tile_t *tile, const ui_rect_t *view
     const uint16_t label_color   = 0x4208;
 
     // 1. 绘制左侧对齐标签 (文字垂直居中 +8px)
-    ui_draw_string(tile, label_screen_x, viewport->y + UART_BAUD_Y - scroll_y + 8,   "波特率",   FONT_16, label_color, 0xFFFF);
-    ui_draw_string(tile, label_screen_x, viewport->y + UART_DATA_Y - scroll_y + 8,   "数据位",   FONT_16, label_color, 0xFFFF);
-    ui_draw_string(tile, label_screen_x, viewport->y + UART_PARITY_Y - scroll_y + 8, "校验位",   FONT_16, label_color, 0xFFFF);
-    ui_draw_string(tile, label_screen_x, viewport->y + UART_STOP_Y - scroll_y + 8,   "停止位",   FONT_16, label_color, 0xFFFF);
+    ui_draw_string(tile, label_screen_x, viewport->y + UART_BAUD_Y - scroll_y + 8,   "波特率",   FONT_20, label_color, 0xFFFF);
     ui_btn_t apply_config = data->apply_config;
     apply_config.rect = ui_scrollview_content_rect_to_screen(&data->setting_scroll, data->apply_config.rect);
     ui_btn_draw(tile, &apply_config);
-
-    // 3. 优先绘制所有处于关闭态的下拉框
-    ui_dropdown_t *dds[4] = { &data->baud, &data->data_bits, &data->parity, &data->stop_bits };
-    ui_dropdown_t *open_dd = NULL;
-
-    for (int i = 0; i < 4; ++i) {
-        if (dds[i]->is_open) {
-            open_dd = dds[i]; // 记录下打开的下拉框，留在最后画
-        } else {
-            ui_dropdown_t copy_dd = *dds[i];
-            copy_dd.rect = ui_scrollview_content_rect_to_screen(&data->setting_scroll, dds[i]->rect);
-            ui_dropdown_draw(tile, &copy_dd);
-        }
-    }
-
-    // 4. 关键：若存在展开的下拉框，在最顶层绘制（菜单完美浮于所有控件上方）
-    if (open_dd != NULL) {
-        ui_dropdown_t top_dd = *open_dd;
-        top_dd.rect = ui_scrollview_content_rect_to_screen(&data->setting_scroll, open_dd->rect);
-        ui_dropdown_draw(tile, &top_dd);
-    }
+    ui_dropdown_t baud = data->baud;
+    baud.rect = ui_scrollview_content_rect_to_screen(
+        &data->setting_scroll, data->baud.rect);
+    ui_dropdown_draw(tile, &baud);
+    ui_btn_t data_7=data->data_bit7;
+    data_7.rect = ui_scrollview_content_rect_to_screen(&data->setting_scroll,data->data_bit7.rect);
+    ui_btn_draw(tile,&data_7);
+    ui_btn_t data_8=data->data_bit8;
+    data_8.rect = ui_scrollview_content_rect_to_screen(&data->setting_scroll,data->data_bit8.rect);
+    ui_btn_draw(tile,&data_8);
+    ui_draw_string(tile,label_screen_x,viewport->y+UART_DATA_Y-scroll_y+8,"数据位",FONT_20,label_color,0xFFFF);
+    ui_btn_t par_n=data->parity_none;
+    par_n.rect = ui_scrollview_content_rect_to_screen(&data->setting_scroll,data->parity_none.rect);
+    ui_btn_draw(tile,&par_n);
+    ui_btn_t par_e=data->parity_even;
+    par_e.rect = ui_scrollview_content_rect_to_screen(&data->setting_scroll,data->parity_even.rect);
+    ui_btn_draw(tile,&par_e);
+    ui_btn_t par_o=data->parity_odd;
+    par_o.rect = ui_scrollview_content_rect_to_screen(&data->setting_scroll,data->parity_odd.rect);
+    ui_btn_draw(tile,&par_o);
+    ui_draw_string(tile,label_screen_x,viewport->y+UART_PARITY_Y-scroll_y+8,"校验位",FONT_20,label_color,0xFFFF);
+    ui_btn_t stop_1=data->stop_bit1;
+    stop_1.rect = ui_scrollview_content_rect_to_screen(&data->setting_scroll,data->stop_bit1.rect);
+    ui_btn_draw(tile,&stop_1);
+    ui_btn_t stop_2=data->stop_bit2;
+    stop_2.rect = ui_scrollview_content_rect_to_screen(&data->setting_scroll,data->stop_bit2.rect);
+    ui_btn_draw(tile,&stop_2);
+    ui_draw_string(tile,label_screen_x,viewport->y+UART_STOP_Y-scroll_y+8,"停止位",FONT_20,label_color,0xFFFF);
+    ui_btn_t pin_0405=data->pin_0405;
+    pin_0405.rect = ui_scrollview_content_rect_to_screen(&data->setting_scroll,data->pin_0405.rect);
+    ui_btn_draw(tile,&pin_0405);
+    ui_btn_t pin_2021=data->pin_2021;
+    pin_2021.rect = ui_scrollview_content_rect_to_screen(&data->setting_scroll,data->pin_2021.rect);
+    ui_btn_draw(tile,&pin_2021);
+    ui_draw_string(tile,label_screen_x,viewport->y+UART_PIN_Y-scroll_y+8,"引脚组",FONT_20,label_color,0xFFFF);     
 }
 
 static void uarttool_init(app_t *self)
@@ -636,25 +766,68 @@ static void uart_enter(app_t *self)
     // ⚡ 初始化下拉框参数（采用规整的 UART_CFG_CTRL_X 与 UART_CFG_CTRL_W）
     ui_dropdown_init(&data->baud, UART_CFG_CTRL_X, UART_BAUD_Y, UART_CFG_CTRL_W, UART_CFG_CTRL_H, s_baud_options, sizeof(s_baud_options)/sizeof(s_baud_options[0]), 4, on_uart_config_change);
     ui_dropdown_set_max_visible_items(&data->baud, 4);
-    ui_dropdown_init(&data->data_bits, UART_CFG_CTRL_X, UART_DATA_Y, UART_CFG_CTRL_W, UART_CFG_CTRL_H, s_data_bits_options, sizeof(s_data_bits_options)/sizeof(s_data_bits_options[0]), 1, on_uart_config_change);
-    ui_dropdown_init(&data->parity, UART_CFG_CTRL_X, UART_PARITY_Y, UART_CFG_CTRL_W, UART_CFG_CTRL_H, s_parity_options, sizeof(s_parity_options)/sizeof(s_parity_options[0]), 0, on_uart_config_change);
-    ui_dropdown_init(&data->stop_bits, UART_CFG_CTRL_X, UART_STOP_Y, UART_CFG_CTRL_W, UART_CFG_CTRL_H, s_stop_bits_options, sizeof(s_stop_bits_options)/sizeof(s_stop_bits_options[0]), 0, on_uart_config_change);
-
     data->baud.user_data = data;
-    data->data_bits.user_data = data;
-    data->parity.user_data = data;
-    data->stop_bits.user_data = data;
-
     ui_dropdown_set_color(&data->baud, 0xFFFF, 0xC618, 0x4208, 0x03DF);
-    ui_dropdown_set_color(&data->data_bits, 0xFFFF, 0xC618, 0x4208, 0x03DF);
-    ui_dropdown_set_color(&data->parity, 0xFFFF, 0xC618, 0x4208, 0x03DF);
-    ui_dropdown_set_color(&data->stop_bits, 0xFFFF, 0xC618, 0x4208, 0x03DF);
-    // 应用按键与上方控件等宽同轴 (X: 95, W: 230)
+    ui_btn_init(&data->data_bit7,UART_OPTION_X,UART_DATA_Y,UART_OPTION_W,UART_OPTION_H,"7",on_data_bit7);
+    data->data_bit7.user_data=data;
+    data->data_bit7.mode=UI_BTN_MODE_PUSH;
+    data->data_bit7.style=UI_BTN_STYLE_ROUND;
+    data->data_bit7.is_checked=false;
+    ui_btn_init(&data->data_bit8,UART_OPTION_X+UART_OPTION_W+UART_OPTION_GAP,UART_DATA_Y,UART_OPTION_W,UART_OPTION_H,"8",on_data_bit8);
+    data->data_bit8.user_data=data;
+    data->data_bit8.mode=UI_BTN_MODE_PUSH;
+    data->data_bit8.style=UI_BTN_STYLE_ROUND;
+    data->data_bit8.is_checked=true;
+    ui_btn_set_color(&data->data_bit7, 0xDEFB, 0xD7FF, 0x4208);
+    ui_btn_set_color(&data->data_bit8, 0xDEFB, 0xD7FF, 0x4208);
+    ui_btn_init(&data->parity_none,UART_OPTION_X,UART_PARITY_Y,UART_OPTION_W,UART_OPTION_H,"无校验",on_par_none);
+    data->parity_none.user_data=data;
+    data->parity_none.mode=UI_BTN_MODE_PUSH;
+    data->parity_none.style=UI_BTN_STYLE_ROUND;
+    data->parity_none.is_checked=true;
+    ui_btn_set_color(&data->parity_none, 0xDEFB, 0xD7FF, 0x4208);
+    ui_btn_init(&data->parity_even,UART_OPTION_X + UART_OPTION_W + UART_OPTION_GAP,UART_PARITY_Y,UART_OPTION_W,UART_OPTION_H,"偶校验",on_par_even);
+    data->parity_even.user_data=data;
+    data->parity_even.mode=UI_BTN_MODE_PUSH;
+    data->parity_even.style=UI_BTN_STYLE_ROUND;
+    data->parity_even.is_checked=false;
+    ui_btn_set_color(&data->parity_even, 0xDEFB, 0xD7FF, 0x4208);
+    ui_btn_init(&data->parity_odd, UART_OPTION_X + 2 * (UART_OPTION_W + UART_OPTION_GAP),UART_PARITY_Y,UART_OPTION_W,UART_OPTION_H,"奇校验",on_par_odd);
+    data->parity_odd.user_data=data;
+    data->parity_odd.mode=UI_BTN_MODE_PUSH;
+    data->parity_odd.style=UI_BTN_STYLE_ROUND;
+    data->parity_odd.is_checked=false;
+    ui_btn_set_color(&data->parity_odd, 0xDEFB, 0xD7FF, 0x4208);
+    ui_btn_init(&data->stop_bit1,UART_OPTION_X,UART_STOP_Y,UART_OPTION_W,UART_OPTION_H,"1",on_stop_bit1);
+    data->stop_bit1.user_data=data;
+    data->stop_bit1.is_checked=true;
+    data->stop_bit1.mode=UI_BTN_MODE_PUSH;
+    data->stop_bit1.style=UI_BTN_STYLE_ROUND;
+    ui_btn_set_color(&data->stop_bit1, 0xDEFB, 0xD7FF, 0x4208);
+    ui_btn_init(&data->stop_bit2,UART_OPTION_X+UART_OPTION_W+UART_OPTION_GAP,UART_STOP_Y,UART_OPTION_W,UART_OPTION_H,"2",on_stop_bit2);
+    data->stop_bit2.user_data=data;
+    data->stop_bit2.is_checked=false;
+    data->stop_bit2.mode=UI_BTN_MODE_PUSH;
+    data->stop_bit2.style=UI_BTN_STYLE_ROUND;
+    ui_btn_set_color(&data->stop_bit2, 0xDEFB, 0xD7FF, 0x4208);
+    ui_btn_init(&data->pin_0405,UART_OPTION_X,UART_PIN_Y,100,UART_OPTION_H,"GP4/GP5",on_pins_45);
+    data->pin_0405.user_data=data;
+    data->pin_0405.is_checked=false;
+    data->pin_0405.mode=UI_BTN_MODE_PUSH;
+    data->pin_0405.style=UI_BTN_STYLE_ROUND;
+    ui_btn_set_color(&data->pin_0405, 0xDEFB, 0xD7FF, 0x4208);
+    ui_btn_init(&data->pin_2021,UART_OPTION_X+106,UART_PIN_Y,100,UART_OPTION_H,"GP20/GP21",on_pins_2021);
+    data->pin_2021.user_data=data;
+    data->pin_2021.is_checked=true;
+    data->pin_2021.mode=UI_BTN_MODE_PUSH;
+    data->pin_2021.style=UI_BTN_STYLE_ROUND;
+    ui_btn_set_color(&data->pin_2021, 0xDEFB, 0xD7FF, 0x4208);
+
     ui_btn_init(&data->apply_config, UART_CFG_CTRL_X, UART_APPLY_Y, UART_CFG_CTRL_W, 38, "应用串口配置", on_apply_config);
     data->apply_config.user_data = data;
     data->apply_config.style = UI_BTN_STYLE_ROUND;
-    data->apply_config.font_size = FONT_16;
-    ui_btn_set_color(&data->apply_config, 0x03DF, 0x0275, 0xFFFF);
+    data->apply_config.font_size = FONT_20;
+    ui_btn_set_color(&data->apply_config, 0x5E7F, 0x0275, 0xFFFF);
 
     ui_toast_init(&data->toast);
 
@@ -809,8 +982,7 @@ static bool uart_process_touch(app_t *self, bool is_touching, int16_t tx, int16_
 
     case 1:
         /* 展开的下拉框独占纵向手势，内部滑动时不带动配置页。 */
-        if (data->baud.is_open || data->data_bits.is_open ||
-            data->parity.is_open || data->stop_bits.is_open) {
+        if (data->baud.is_open) {
             int16_t content_x = tx - data->setting_scroll.view_rect.x;
             int16_t content_y = ty - data->setting_scroll.view_rect.y +
                                 data->setting_scroll.scroll_y;
