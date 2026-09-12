@@ -207,9 +207,6 @@ E:/pico/pico/build/Drivers/CMakeFiles/rebuild_cache.dir
 E:/pico/pico/build/ui/CMakeFiles/uigeom.dir
 E:/pico/pico/build/ui/CMakeFiles/edit_cache.dir
 E:/pico/pico/build/ui/CMakeFiles/rebuild_cache.dir
-E:/pico/pico/build/app/CMakeFiles/appmgr.dir
-E:/pico/pico/build/app/CMakeFiles/edit_cache.dir
-E:/pico/pico/build/app/CMakeFiles/rebuild_cache.dir
 E:/pico/pico/build/pio/CMakeFiles/pio_manager.dir
 E:/pico/pico/build/pio/CMakeFiles/edit_cache.dir
 E:/pico/pico/build/pio/CMakeFiles/rebuild_cache.dir
@@ -217,6 +214,9 @@ E:/pico/pico/build/fun/CMakeFiles/fun.dir
 E:/pico/pico/build/fun/CMakeFiles/fun_uart_pio_h.dir
 E:/pico/pico/build/fun/CMakeFiles/edit_cache.dir
 E:/pico/pico/build/fun/CMakeFiles/rebuild_cache.dir
+E:/pico/pico/build/app/CMakeFiles/appmgr.dir
+E:/pico/pico/build/app/CMakeFiles/edit_cache.dir
+E:/pico/pico/build/app/CMakeFiles/rebuild_cache.dir
 E:/pico/pico/build/fatfs/CMakeFiles/FatFs_SPI.dir
 E:/pico/pico/build/fatfs/CMakeFiles/edit_cache.dir
 E:/pico/pico/build/fatfs/CMakeFiles/rebuild_cache.dir

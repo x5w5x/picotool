@@ -9,6 +9,8 @@
 #include "pico/bootrom.h"
 #include "hardware/adc.h"
 #include "config.h"
+#include "pio_manager.h"
+#include "pin_manager.h"
 // 硬件驱动层
 #include "board_pins.h"
 #include "spi_bus.h"
@@ -16,7 +18,7 @@
 #include "touch.h"
 #include "chinese.h"
 #include "fun_esp.h"
-
+ 
 // UI 核心渲染套件
 #include "ui_geometry.h"
 #include "ui_tile.h"
@@ -28,7 +30,7 @@
 #include "ui_picture.h"
 #include "ui_btn.h"
 #include "dog_data.h"
-
+ 
 // App 管理与独立应用模块
 #include "app_manager.h"
 #include "app_led.h"
@@ -44,6 +46,7 @@
 #include "app_loader.h"
 #include "app_settings.h"
 #include "app_uart.h"
+
 #define LED_PIN PICO_DEFAULT_LED_PIN
 
 // 屏幕物理背景色: 纯白 (0xFFFF)
@@ -296,6 +299,8 @@ int main(void)
     set_sys_clock_khz(240000, true);
 
     stdio_init_all();
+    pio_manager_system_init();
+    pin_manager_system_init();
     if(fun_esp_init())esp_send_string("\r\n");
     
     

@@ -1,5 +1,5 @@
-#ifndef UI_TILE_H
-#define UI_TILE_H
+#ifndef UI_TILE_H_INCLUDED
+#define UI_TILE_H_INCLUDED
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -36,4 +36,4 @@ void ui_tile_wait_finish(void);
 }
 #endif
 
-#endif // UI_TILE_H
+#endif // UI_TILE_H_INCLUDED

@@ -152,9 +152,9 @@ target_include_directories(pico PRIVATE
 # 引入子模块
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/Drivers)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/ui)
-add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/app)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/pio)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/fun)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/app)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/fatfs)
 
 # 关键修复：仅对 minirtos 使用 --whole-archive，drivelib 和 SDK 库放在常规链接区

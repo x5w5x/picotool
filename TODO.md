@@ -216,3 +216,9 @@
 - 内置 app: **13** 个
 - plugin: **3** 个 + 1 个待建
 - 当前 papp: `dist/led_controller.papp` / `dist/novel_reader.papp` (6164 B)
+
+---
+
+## PIO / UART TODO
+
+- [ ] Add IRQ/DMA transport and a software ring buffer for PIO UART RX to prevent the 8-entry RX FIFO from overflowing during high-baud-rate traffic, USB output, or UI blocking.

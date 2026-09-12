@@ -1,298 +1,271 @@
 /*
  * @Author: 轩
  * @Date: 2026-09-06 12:40:44
- * @LastEditTime: 2026-09-09 19:58:13
+ * @LastEditTime: 2026-09-12 14:42:13
  * @FilePath: \pico\pio\pio_manager.c
  */
 #include "pio_manager.h"
-
 #include <stddef.h>
 #include <string.h>
 
-void pio_manager_init(pio_manager_t *manager)
-{
-    if (manager == NULL)
-        return;
-
-    /* 建立软件资源表与 SDK 中两个 PIO 实例的对应关系。 */
-    manager->block[0].pio = pio0;
-    manager->block[1].pio = pio1;
-
-    for (uint8_t pio_index = 0;
-         pio_index < PIO_COUNT;
-         ++pio_index) {
-        /* 状态机属于 PIO 硬件资源，每个 PIO 有 4 个 SM。 */
-        for (uint8_t sm = 0;
-             sm < PIO_SM_COUNT;
-             ++sm) {
-            manager->block[pio_index].sm[sm].used = false;
-            manager->block[pio_index].sm[sm].label = NULL;
-        }
-
-        /* 指令 RAM 属于整个 PIO，不属于某一个状态机。 */
-        manager->block[pio_index].program_count = 0;
-        manager->block[pio_index].instruction_used = 0;
-        for (uint8_t program_index = 0;
-             program_index < PIO_PROGRAM_MAX_COUNT;
-             ++program_index) {
-            pio_program_state_t *program =
-                &manager->block[pio_index].programs[program_index];
-            program->loaded = false;
-            program->name = NULL;
-            program->offset = 0;
-            program->length = 0;
-            program->ref_count = 0;
-            program->program = NULL;
-        }
+static pio_manager_t s_default_manager;
+static bool s_default_manager_initialized = false;
+void pio_manager_init(pio_manager_t *manager){
+    if(!manager) return;
+    manager->blocks[0].hardware=pio0;
+    manager->blocks[1].hardware=pio1;
+    for(uint8_t block=0;block<PIO_BLOCK_COUNT;++block){
+        manager->blocks[block].cmd_used=0;
+        manager->blocks[block].program_count=0;
+    for (uint8_t program = 0;program < PIO_PROGRAM_MAX_COUNT;++program) {
+        manager->blocks[block].programs[program].loaded = false;
+        manager->blocks[block].programs[program].name = NULL;
+        manager->blocks[block].programs[program].offset = 0;
+        manager->blocks[block].programs[program].len = 0;
+        manager->blocks[block].programs[program].ref_count = 0;
+        manager->blocks[block].programs[program].program = NULL;
+    }   
+    for(uint8_t sm=0;sm<PIO_SM_COUNT;++sm){
+        manager->blocks[block].sm[sm].used=false;
+        manager->blocks[block].sm[sm].owner=NULL;
     }
 }
-int pio_manager_claim_sm(pio_manager_t *manager,
-                         const char *owner_name)
-{
-    if (manager == NULL) {
-        return -1;
-    }
-
-    /* 从 PIO0 到 PIO1 查找第一个可用状态机。 */
-    for (uint8_t pio_index = 0;
-         pio_index < PIO_COUNT;
-         ++pio_index) {
-        PIO pio = manager->block[pio_index].pio;
-
-        for (uint8_t sm = 0;
-             sm < PIO_SM_COUNT;
-             ++sm) {
-            pio_sm_state_t *state =
-                &manager->block[pio_index].sm[sm];
-
-            /* 同时检查管理器记录和 SDK 状态，避免重复占用。 */
-            if (!state->used && !pio_sm_is_claimed(pio, sm)) {
-                pio_sm_claim(pio, sm);
-
-                state->used = true;
-                state->label = owner_name;
-
-                return pio_index * PIO_SM_COUNT + sm;
-            }
-        }
-    }
-
-    return -1;
-}
-bool pio_manager_release_sm(pio_manager_t *manager,
-                            uint8_t pio_index,
-                            uint8_t sm)
-{
-    if (manager == NULL) {
-        return false;
-    }
-
-    if (pio_index >= PIO_COUNT ||
-        sm >= PIO_SM_COUNT) {
-        return false;
-    }
-
-    PIO pio = manager->block[pio_index].pio;
-
-    if (manager->block[pio_index].sm[sm].used) {
-        pio_sm_unclaim(pio, sm);
-
-        manager->block[pio_index].sm[sm].used = false;
-        manager->block[pio_index].sm[sm].label = NULL;
-
-        return true;
-    }
-
-    return false;
 }
 
-bool pio_manager_is_claimed(const pio_manager_t *manager,uint8_t pio_index,uint8_t sm)
-{
-    if (manager == NULL) {
-        return false;
-    }
+bool pio_manager_release_sm(pio_manager_t *manager,uint8_t pio_index,uint8_t sm){
+    if(manager == NULL) return false;
+    if(pio_index>=PIO_BLOCK_COUNT||sm>=PIO_SM_COUNT) return false;
+    pio_manager_sm_t *state=&manager->blocks[pio_index].sm[sm];
+    if(!state->used) return false;
 
-    if (pio_index >= PIO_COUNT ||
-        sm >= PIO_SM_COUNT) {
-        return false;
-    }
-
-    return manager->block[pio_index].sm[sm].used;
+    PIO pio=manager->blocks[pio_index].hardware;
+    pio_sm_unclaim(pio,sm);
+    state->used=false;
+    state->owner=NULL;
+    return true;
 }
 
-PIO pio_manager_get_pio(const pio_manager_t *manager,
-                        uint8_t pio_index)
-{
-    if (manager == NULL) {
-        return NULL;
+int pio_manager_claim_sm_from(pio_manager_t *manager,uint8_t pio_index,const char *owner){
+
+    if(manager==NULL|| pio_index>=PIO_BLOCK_COUNT||owner==NULL) return -1;
+   
+    PIO pio =manager->blocks[pio_index].hardware;
+    for(uint8_t sm=0;sm<PIO_SM_COUNT;++sm){
+        pio_manager_sm_t *state = &manager->blocks[pio_index].sm[sm];
+        if(state->used) continue;
+        if(pio_sm_is_claimed(pio,sm)) continue;
+        pio_sm_claim(pio,sm);
+        state->used=true;
+        state->owner=owner;
+        return (int)(pio_index * PIO_SM_COUNT+sm);
     }
-
-    if (pio_index >= PIO_COUNT) {
-        return NULL;
-    }
-
-    return manager->block[pio_index].pio;
-}
-
-int pio_manager_find_program(const pio_manager_t *manager,
-                             uint8_t pio_index,
-                             const char *program_name)
-{
-    if (manager == NULL || program_name == NULL || pio_index >= PIO_COUNT) {
-        return -1;
-    }
-
-    const pio_state_t *block = &manager->block[pio_index];
-    for (uint8_t i = 0; i < block->program_count; ++i) {
-        const pio_program_state_t *program = &block->programs[i];
-        if (program->loaded && program->name != NULL &&
-            strcmp(program->name, program_name) == 0) {
-            return i;
-        }
-    }
-
     return -1;
 }
 
-bool pio_manager_has_instruction_space(const pio_manager_t *manager,
-                                       uint8_t pio_index,
-                                       uint8_t program_length)
-{
-    if (manager == NULL || pio_index >= PIO_COUNT) {
-        return false;
-    }
-
-    return program_length <= PIO_INSTRUCTION_COUNT &&
-           manager->block[pio_index].instruction_used + program_length <=
-               PIO_INSTRUCTION_COUNT;
+PIO pio_manager_get_hardware(const pio_manager_t *manager,uint8_t pio_index){
+    if(manager==NULL) return NULL;
+    if(pio_index>=PIO_BLOCK_COUNT) return NULL;
+    return manager->blocks[pio_index].hardware;
 }
 
-int pio_manager_load_program(pio_manager_t *manager,
-                             uint8_t pio_index,
-                             const char *program_name,
-                             const struct pio_program *program)
-{
-    if (manager == NULL || program_name == NULL || program == NULL ||
-        pio_index >= PIO_COUNT) {
-        return -1;
-    }
+bool pio_manager_has_cmd_space(const pio_manager_t *manager,uint8_t pio_index,uint8_t len){
+    if(manager==NULL) return false;
+    if(pio_index>=PIO_BLOCK_COUNT) return false;
+    if(len>PIO_CMD_COUNT) return false;
+    return manager->blocks[pio_index].cmd_used+len <= PIO_CMD_COUNT;
+}
 
-    /* 同一 PIO 上的同名程序只加载一次，后续只增加引用计数。 */
-    int existing = pio_manager_find_program(manager, pio_index, program_name);
+int pio_manager_find_program(const pio_manager_t *manager,uint8_t pio_index,const char* name){
+    if(manager==NULL||name==NULL||pio_index>=PIO_BLOCK_COUNT) return -1;
+    const pio_manager_block_t *block=&manager->blocks[pio_index];
+    for(uint8_t index=0;index<block->program_count;++index){
+        const pio_manager_program_t *program=&block->programs[index];
+        if(!program->loaded||program->name==NULL)
+         continue;
+         if(strcmp(program->name,name)==0)
+         return (int)index;
+    }
+    return -1;
+}
+
+int pio_manager_load_program(pio_manager_t *manager,uint8_t pio_index,const char *name,const struct pio_program *program)
+{
+    if (manager == NULL ||name == NULL || program == NULL || pio_index >= PIO_BLOCK_COUNT) 
+        return -1;
+    int existing =pio_manager_find_program(manager, pio_index, name);
     if (existing >= 0) {
-        manager->block[pio_index].programs[existing].ref_count++;
-        return manager->block[pio_index].programs[existing].offset;
+        pio_manager_program_t *loaded = &manager->blocks[pio_index].programs[existing];
+        if(loaded->ref_count == UINT8_MAX) return -1;
+
+        if(loaded->program !=program) return -1;
+        loaded->ref_count++;
+        return (int)loaded->offset;
     }
-
-    pio_state_t *block = &manager->block[pio_index];
-
-    /* 加载前同时检查管理器统计和 SDK 的实际指令空间。 */
-    if (block->program_count >= PIO_PROGRAM_MAX_COUNT ||
-        !pio_manager_has_instruction_space(manager, pio_index,
-                                            (uint8_t)program->length) ||
-        !pio_can_add_program(block->pio, program)) {
+    pio_manager_block_t *block = &manager->blocks[pio_index];
+    if (block->program_count >= PIO_PROGRAM_MAX_COUNT||!pio_manager_has_cmd_space(manager,pio_index,(uint8_t)program->length)) 
         return -1;
-    }
 
-    uint offset = pio_add_program(block->pio, program);
-    pio_program_state_t *state =
-        &block->programs[block->program_count];
-    state->loaded = true;
-    state->name = program_name;
-    state->offset = (uint8_t)offset;
-    state->length = (uint8_t)program->length;
-    state->ref_count = 1;
-    state->program = program;
+
+    if (!pio_can_add_program(block->hardware, program)) 
+        return -1;
+    uint offset =pio_add_program(block->hardware, program);
+    pio_manager_program_t *record =&block->programs[block->program_count];
+
+    record->loaded = true;
+    record->name = name;
+    record->offset = offset;
+    record->len = program->length;
+    record->ref_count = 1;
+    record->program = program;
 
     block->program_count++;
-    block->instruction_used += (uint8_t)program->length;
+    block->cmd_used += (uint8_t)program->length;
+
     return (int)offset;
 }
 
-bool pio_manager_release_program(pio_manager_t *manager,
-                                 uint8_t pio_index,
-                                 const char *program_name)
-{
-    if (manager == NULL || program_name == NULL ||
-        pio_index >= PIO_COUNT) {
+bool pio_manager_release_program(pio_manager_t *manager,uint8_t pio_index,const char *name){
+    if (manager == NULL ||name == NULL ||pio_index >= PIO_BLOCK_COUNT) 
         return false;
-    }
-
-    int index = pio_manager_find_program(
-        manager, pio_index, program_name);
-    if (index < 0) {
+    int index =pio_manager_find_program(manager, pio_index, name);
+    if (index < 0) 
         return false;
-    }
-
-    pio_state_t *block = &manager->block[pio_index];
-    pio_program_state_t *state = &block->programs[index];
-
-    if (state->ref_count > 1) {
-        state->ref_count--;
+    pio_manager_block_t *block = &manager->blocks[pio_index];
+    pio_manager_program_t *record =&block->programs[index];
+    if (record->ref_count > 1) {
+        record->ref_count--;
         return true;
     }
 
-    /* 最后一个使用者释放后，才从 PIO 指令 RAM 删除程序。 */
-    if (state->program != NULL) {
-        pio_remove_program(block->pio,
-                           state->program,
-                           state->offset);
+    if (record->program != NULL) {
+        pio_remove_program(block->hardware,record->program, record->offset);
     }
 
-    if (block->instruction_used >= state->length) {
-        block->instruction_used -= state->length;
+    if (block->cmd_used >= record->len) {
+        block->cmd_used -= (uint8_t)record->len;
     } else {
-        block->instruction_used = 0;
+        block->cmd_used = 0;
     }
-
-    /*
-     * programs[0..program_count-1] 始终保持连续。删除中间记录后，
-     * 将后续记录前移，保证 find/load 仍可按 program_count 遍历。
-     */
-    for (uint8_t i = (uint8_t)index;
-         i + 1 < block->program_count;
-         ++i) {
+    for (uint8_t i = (uint8_t)index;i + 1 < block->program_count; ++i) {
         block->programs[i] = block->programs[i + 1];
     }
+    block->program_count--;
+    pio_manager_program_t *last =&block->programs[block->program_count];
 
-    /* 清空原来的最后一项，并缩小有效记录范围。 */
-    if (block->program_count > 0) {
-        block->program_count--;
+    last->loaded = false;
+    last->name = NULL;
+    last->offset = 0;
+    last->len = 0;
+    last->ref_count = 0;
+    last->program = NULL;
+    return true;
 
-        pio_program_state_t *last =
-            &block->programs[block->program_count];
-        last->loaded = false;
-        last->name = NULL;
-        last->offset = 0;
-        last->length = 0;
-        last->ref_count = 0;
-        last->program = NULL;
+}
+
+uint8_t pio_manager_get_used_sm_count(const pio_manager_t *manager,uint8_t pio_index)
+{
+    if(manager==NULL||pio_index >= PIO_BLOCK_COUNT) return 0;
+
+    uint8_t used_count=0;
+    for(uint8_t sm=0;sm<PIO_SM_COUNT;++sm){
+        if(manager->blocks[pio_index].sm[sm].used)
+        ++used_count;
     }
+    return used_count;
+}
+
+uint8_t pio_manager_get_used_cmd_count(const pio_manager_t *manager,uint8_t pio_index)
+{
+    if(manager==NULL||pio_index>=PIO_BLOCK_COUNT) return 0;
+
+    return manager->blocks[pio_index].cmd_used;
+}
+
+bool pio_manager_is_sm_used(const pio_manager_t *manager,uint8_t pio_index,uint8_t sm)
+{
+    if(manager==NULL||pio_index>=PIO_BLOCK_COUNT||sm>=PIO_SM_COUNT) return false;
+     return manager->blocks[pio_index].sm[sm].used;
+}
+
+const char *pio_manager_get_sm_owner(const pio_manager_t *manager,uint8_t pio_index,uint8_t sm)
+{
+    if(manager==NULL||pio_index>=PIO_BLOCK_COUNT||sm>=PIO_SM_COUNT) return NULL;
+    const pio_manager_sm_t *state=&manager->blocks[pio_index].sm[sm];
+    if(!state->used) return NULL;
+    return state->owner;
+}
+
+uint8_t pio_manager_get_program_count(const pio_manager_t *manager,uint8_t pio_index)
+{
+    if(manager==NULL||pio_index>=PIO_BLOCK_COUNT) return 0;
+    return manager->blocks[pio_index].program_count;
+}
+const pio_manager_program_t *pio_manager_get_program_info(const pio_manager_t *manager,uint8_t pio_index,uint8_t program_index)
+{
+    if(manager==NULL||pio_index>=PIO_BLOCK_COUNT) return NULL;
+    const pio_manager_block_t *block = &manager->blocks[pio_index];
+    if(program_index>=block->program_count)
+    return NULL;
+    const pio_manager_program_t *program = &block->programs[program_index];
+    if(!program->loaded) return NULL;
+
+    return program;
+}
+
+bool pio_manager_get_stats(const pio_manager_t *manager,uint8_t pio_index,pio_manager_stats_t *stats)
+{
+    if(manager==NULL||stats==NULL||pio_index>= PIO_BLOCK_COUNT) return false;
+    stats->used_sm_count=pio_manager_get_used_sm_count(manager,pio_index);
+    stats->total_sm_count=PIO_SM_COUNT;
+
+    stats->used_cmd_count=pio_manager_get_used_cmd_count(manager,pio_index);
+    stats->total_cmd_count=PIO_CMD_COUNT;
+
+    stats->program_count=pio_manager_get_program_count(manager,pio_index);
+    stats->total_program_count=PIO_PROGRAM_MAX_COUNT;
 
     return true;
 }
 
-int pio_manager_claim_sm_from(pio_manager_t *manager,uint8_t pio_index,const char *owner_name)
+bool pio_manager_can_load_program(const pio_manager_t *manager,uint8_t pio_index,const struct pio_program *program)
 {
-    if (manager == NULL) {
-        return -1;
-    }
-    if (pio_index >= PIO_COUNT) {
-        return -1;
-    }
-    PIO pio = manager->block[pio_index].pio;
-    for (uint8_t sm = 0;
-         sm < PIO_SM_COUNT;
-         ++sm) {
-        pio_sm_state_t *state =
-            &manager->block[pio_index].sm[sm];
+    if(manager==NULL||program==NULL||pio_index>=PIO_BLOCK_COUNT) return false;
+    const pio_manager_block_t *block = &manager->blocks[pio_index];
+    if(block->program_count>= PIO_PROGRAM_MAX_COUNT) return false;
 
-        if (!state->used && !pio_sm_is_claimed(pio, sm)) {
-            pio_sm_claim(pio, sm);
-            state->used = true;
-            state->label = owner_name;
-            return pio_index * PIO_SM_COUNT + sm;
-        }
+    return pio_can_add_program(block->hardware,program);
+}
+
+bool pio_manager_can_use_program(const pio_manager_t *manager,uint8_t pio_index,const char * name,const struct pio_program *program)
+{
+    if(manager==NULL||name==NULL||program==NULL||pio_index>=PIO_BLOCK_COUNT) return false;
+    int existing =pio_manager_find_program(manager,pio_index,name);
+    if(existing>=0){
+        const pio_manager_program_t *loded = &manager->blocks[pio_index].programs[existing];
+
+        return loded->program == program;
     }
-    return -1;
+    return pio_manager_can_load_program(manager,pio_index,program);
+}
+
+uint8_t pio_manager_get_free_sm_count(const pio_manager_t *manager,uint8_t pio_index)
+{
+    if(manager==NULL||pio_index >=PIO_BLOCK_COUNT) return 0;
+    uint8_t used = pio_manager_get_used_sm_count(manager,pio_index);
+    return (uint8_t)(PIO_SM_COUNT-used);
+}
+void pio_manager_system_init(void)
+{
+    if (s_default_manager_initialized) {
+        return;
+    }
+
+    pio_manager_init(&s_default_manager);
+    s_default_manager_initialized = true;
+}
+pio_manager_t *pio_manager_get_default(void)
+{
+        pio_manager_system_init();
+
+    return &s_default_manager;
 }

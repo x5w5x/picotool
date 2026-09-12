@@ -9,6 +9,7 @@ cmake_minimum_required(VERSION 3.13)
 
 add_library(appmgr STATIC
     app_uart.c
+    ui_pin_config.c
     app_manager.c
     app_led.c
     app_template.c
@@ -55,8 +56,9 @@ hardware_dma
  hardware_pio 
 hardware_adc
  hardware_pwm
- hardware_i2c
- hardware_spi
+hardware_i2c
+hardware_spi
+fun
 
 )
 

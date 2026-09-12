@@ -317,7 +317,7 @@ static void on_status_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
                    y + 328,
                    "Flash 使用率",
                    FONT_16,
-                   0x632C,
+                   0x4A69,
                    0xEF7D);
 
     ui_draw_string(tile,
