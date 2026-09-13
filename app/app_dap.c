@@ -6,7 +6,9 @@
 #include "ui_draw.h"
 #include "ui_btn.h"
 #include "ui_switch.h"
+#include "ui_dropdown.h"
 #include "fun_swd.h"
+#include "fun_pio_swd.h"
 #include "cmsis_dap.h"
 #include "tusb.h"
 #include "lcd.h"
@@ -26,12 +28,54 @@ typedef struct {
     uint8_t last_tab;
     ui_scrollview_t scroll[DAP_TAB_COUNT];
     ui_btn_t probe;
+    ui_btn_t pio_probe;
     ui_switch_t dap_switch;
+    ui_dropdown_t pio_clock;
+    fun_pio_swd_t pio_swd;
+    uint8_t pio_ack;
     bool connected;
     uint32_t dp_id, cpuid, dbg_id, flash_size;
+    uint32_t pio_ctrl_stat;
 } dap_data_t;
 
+static const char *s_pio_clock_items[] = { "500 kHz", "1 MHz", "2 MHz", "5 MHz", "10 MHz" };
+static const uint32_t s_pio_clock_hz[] = { 500000u, 1000000u, 2000000u, 5000000u, 10000000u };
+
+static void dap_pio_clock_changed(ui_dropdown_t *dd, int8_t idx, void *user_data)
+{
+    (void)dd;
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data || idx < 0 || idx >= (int8_t)(sizeof(s_pio_clock_hz) / sizeof(s_pio_clock_hz[0]))) return;
+    (void)fun_pio_swd_set_clock(&data->pio_swd, s_pio_clock_hz[(uint8_t)idx]);
+    data->dirty_rect = data->tabview.content_rect;
+}
+
 static app_t s_dap;
+
+static void dap_pio_probe_click(ui_btn_t *btn, void *user_data)
+{
+    (void)btn;
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data) return;
+    if (data->pio_swd.opened) fun_pio_swd_close(&data->pio_swd);
+    data->dp_id = 0;
+    data->pio_ctrl_stat = 0;
+    data->pio_ack = 0;
+    bool opened = fun_pio_swd_open_auto(&data->pio_swd,
+                                        pio_manager_get_default(),
+                                        FUN_SWD_SWCLK_PIN,
+                                        FUN_SWD_SWDIO_PIN,
+                                        10000000u);
+    data->connected = opened && fun_pio_swd_read_dp_idcode(
+        &data->pio_swd, &data->dp_id, &data->pio_ack);
+    if (data->connected) {
+        uint8_t ctrl_ack = 0;
+        /* 读取 DP CTRL/STAT，确认调试端口不仅能返回 ID，还能正常访问寄存器。 */
+        (void)fun_pio_swd_read_dp_register(&data->pio_swd, 0x04u,
+                                           &data->pio_ctrl_stat, &ctrl_ack);
+    }
+    data->dirty_rect = data->tabview.content_rect;
+}
 
 static void dap_switch_changed(ui_switch_t *sw, bool enabled, void *user_data)
 {
@@ -110,6 +154,14 @@ static void dap_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
         ui_draw_string(tile, x, y + 116, text, FONT_16, 0x632C, 0xFFFF);
         snprintf(text, sizeof(text), "Flash Size: %lu KB", (unsigned long)data->flash_size);
         ui_draw_string(tile, x, y + 140, text, FONT_16, 0x632C, 0xFFFF);
+        snprintf(text, sizeof(text), "PIO ACK: %u  PIO: %u  Clock: %luHz",
+                 data->pio_ack,
+                 data->pio_swd.opened ? data->pio_swd.pio_index : 0u,
+                 (unsigned long)data->pio_swd.clock_hz);
+        ui_draw_string(tile, x, y + 164, text, FONT_16, 0x632C, 0xFFFF);
+        snprintf(text, sizeof(text), "PIO CTRL: %08lX",
+                 (unsigned long)data->pio_ctrl_stat);
+        ui_draw_string(tile, x, y + 188, text, FONT_16, 0x632C, 0xFFFF);
     } else if (data->tabview.active_tab_idx == 1) {
         ui_draw_string(tile, x, y + 48, "CMSIS-DAP USB", FONT_20, 0x4208, 0xFFFF);
         ui_draw_string(tile, x, y + 82, g_dap_enabled ? "状态: 已开启" : "状态: 已关闭", FONT_16, 0x632C, 0xFFFF);
@@ -135,16 +187,32 @@ static void dap_enter(app_t *self)
         data->scroll[i].color_scrollbar = 0xA514;
         data->scroll[i].show_scrollbar = true;
     }
-    ui_btn_init(&data->probe, 140, 84, 260, 38, "探测 SWD 目标", dap_probe_click);
+    ui_btn_init(&data->probe, 140, 224, 260, 34, "软件 SWD 探测", dap_probe_click);
     data->probe.user_data = data;
     data->probe.style = UI_BTN_STYLE_ROUND;
     ui_btn_set_color(&data->probe, 0xDEFB, 0xBDF7, 0x4208);
+    ui_btn_init(&data->pio_probe, 140, 266, 260, 34,
+                "PIO 探测 DP ID", dap_pio_probe_click);
+    data->pio_probe.user_data = data;
+    data->pio_probe.style = UI_BTN_STYLE_ROUND;
+    ui_btn_set_color(&data->pio_probe, 0xDEFB, 0xBDF7, 0x4208);
+    fun_pio_swd_init(&data->pio_swd);
+    ui_dropdown_init(&data->pio_clock, 140, 182, 260, 34,
+                     s_pio_clock_items, 5, 4, dap_pio_clock_changed);
+    data->pio_clock.user_data = data;
+    ui_dropdown_set_max_visible_items(&data->pio_clock, 5);
+    ui_dropdown_set_color(&data->pio_clock, 0xF7BE, 0x7BEF, 0x4208, 0xD6BA);
     ui_switch_init(&data->dap_switch, 350, 102, 64, 32,
                    g_dap_enabled, dap_switch_changed);
     data->dap_switch.user_data = data;
 }
 
-static void dap_exit(app_t *self) { self->user_data = NULL; }
+static void dap_exit(app_t *self)
+{
+    dap_data_t *data = (dap_data_t *)self->user_data;
+    if (data && data->pio_swd.opened) fun_pio_swd_close(&data->pio_swd);
+    self->user_data = NULL;
+}
 static void dap_update(app_t *self, uint32_t now_tick)
 { (void)self; (void)now_tick; }
 
@@ -158,12 +226,20 @@ static bool dap_process_touch(app_t *self, bool touching, int16_t x,
         return true;
     }
     uint8_t tab = data->tabview.active_tab_idx;
+    if (tab == 0 && ui_dropdown_process_touch(&data->pio_clock, touching, x, y, tick)) {
+        data->dirty_rect = data->tabview.content_rect;
+        return true;
+    }
     if (ui_scrollview_process_touch(&data->scroll[tab], touching, x, y, tick)) {
         data->dirty_rect = rect_union_box(data->dirty_rect,
                                           data->scroll[tab].view_rect);
         return true;
     }
     if (tab == 0 && ui_btn_process_touch(&data->probe, touching, x, y, tick)) {
+        data->dirty_rect = data->tabview.content_rect;
+        return true;
+    }
+    if (tab == 0 && ui_btn_process_touch(&data->pio_probe, touching, x, y, tick)) {
         data->dirty_rect = data->tabview.content_rect;
         return true;
     }
@@ -185,7 +261,11 @@ static void dap_draw(app_t *self, ui_tile_t *tile)
     ui_tabview_draw(tile, &data->tabview);
     if (!ui_rect_intersect(&tile->rect, &data->tabview.content_rect, &overlap)) return;
     ui_scrollview_draw(tile, &data->scroll[data->tabview.active_tab_idx]);
-    if (data->tabview.active_tab_idx == 0) ui_btn_draw(tile, &data->probe);
+    if (data->tabview.active_tab_idx == 0) {
+        ui_btn_draw(tile, &data->probe);
+        ui_btn_draw(tile, &data->pio_probe);
+        ui_dropdown_draw(tile, &data->pio_clock);
+    }
     if (data->tabview.active_tab_idx == 1) ui_switch_draw(tile, &data->dap_switch);
 }
 

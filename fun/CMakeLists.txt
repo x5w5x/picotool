@@ -5,7 +5,7 @@ add_library(fun STATIC
     fun_pio_uart.c
     pin_manager.c
     fun_swd.c
-    fun_swd.c
+    fun_pio_swd.c
 )
 
 target_include_directories(fun PUBLIC
@@ -23,4 +23,8 @@ target_link_libraries(fun PUBLIC
 
 pico_generate_pio_header(fun
     ${CMAKE_CURRENT_LIST_DIR}/../pio/uart.pio
+)
+
+pico_generate_pio_header(fun
+    ${CMAKE_CURRENT_LIST_DIR}/../pio/swd.pio
 )

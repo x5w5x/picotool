@@ -1,4 +1,5 @@
 #include "cmsis_dap.h"
+#include "fun_pio_swd.h"
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
 #include "hardware/structs/sio.h"
@@ -23,6 +24,21 @@ static uint16_t          s_retry_count   = 128;
 static uint16_t          s_match_retry   = 8192;
 static uint8_t           s_nreset_pin    = 1;
 static uint32_t          s_match_mask    = 0xFFFFFFFF;
+/* 当前仍默认使用软件 SWD。PIO 后端接口完成后，只需切换此变量即可。 */
+static cmsis_dap_backend_t s_backend = CMSIS_DAP_BACKEND_SOFTWARE;
+static uint8_t dap_backend_transfer_word(uint8_t req, uint32_t *data);
+
+void cmsis_dap_set_backend(cmsis_dap_backend_t backend)
+{
+    /* PIO 尚未覆盖完整 CMSIS-DAP 传输，暂不允许半成品后端接管 USB。 */
+    s_backend = (backend == CMSIS_DAP_BACKEND_PIO)
+                    ? CMSIS_DAP_BACKEND_PIO : CMSIS_DAP_BACKEND_SOFTWARE;
+}
+
+cmsis_dap_backend_t cmsis_dap_get_backend(void)
+{
+    return s_backend;
+}
 
 static inline void swd_delay(void) {
     for (volatile uint32_t i = 0; i < s_dap_delay_cnt; i++) {
@@ -127,11 +143,11 @@ static uint8_t dap_swd_transfer_word(uint8_t req, uint32_t *data) {
 
 static void target_mem_write(uint32_t addr, uint32_t val) {
     uint32_t tmp;
-    tmp = 0x00000000; dap_swd_transfer_word(dap_gen_req(0x08), &tmp); // DP SELECT = 0
-    tmp = 0x23000002; dap_swd_transfer_word(dap_gen_req(0x01), &tmp); // AP CSW = 32-bit
-    tmp = addr;       dap_swd_transfer_word(dap_gen_req(0x05), &tmp); // AP TAR = addr
-    dap_swd_transfer_word(dap_gen_req(0x0D), &val);                    // AP DRW = val
-    dap_swd_transfer_word(dap_gen_req(0x0E), &tmp);                    // DP RDBUFF 提交
+    tmp = 0x00000000; dap_backend_transfer_word(dap_gen_req(0x08), &tmp); // DP SELECT = 0
+    tmp = 0x23000002; dap_backend_transfer_word(dap_gen_req(0x01), &tmp); // AP CSW = 32-bit
+    tmp = addr;       dap_backend_transfer_word(dap_gen_req(0x05), &tmp); // AP TAR = addr
+    dap_backend_transfer_word(dap_gen_req(0x0D), &val);                    // AP DRW = val
+    dap_backend_transfer_word(dap_gen_req(0x0E), &tmp);                    // DP RDBUFF 提交
 }
 
 /* ================= 核心 DAP 指令分发器 ================= */
@@ -621,4 +637,15 @@ uint32_t dap_process_command(const uint8_t *req, uint8_t *resp) {
     }
 
     return resp_len;
+}
+
+/* CMSIS-DAP 统一传输入口。
+ * 目前 PIO 后端尚未实现完整的 AP/DP 传输，因此继续走已验证的软件实现；
+ * 后续只需在这里根据 s_backend 分派，不需要修改上层 Transfer/Block 逻辑。 */
+static uint8_t dap_backend_transfer_word(uint8_t req, uint32_t *data)
+{
+    if (s_backend == CMSIS_DAP_BACKEND_PIO) {
+        /* 保留切换点：PIO 支持完整传输后在此调用 fun_pio_swd_transfer()。 */
+    }
+    return dap_swd_transfer_word(req, data);
 }

@@ -42,6 +42,14 @@ extern "C" {
 // ⚡ 修复点：添加 volatile 保持与 .c 定义完全一致[cite: 14, 17, 18]
 extern volatile bool     g_dap_enabled;
 extern volatile uint32_t g_dap_packet_counter;
+
+typedef enum {
+    CMSIS_DAP_BACKEND_SOFTWARE = 0,
+    CMSIS_DAP_BACKEND_PIO = 1
+} cmsis_dap_backend_t;
+
+void cmsis_dap_set_backend(cmsis_dap_backend_t backend);
+cmsis_dap_backend_t cmsis_dap_get_backend(void);
 extern volatile uint32_t g_dap_cur_clock_hz;
 
 // 协议解析分发主函数[cite: 6, 14, 18]
