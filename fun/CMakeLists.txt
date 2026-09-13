@@ -4,6 +4,8 @@ add_library(fun STATIC
     fun_esp.c
     fun_pio_uart.c
     pin_manager.c
+    fun_swd.c
+    fun_swd.c
 )
 
 target_include_directories(fun PUBLIC

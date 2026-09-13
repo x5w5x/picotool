@@ -66,6 +66,7 @@
         "chinese.h": "c",
         "stddef.h": "c",
         "fun_pio_uart.h": "c",
-        "string.h": "c"
+        "string.h": "c",
+        "cmsis_dap.h": "c"
     }
 }
