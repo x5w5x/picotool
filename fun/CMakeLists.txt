@@ -1,5 +1,6 @@
 add_library(fun STATIC
     fun_uart.c
+    fun_uart_profile.c
     fun_esp.c
     fun_pio_uart.c
     pin_manager.c

@@ -61,8 +61,8 @@ fun_uart_hw_instance_t fun_uart_probe_hw_capability(uint8_t tx_gpio,
     }
 
     /* UART1 的完整通道：GP4/GP5 或 GP20/GP21。 */
-    if ((tx_gpio == 4 && rx_gpio == 5) ||
-        (tx_gpio == 20 && rx_gpio == 21)) {
+    if ((tx_gpio == 4 || tx_gpio == 20) &&
+        (rx_gpio == 5 || rx_gpio == 21)) {
         return FUN_UART_HW_UART1;
     }
 

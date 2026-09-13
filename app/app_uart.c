@@ -17,6 +17,7 @@
 #include "pico/stdlib.h"
 #include <string.h>
 #include "fun_uart.h"
+#include "fun_uart_profile.h"
 #include "fun_pio_uart.h"
 #include "pin_manager.h"
 #include "pio/pio_manager.h"
@@ -71,9 +72,7 @@ static const char *s_uart_tabs[] = {
 #define UART_DATA_Y       68
 #define UART_PARITY_Y     120
 #define UART_STOP_Y       172
-#define UART_BACKEND_Y    224
-#define UART_TX_PIN_Y     276
-#define UART_PIN_Y        (UART_TX_PIN_Y - 24)
+#define UART_TX_PIN_Y     224
 
 #define UART_OPTION_X     95
 #define UART_OPTION_W     68
@@ -119,6 +118,14 @@ static const uint32_t s_baud_values[] = {
     9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600
 };
 
+static int8_t uart_find_baud_index(uint32_t baudrate)
+{
+    for (size_t i = 0; i < sizeof(s_baud_values) / sizeof(s_baud_values[0]); ++i) {
+        if (s_baud_values[i] == baudrate) return (int8_t)i;
+    }
+    return 4;
+}
+
 typedef struct
 {
     ui_rect_t dirty_rect;
@@ -142,8 +149,6 @@ typedef struct
     ui_btn_t parity_odd;
     ui_btn_t stop_bit1;
     ui_btn_t stop_bit2;
-    ui_btn_t hardware;
-    ui_btn_t pio;
     ui_pin_config_t tx_pin_config;
     ui_pin_config_t rx_pin_config;
     ui_btn_t apply_config;
@@ -171,6 +176,9 @@ typedef struct
 } uart_data_t;
 
 static app_t s_uart;
+/* 当前先作为RAM镜像；后续由W25Q64读写层替换其装载和提交动作。 */
+static fun_uart_profile_t s_uart_profile;
+static bool s_uart_profile_ready = false;
 
 static void uart_start_dma(uart_data_t *data);
 static void uart_stop_dma(void);
@@ -924,70 +932,24 @@ static void on_pin_config_changed(
         );
     }
 
-    data->dirty_rect = data->setting_scroll.view_rect;
-}
-static void on_hardware(ui_btn_t *btn,void *user_data){
-    uart_data_t *data = (uart_data_t *)user_data;
-    if (!data)return;
-    data->backend=UART_BACKEND_HARDWARE;
-    data->hardware.is_checked=true;
-    data->pio.is_checked=false;
-    ui_pin_config_set_allowed_mask(
-        &data->tx_pin_config,
-        (1u << 4) | (1u << 20)
-    );
-    ui_pin_config_set_allowed_mask(
-        &data->rx_pin_config,
-        (1u << 5) | (1u << 21)
-    );
-    ui_pin_config_set_target(
-        &data->tx_pin_config,
-        PIN_SOURCE_HARDWARE,
-        PIN_FUNC_UART_TX
-    );
-    ui_pin_config_set_target(
-        &data->rx_pin_config,
-        PIN_SOURCE_HARDWARE,
-        PIN_FUNC_UART_RX
-    );
-    uart_layout_pin_configs(data);
-    data->dirty_rect = data->setting_scroll.view_rect;
-}
-static void on_pio(ui_btn_t *btn,void *user_data)
-{
-     uart_data_t *data = (uart_data_t *)user_data;
-    if (!data)return;
-    data->backend=UART_BACKEND_PIO;
-    data->hardware.is_checked=false;
-    data->pio.is_checked=true;
-    ui_pin_config_set_allowed_mask(
-        &data->tx_pin_config,
-        UINT32_MAX
-    );
-    ui_pin_config_set_allowed_mask(
-        &data->rx_pin_config,
-        UINT32_MAX
-    );
-    ui_pin_config_set_target(
-        &data->tx_pin_config,
-        PIN_SOURCE_PIO,
-        PIN_FUNC_UART_TX
-    );
-    ui_pin_config_set_target(
-        &data->rx_pin_config,
-        PIN_SOURCE_PIO,
-        PIN_FUNC_UART_RX
-    );
-    uart_layout_pin_configs(data);
-    data->data_bit7.is_checked = false;
-    data->data_bit8.is_checked = true;
+    /* 引脚组合决定实际后端，不再要求用户手动选择硬件或PIO。 */
+    uint8_t tx_gpio = ui_pin_config_get_selected(&data->tx_pin_config);
+    uint8_t rx_gpio = ui_pin_config_get_selected(&data->rx_pin_config);
+    data->backend = fun_uart_probe_hw_capability(tx_gpio, rx_gpio) != FUN_UART_HW_NONE
+        ? UART_BACKEND_HARDWARE
+        : UART_BACKEND_PIO;
 
-    data->parity_none.is_checked = true;
-    data->parity_even.is_checked = false;
-    data->parity_odd.is_checked = false;
+    /* 当前PIO程序只支持8-N-1，切换到PIO组合时同步修正预选格式。 */
+    if (data->backend == UART_BACKEND_PIO) {
+        data->data_bit7.is_checked = false;
+        data->data_bit8.is_checked = true;
+        data->parity_none.is_checked = true;
+        data->parity_even.is_checked = false;
+        data->parity_odd.is_checked = false;
+        data->stop_bit1.is_checked = true;
+        data->stop_bit2.is_checked = false;
+    }
 
-    data->stop_bit1.is_checked = true;
-    data->stop_bit2.is_checked = false;
     data->dirty_rect = data->setting_scroll.view_rect;
 }
 // static void on_apply_config(ui_btn_t *btn, void *user_data)
@@ -1100,7 +1062,32 @@ static void on_apply_config(ui_btn_t *btn,void *user_data)
      * 关闭函数使用active_backend判断旧资源类型。
      */
     uart_backend_t target_backend =
-        data->backend;
+        fun_uart_probe_hw_capability(tx_gpio, rx_gpio) != FUN_UART_HW_NONE
+            ? UART_BACKEND_HARDWARE : UART_BACKEND_PIO;
+
+    /* 先校验新配置，失败时保留当前正在工作的串口。 */
+    if (tx_gpio >= 32u || rx_gpio >= 32u || tx_gpio == rx_gpio) {
+        ui_toast_show(
+            &data->toast,
+            "TX/RX pin invalid",
+            UI_TOAST_ERROR,
+            to_ms_since_boot(get_absolute_time())
+        );
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->setting_scroll.view_rect);
+        return;
+    }
+
+    if (target_backend == UART_BACKEND_PIO &&
+        (data_bits != 8 || parity != FUN_UART_PARITY_NONE || stop_bits != 1)) {
+        ui_toast_show(
+            &data->toast,
+            "PIO UART only supports 8-N-1",
+            UI_TOAST_ERROR,
+            to_ms_since_boot(get_absolute_time())
+        );
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->setting_scroll.view_rect);
+        return;
+    }
 
     /*
      * 停止Core1并释放当前活动后端。
@@ -1218,6 +1205,15 @@ if (pins_claimed && !opened) {
         data->io_enable = true;
         data->uart_mode = UART_WORK_BRIDGE;
 
+        s_uart_profile.baudrate = baudrate;
+        s_uart_profile.data_bits = data_bits;
+        s_uart_profile.parity = (uint8_t)parity;
+        s_uart_profile.stop_bits = stop_bits;
+        s_uart_profile.tx_gpio = tx_gpio;
+        s_uart_profile.rx_gpio = rx_gpio;
+        fun_uart_profile_finalize(&s_uart_profile);
+        s_uart_profile_ready = fun_uart_profile_is_valid(&s_uart_profile);
+
         char apply_message[80];
 
         if (data->active_backend ==
@@ -1260,9 +1256,7 @@ if (pins_claimed && !opened) {
             &data->toast,
             "串口配置已生效",
             UI_TOAST_SUCCESS,
-            to_ms_since_boot(
-                get_absolute_time()
-            )
+            to_ms_since_boot(get_absolute_time())
         );
     }
     else {
@@ -1617,10 +1611,6 @@ static bool on_uart_settings_touch_content(bool is_touching, int16_t content_x, 
         handled=true;
     else if (ui_pin_config_process_touch(&data->rx_pin_config,is_touching,content_x,content_y,now_tick))
         handled=true;
-    else if (ui_btn_process_touch(&data->hardware,is_touching,content_x,content_y,now_tick))
-        handled=true;
-    else if (ui_btn_process_touch(&data->pio,is_touching,content_x,content_y,now_tick))
-        handled=true;
         
 
     if (handled) {
@@ -1692,14 +1682,6 @@ static void on_uart_settings_draw_content(ui_tile_t *tile, const ui_rect_t *view
         data->rx_pin_config.rect
     );
     ui_pin_config_draw(tile, &rx_pin_config);
-    ui_draw_string(tile,label_screen_x,viewport->y+UART_PIN_Y-scroll_y+8,"引脚组",FONT_20,label_color,0xFFFF);
-    ui_btn_t hardware=data->hardware;
-    hardware.rect = ui_scrollview_content_rect_to_screen(&data->setting_scroll,data->hardware.rect);
-    ui_btn_draw(tile,&hardware);
-    ui_btn_t pio=data->pio;
-    pio.rect = ui_scrollview_content_rect_to_screen(&data->setting_scroll,data->pio.rect);
-    ui_btn_draw(tile,&pio);
-    ui_draw_string(tile,label_screen_x,viewport->y+UART_BACKEND_Y-scroll_y+8,"方式",FONT_20,label_color,0xFFFF);        
 }
 
 static void uarttool_init(app_t *self)
@@ -1713,6 +1695,11 @@ static void uart_enter(app_t *self)
     self->user_data = data;
     memset(data, 0, sizeof(uart_data_t));
     data->pin_manager = pin_manager_get_default();
+
+    if (!s_uart_profile_ready || !fun_uart_profile_is_valid(&s_uart_profile)) {
+        fun_uart_profile_set_defaults(&s_uart_profile);
+        s_uart_profile_ready = true;
+    }
 
     s_uart_term_head = 0;
     s_uart_term_tail = 0;
@@ -1740,7 +1727,7 @@ static void uart_enter(app_t *self)
     ui_scrollview_set_touch_cb(&data->setting_scroll, on_uart_settings_touch_content);
 
     // ⚡ 初始化下拉框参数（采用规整的 UART_CFG_CTRL_X 与 UART_CFG_CTRL_W）
-    ui_dropdown_init(&data->baud, UART_CFG_CTRL_X, UART_BAUD_Y, UART_CFG_CTRL_W, UART_CFG_CTRL_H, s_baud_options, sizeof(s_baud_options)/sizeof(s_baud_options[0]), 4, on_uart_config_change);
+    ui_dropdown_init(&data->baud, UART_CFG_CTRL_X, UART_BAUD_Y, UART_CFG_CTRL_W, UART_CFG_CTRL_H, s_baud_options, sizeof(s_baud_options)/sizeof(s_baud_options[0]), uart_find_baud_index(s_uart_profile.baudrate), on_uart_config_change);
     ui_dropdown_set_max_visible_items(&data->baud, 4);
     data->baud.user_data = data;
     ui_dropdown_set_color(&data->baud, 0xFFFF, 0xC618, 0x4208, 0x03DF);
@@ -1748,41 +1735,41 @@ static void uart_enter(app_t *self)
     data->data_bit7.user_data=data;
     data->data_bit7.mode=UI_BTN_MODE_PUSH;
     data->data_bit7.style=UI_BTN_STYLE_ROUND;
-    data->data_bit7.is_checked=false;
+    data->data_bit7.is_checked=(s_uart_profile.data_bits == 7u);
     ui_btn_init(&data->data_bit8,UART_OPTION_X+UART_OPTION_W+UART_OPTION_GAP,UART_DATA_Y,UART_OPTION_W,UART_OPTION_H,"8",on_data_bit8);
     data->data_bit8.user_data=data;
     data->data_bit8.mode=UI_BTN_MODE_PUSH;
     data->data_bit8.style=UI_BTN_STYLE_ROUND;
-    data->data_bit8.is_checked=true;
+    data->data_bit8.is_checked=(s_uart_profile.data_bits == 8u);
     ui_btn_set_color(&data->data_bit7, 0xDEFB, 0xD7FF, 0x4208);
     ui_btn_set_color(&data->data_bit8, 0xDEFB, 0xD7FF, 0x4208);
     ui_btn_init(&data->parity_none,UART_OPTION_X,UART_PARITY_Y,UART_OPTION_W,UART_OPTION_H,"无校验",on_par_none);
     data->parity_none.user_data=data;
     data->parity_none.mode=UI_BTN_MODE_PUSH;
     data->parity_none.style=UI_BTN_STYLE_ROUND;
-    data->parity_none.is_checked=true;
+    data->parity_none.is_checked=(s_uart_profile.parity == FUN_UART_PARITY_NONE);
     ui_btn_set_color(&data->parity_none, 0xDEFB, 0xD7FF, 0x4208);
     ui_btn_init(&data->parity_even,UART_OPTION_X + UART_OPTION_W + UART_OPTION_GAP,UART_PARITY_Y,UART_OPTION_W,UART_OPTION_H,"偶校验",on_par_even);
     data->parity_even.user_data=data;
     data->parity_even.mode=UI_BTN_MODE_PUSH;
     data->parity_even.style=UI_BTN_STYLE_ROUND;
-    data->parity_even.is_checked=false;
+    data->parity_even.is_checked=(s_uart_profile.parity == FUN_UART_PARITY_EVEN);
     ui_btn_set_color(&data->parity_even, 0xDEFB, 0xD7FF, 0x4208);
     ui_btn_init(&data->parity_odd, UART_OPTION_X + 2 * (UART_OPTION_W + UART_OPTION_GAP),UART_PARITY_Y,UART_OPTION_W,UART_OPTION_H,"奇校验",on_par_odd);
     data->parity_odd.user_data=data;
     data->parity_odd.mode=UI_BTN_MODE_PUSH;
     data->parity_odd.style=UI_BTN_STYLE_ROUND;
-    data->parity_odd.is_checked=false;
+    data->parity_odd.is_checked=(s_uart_profile.parity == FUN_UART_PARITY_ODD);
     ui_btn_set_color(&data->parity_odd, 0xDEFB, 0xD7FF, 0x4208);
     ui_btn_init(&data->stop_bit1,UART_OPTION_X,UART_STOP_Y,UART_OPTION_W,UART_OPTION_H,"1",on_stop_bit1);
     data->stop_bit1.user_data=data;
-    data->stop_bit1.is_checked=true;
+    data->stop_bit1.is_checked=(s_uart_profile.stop_bits == 1u);
     data->stop_bit1.mode=UI_BTN_MODE_PUSH;
     data->stop_bit1.style=UI_BTN_STYLE_ROUND;
     ui_btn_set_color(&data->stop_bit1, 0xDEFB, 0xD7FF, 0x4208);
     ui_btn_init(&data->stop_bit2,UART_OPTION_X+UART_OPTION_W+UART_OPTION_GAP,UART_STOP_Y,UART_OPTION_W,UART_OPTION_H,"2",on_stop_bit2);
     data->stop_bit2.user_data=data;
-    data->stop_bit2.is_checked=false;
+    data->stop_bit2.is_checked=(s_uart_profile.stop_bits == 2u);
     data->stop_bit2.mode=UI_BTN_MODE_PUSH;
     data->stop_bit2.style=UI_BTN_STYLE_ROUND;
     ui_btn_set_color(&data->stop_bit2, 0xDEFB, 0xD7FF, 0x4208);
@@ -1793,19 +1780,6 @@ static void uart_enter(app_t *self)
     ui_btn_set_color(&data->apply_config, 0x5E7F, 0x0275, 0xFFFF);
 
     ui_toast_init(&data->toast);
-    ui_btn_init(&data->hardware,UART_OPTION_X,UART_BACKEND_Y,100,UART_OPTION_H,"硬件UART",on_hardware);
-    data->hardware.user_data=data;
-    data->hardware.is_checked=true;
-    data->hardware.mode=UI_BTN_MODE_PUSH;
-    data->hardware.style=UI_BTN_STYLE_ROUND;
-    ui_btn_set_color(&data->hardware, 0xDEFB, 0xD7FF, 0x4208);
-    ui_btn_init(&data->pio,UART_OPTION_X+106,UART_BACKEND_Y,100,UART_OPTION_H,"PIO UART",on_pio);
-    data->pio.user_data=data;
-    data->pio.is_checked=false;
-    data->pio.mode=UI_BTN_MODE_PUSH;
-    data->pio.style=UI_BTN_STYLE_ROUND;
-    ui_btn_set_color(&data->pio, 0xDEFB, 0xD7FF, 0x4208);
-
     ui_pin_config_init(
         &data->tx_pin_config,
         UART_CFG_CTRL_X,
@@ -1814,10 +1788,10 @@ static void uart_enter(app_t *self)
         "发送引脚",
         data->pin_manager,
         PIN_OWNER_UART,
-        PIN_SOURCE_HARDWARE,
+        PIN_SOURCE_NONE,
         PIN_FUNC_UART_TX,
         1,
-        20,
+        s_uart_profile.tx_gpio,
         on_pin_config_changed
     );
     data->tx_pin_config.user_data = data;
@@ -1830,22 +1804,16 @@ static void uart_enter(app_t *self)
         "接收引脚",
         data->pin_manager,
         PIN_OWNER_UART,
-        PIN_SOURCE_HARDWARE,
+        PIN_SOURCE_NONE,
         PIN_FUNC_UART_RX,
         1,
-        21,
+        s_uart_profile.rx_gpio,
         on_pin_config_changed
     );
     data->rx_pin_config.user_data = data;
 
-    ui_pin_config_set_allowed_mask(
-        &data->tx_pin_config,
-        (1u << 4) | (1u << 20)
-    );
-    ui_pin_config_set_allowed_mask(
-        &data->rx_pin_config,
-        (1u << 5) | (1u << 21)
-    );
+    ui_pin_config_set_allowed_mask(&data->tx_pin_config, UINT32_MAX);
+    ui_pin_config_set_allowed_mask(&data->rx_pin_config, UINT32_MAX);
     ui_pin_config_set_excluded_mask(&data->tx_pin_config, 1u << 21);
     ui_pin_config_set_excluded_mask(&data->rx_pin_config, 1u << 20);
     uart_layout_pin_configs(data);
@@ -1887,12 +1855,12 @@ static void uart_enter(app_t *self)
     data->selected_pio=UINT8_MAX;
     fun_uart_config_init(&data->uart_config);
     data->uart_config.hw_instance = FUN_UART_HW_UART1;
-    data->uart_config.tx_gpio = 20;
-    data->uart_config.rx_gpio = 21;
-    data->uart_config.baudrate = 115200;
-    data->uart_config.data_bits = 8;
-    data->uart_config.stop_bits = 1;
-    data->uart_config.parity = FUN_UART_PARITY_NONE;
+    data->uart_config.tx_gpio = s_uart_profile.tx_gpio;
+    data->uart_config.rx_gpio = s_uart_profile.rx_gpio;
+    data->uart_config.baudrate = s_uart_profile.baudrate;
+    data->uart_config.data_bits = s_uart_profile.data_bits;
+    data->uart_config.stop_bits = s_uart_profile.stop_bits;
+    data->uart_config.parity = (fun_uart_parity_t)s_uart_profile.parity;
     
     pin_claim_t tx_claim = {
     .owner = PIN_OWNER_UART,
@@ -2049,6 +2017,25 @@ static bool uart_process_touch(app_t *self, bool is_touching, int16_t tx, int16_
     uart_data_t *data = (uart_data_t *)self->user_data;
     if (!data) return false;
 
+    if (data->tx_pin_config.modal.is_open) {
+        bool was_open = true;
+        bool handled = ui_pin_config_process_modal_touch(
+            &data->tx_pin_config, is_touching, tx, ty, now_tick);
+        data->dirty_rect = was_open && data->tx_pin_config.modal.is_open
+            ? data->tx_pin_config.modal.rect
+            : ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
+        return handled;
+    }
+    if (data->rx_pin_config.modal.is_open) {
+        bool was_open = true;
+        bool handled = ui_pin_config_process_modal_touch(
+            &data->rx_pin_config, is_touching, tx, ty, now_tick);
+        data->dirty_rect = was_open && data->rx_pin_config.modal.is_open
+            ? data->rx_pin_config.modal.rect
+            : ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
+        return handled;
+    }
+
     if (data->keyboard.is_open) {
         if (ui_keyboard_process_touch(&data->keyboard, is_touching, tx, ty, now_tick)) {
             if (!data->keyboard.is_open) {
@@ -2101,7 +2088,10 @@ static bool uart_process_touch(app_t *self, bool is_touching, int16_t tx, int16_
                 handled = true;
             }
         } else if (ui_scrollview_process_touch(&data->setting_scroll, is_touching, tx, ty, now_tick)) {
-            data->dirty_rect = rect_union_box(data->dirty_rect, data->setting_scroll.view_rect);
+            if (data->tx_pin_config.modal.is_open || data->rx_pin_config.modal.is_open)
+                data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
+            else
+                data->dirty_rect = rect_union_box(data->dirty_rect, data->setting_scroll.view_rect);
             handled = true;
         }
         break;
@@ -2174,6 +2164,8 @@ static void uart_draw(app_t *self, ui_tile_t *tile)
         ui_keyboard_draw(tile, &data->keyboard);
     }
     ui_toast_draw(tile, &data->toast);
+    ui_pin_config_draw_modal(tile, &data->tx_pin_config);
+    ui_pin_config_draw_modal(tile, &data->rx_pin_config);
 }
 
 app_t *app_uart_get_instance(void)

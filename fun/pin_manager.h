@@ -80,7 +80,7 @@ typedef struct
     const char *owner_name;
 } pin_claim_t;
 
-#define PIN_MANAGER_PIN_COUNT 11u
+#define PIN_MANAGER_PIN_COUNT 12u
 
 typedef struct {
     pin_runtime_t runtime[PIN_MANAGER_PIN_COUNT];

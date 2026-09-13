@@ -1,494 +1,152 @@
 #include "ui_pin_config.h"
-
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
 #include "ui_draw.h"
 
-#define UI_PIN_CONFIG_COLUMNS       3
-#define UI_PIN_CONFIG_PADDING       8
-#define UI_PIN_CONFIG_TITLE_H       24
-#define UI_PIN_CONFIG_CELL_H        32
-#define UI_PIN_CONFIG_CELL_GAP      6
-#define UI_PIN_CONFIG_TOUCH_SLOP    8
+#define ROW_H 44
+#define LIST_ROW_H 40
+#define MARGIN 8
+#define LIST_GAP 8
+#define LIST_COLUMNS 2u
+#define SLOP 8
 
-static bool ui_pin_config_supports_target(
-    const ui_pin_config_t *config,
-    uint8_t gpio
-)
-{
-    if (config == NULL || config->function == PIN_FUNC_NONE) {
-        return false;
-    }
-
-    if (gpio >= 32u ||
-        (config->allowed_gpio_mask & (1u << gpio)) == 0u) {
-        return false;
-    }
-
-    if (config->source == PIN_SOURCE_PIO) {
-        return pin_manager_supports(gpio, PIN_FUNC_PIO);
-    }
-
-    if (config->source == PIN_SOURCE_HARDWARE) {
-        return pin_manager_supports(gpio, config->function);
-    }
-
-    return false;
+static bool supports(const ui_pin_config_t *c,uint8_t g){
+ if(!c||c->function==PIN_FUNC_NONE||g>=32||!(c->allowed_gpio_mask&(1u<<g)))return false;
+ if(c->source==PIN_SOURCE_HARDWARE)return pin_manager_supports(g,c->function);
+ if(c->source==PIN_SOURCE_PIO)return pin_manager_supports(g,PIN_FUNC_PIO);
+ return pin_manager_supports(g,c->function)||pin_manager_supports(g,PIN_FUNC_PIO);
 }
-
-static bool ui_pin_config_is_available(
-    const ui_pin_config_t *config,
-    uint8_t gpio
-)
-{
-    if (config == NULL || config->manager == NULL ||
-        !ui_pin_config_supports_target(config, gpio)) {
-        return false;
-    }
-
-    if (gpio < 32u &&
-        (config->excluded_gpio_mask & (1u << gpio)) != 0u) {
-        return false;
-    }
-
-    const pin_runtime_t *runtime =
-        pin_manager_get_runtime(config->manager, gpio);
-
-    if (runtime == NULL) {
-        return false;
-    }
-
-    if (!runtime->allocated) {
-        return true;
-    }
-
-    /* 已经属于本功能实例的引脚仍允许显示和选中。 */
-    return runtime->owner == config->owner &&
-           runtime->instance == config->instance;
+static bool available(const ui_pin_config_t *c,uint8_t g){
+ if(!c||!c->manager||!supports(c,g)||(c->excluded_gpio_mask&(1u<<g)))return false;
+ const pin_runtime_t *r=pin_manager_get_runtime(c->manager,g);
+ return r&&(!r->allocated||(r->owner==c->owner&&r->instance==c->instance));
 }
-
-size_t ui_pin_config_get_candidate_count(const ui_pin_config_t *config)
-{
-    if (config == NULL) {
-        return 0;
-    }
-
-    size_t count = 0;
-    size_t pin_count = pin_manager_get_count();
-
-    for (size_t i = 0; i < pin_count; ++i) {
-        const pin_init_t *pin = pin_manager_get_pin_at(i);
-        if (pin != NULL &&
-            ui_pin_config_supports_target(config, pin->gpio)) {
-            ++count;
-        }
-    }
-
-    return count;
+size_t ui_pin_config_get_candidate_count(const ui_pin_config_t *c){
+ size_t n=0;if(!c)return 0;for(size_t i=0;i<pin_manager_get_count();i++){const pin_init_t*p=pin_manager_get_pin_at(i);if(p&&supports(c,p->gpio))n++;}return n;
 }
-
-const pin_init_t *ui_pin_config_get_candidate(
-    const ui_pin_config_t *config,
-    size_t candidate_index
-)
-{
-    if (config == NULL) {
-        return NULL;
-    }
-
-    size_t matched = 0;
-    size_t pin_count = pin_manager_get_count();
-
-    for (size_t i = 0; i < pin_count; ++i) {
-        const pin_init_t *pin = pin_manager_get_pin_at(i);
-        if (pin == NULL ||
-            !ui_pin_config_supports_target(config, pin->gpio)) {
-            continue;
-        }
-
-        if (matched == candidate_index) {
-            return pin;
-        }
-        ++matched;
-    }
-
-    return NULL;
+const pin_init_t *ui_pin_config_get_candidate(const ui_pin_config_t*c,size_t wanted){
+ if(!c)return NULL;
+ size_t n=0;
+ for(size_t i=0;i<pin_manager_get_count();i++){
+  const pin_init_t*p=pin_manager_get_pin_at(i);
+  if(!p||!supports(c,p->gpio))continue;
+  if(n++==wanted)return p;
+ }
+ return NULL;
 }
-
-int16_t ui_pin_config_get_preferred_height(const ui_pin_config_t *config)
+static ui_rect_t list_row(const ui_modal_t *m, size_t i)
 {
-    size_t count = ui_pin_config_get_candidate_count(config);
-    size_t rows = (count + UI_PIN_CONFIG_COLUMNS - 1u) /
-                  UI_PIN_CONFIG_COLUMNS;
-
-    return (int16_t)(
-        UI_PIN_CONFIG_PADDING +
-        UI_PIN_CONFIG_TITLE_H +
-        rows * UI_PIN_CONFIG_CELL_H +
-        (rows > 0 ? (rows - 1u) * UI_PIN_CONFIG_CELL_GAP : 0u) +
-        UI_PIN_CONFIG_PADDING
-    );
+    int16_t cell_w = (int16_t)((m->sv_body.view_rect.w - 2 * MARGIN - LIST_GAP) / 2);
+    size_t row = i / LIST_COLUMNS;
+    size_t col = i % LIST_COLUMNS;
+    return ui_rect_make(
+        (int16_t)(m->sv_body.view_rect.x + MARGIN + col * (cell_w + LIST_GAP)),
+        (int16_t)(m->sv_body.view_rect.y + MARGIN + row * LIST_ROW_H - m->sv_body.scroll_y),
+        cell_w, LIST_ROW_H - 6);
 }
-
-void ui_pin_config_init(
-    ui_pin_config_t *config,
-    int16_t x,
-    int16_t y,
-    int16_t w,
-    const char *title,
-    pin_manager_t *manager,
-    pin_owner_t owner,
-    pin_source_t source,
-    pin_fun_t function,
-    uint8_t instance,
-    uint8_t selected_gpio,
-    ui_pin_config_changed_cb_t on_changed
-)
+static void modal_draw(ui_tile_t *t,const ui_rect_t *v,int16_t sy,void *ud)
 {
-    if (config == NULL) {
-        return;
-    }
-
-    memset(config, 0, sizeof(*config));
-
-    config->manager = manager;
-    config->owner = owner;
-    config->source = source;
-    config->function = function;
-    config->instance = instance;
-    config->title = title;
-    config->selected_gpio = UI_PIN_CONFIG_INVALID_GPIO;
-    config->pressed_gpio = UI_PIN_CONFIG_INVALID_GPIO;
-    config->allowed_gpio_mask = UINT32_MAX;
-    config->enabled = true;
-    config->on_changed = on_changed;
-
-    /* 与系统设置页面一致的浅灰、银灰配色。 */
-    config->color_bg = 0xF7BE;
-    config->color_border = 0xC618;
-    config->color_text = 0x4208;
-    config->color_selected = 0xBDF7;
-    config->color_busy = 0xDEFB;
-
-    config->rect = ui_rect_make(x, y, w, 0);
-    config->rect.h = ui_pin_config_get_preferred_height(config);
-
-    (void)ui_pin_config_set_selected(config, selected_gpio);
-}
-
-void ui_pin_config_set_target(
-    ui_pin_config_t *config,
-    pin_source_t source,
-    pin_fun_t function
-)
-{
-    if (config == NULL) {
-        return;
-    }
-
-    config->source = source;
-    config->function = function;
-    config->rect.h = ui_pin_config_get_preferred_height(config);
-
-    if (!ui_pin_config_supports_target(config, config->selected_gpio)) {
-        config->selected_gpio = UI_PIN_CONFIG_INVALID_GPIO;
-    }
-
-    config->pressed_gpio = UI_PIN_CONFIG_INVALID_GPIO;
-    config->is_touch_down = false;
-    config->is_dragged = false;
-}
-
-void ui_pin_config_set_enabled(
-    ui_pin_config_t *config,
-    bool enabled
-)
-{
-    if (config == NULL) {
-        return;
-    }
-
-    config->enabled = enabled;
-
-    if (!enabled) {
-        config->pressed_gpio = UI_PIN_CONFIG_INVALID_GPIO;
-        config->is_touch_down = false;
-        config->is_dragged = false;
+    (void)v; (void)sy;
+    ui_pin_config_t *c=ud;
+    if(!c)return;
+    for(size_t i=0;i<ui_pin_config_get_candidate_count(c);i++){
+        const pin_init_t *p=ui_pin_config_get_candidate(c,i);
+        if(!p)continue;
+        ui_rect_t r=list_row(&c->modal,i);
+        bool a=available(c,p->gpio);
+        uint16_t bg=!a?c->color_busy:(p->gpio==c->pending_gpio?c->color_selected:0xFFFF);
+        ui_draw_fill_rect(t,&r,bg);
+        ui_draw_rect(t,&r,c->color_border);
+        ui_draw_string(t,r.x+8,r.y+9,p->label,FONT_16,a?c->color_text:0x8410,bg);
+        const char *k=pin_manager_supports(p->gpio,c->function)
+            ?(c->function==PIN_FUNC_UART_TX?"UART1 TX":"UART1 RX"):"PIO";
+        ui_draw_string(t,r.x+52,r.y+9,k,FONT_16,a?0x632C:0x8410,bg);
     }
 }
+static bool modal_touch(ui_modal_t*m,bool down,int16_t x,int16_t y,uint32_t tick,void*ud){
+ (void)tick;
+ ui_pin_config_t*c=ud;
+ if(!c||!m||!down||m->sv_body.is_dragged)return false;
 
-void ui_pin_config_set_excluded_mask(
-    ui_pin_config_t *config,
-    uint32_t gpio_mask
-)
-{
-    if (config == NULL) {
-        return;
-    }
+ /* 底部操作栏不属于列表，防止“应用生效”同时点中被遮住的候选项。 */
+ if(!ui_rect_contains_point(&m->sv_body.view_rect,x,y))return false;
 
-    config->excluded_gpio_mask = gpio_mask;
+ for(size_t i=0;i<ui_pin_config_get_candidate_count(c);i++){
+  const pin_init_t*p=ui_pin_config_get_candidate(c,i);
+  ui_rect_t r=list_row(m,i);
+  if(p&&ui_rect_contains_point(&r,x,y)&&available(c,p->gpio)){
+   c->pending_gpio=p->gpio;
+   return true;
+  }
+ }
+ return false;
+}
+static void modal_action(ui_modal_t*m,bool ok,void*ud){
+ (void)m;
+ ui_pin_config_t*c=ud;
+ if(!c)return;
 
-    if (config->selected_gpio < 32u &&
-        (gpio_mask & (1u << config->selected_gpio)) != 0u) {
-        config->selected_gpio = UI_PIN_CONFIG_INVALID_GPIO;
-    }
+ if(!ok){
+  /* 取消时丢弃本次临时选择。 */
+  c->pending_gpio=c->selected_gpio;
+  return;
+ }
+
+ if(c->pending_gpio==UINT8_MAX||!available(c,c->pending_gpio))return;
+
+ bool changed=c->selected_gpio!=c->pending_gpio;
+ c->selected_gpio=c->pending_gpio;
+
+ /* 通知所属页面更新互斥掩码并重绘外层选择按钮。 */
+ if(changed&&c->on_changed){
+  c->on_changed(c,c->selected_gpio,c->user_data);
+ }
 }
 
-void ui_pin_config_set_allowed_mask(
-    ui_pin_config_t *config,
-    uint32_t gpio_mask
-)
-{
-    if (config == NULL) {
-        return;
-    }
-
-    config->allowed_gpio_mask = gpio_mask;
-    config->rect.h = ui_pin_config_get_preferred_height(config);
-
-    if (!ui_pin_config_supports_target(config, config->selected_gpio)) {
-        config->selected_gpio = UI_PIN_CONFIG_INVALID_GPIO;
-    }
+void ui_pin_config_init(ui_pin_config_t*c,int16_t x,int16_t y,int16_t w,const char*title,pin_manager_t*m,pin_owner_t owner,pin_source_t source,pin_fun_t function,uint8_t instance,uint8_t selected,ui_pin_config_changed_cb_t cb){
+ if(!c)return;
+ memset(c,0,sizeof(*c));
+ c->rect=ui_rect_make(x,y,w,ROW_H);
+ c->manager=m;
+ c->owner=owner;
+ c->source=source;
+ c->function=function;
+ c->instance=instance;
+ c->title=title;
+ c->selected_gpio=UINT8_MAX;
+ c->pending_gpio=UINT8_MAX;
+ c->pressed_gpio=UINT8_MAX;
+ c->allowed_gpio_mask=UINT32_MAX;
+ c->enabled=true;
+ c->on_changed=cb;
+ c->color_bg=0xF7BE;
+ c->color_border=0xC618;
+ c->color_text=0x4208;
+ c->color_selected=0xBDF7;
+ c->color_busy=0xDEFB;
+ ui_modal_init(&c->modal,480,320,360,250,250,title,UI_MODAL_BTN_OK_CANCEL,modal_draw,modal_touch,modal_action);
+ c->modal.color_bg=0xF7BE;
+ c->modal.color_border=0xC618;
+ c->modal.color_title=0x4208;
+ c->modal.sv_body.color_bg=0xFFFF;
+ c->modal.sv_body.color_scrollbar=0xA514;
+ c->modal.btn_close.rect=ui_rect_make(0,0,0,0);
+ ui_btn_set_color(&c->modal.btn_cancel,0xD69A,0xBDF7,0x4208);
+ ui_btn_set_color(&c->modal.btn_confirm,0xBDF7,0xA514,0x4208);
+ (void)ui_pin_config_set_selected(c,selected);
 }
-
-void ui_pin_config_set_color(
-    ui_pin_config_t *config,
-    uint16_t background,
-    uint16_t border,
-    uint16_t text,
-    uint16_t selected,
-    uint16_t busy
-)
-{
-    if (config == NULL) {
-        return;
-    }
-
-    config->color_bg = background;
-    config->color_border = border;
-    config->color_text = text;
-    config->color_selected = selected;
-    config->color_busy = busy;
+void ui_pin_config_set_target(ui_pin_config_t*c,pin_source_t s,pin_fun_t f){if(c){c->source=s;c->function=f;if(!supports(c,c->selected_gpio))c->selected_gpio=UINT8_MAX;}}
+void ui_pin_config_set_enabled(ui_pin_config_t*c,bool e){if(c)c->enabled=e;}
+void ui_pin_config_set_excluded_mask(ui_pin_config_t*c,uint32_t m){if(c)c->excluded_gpio_mask=m;}
+void ui_pin_config_set_allowed_mask(ui_pin_config_t*c,uint32_t m){if(c)c->allowed_gpio_mask=m;}
+void ui_pin_config_set_color(ui_pin_config_t*c,uint16_t bg,uint16_t border,uint16_t text,uint16_t sel,uint16_t busy){if(c){c->color_bg=bg;c->color_border=border;c->color_text=text;c->color_selected=sel;c->color_busy=busy;}}
+bool ui_pin_config_set_selected(ui_pin_config_t*c,uint8_t g){if(!c)return false;if(g==UINT8_MAX){c->selected_gpio=g;return true;}if(!available(c,g))return false;c->selected_gpio=g;return true;}
+uint8_t ui_pin_config_get_selected(const ui_pin_config_t*c){return c?c->selected_gpio:UINT8_MAX;}
+int16_t ui_pin_config_get_preferred_height(const ui_pin_config_t*c){(void)c;return ROW_H;}
+bool ui_pin_config_process_touch(ui_pin_config_t*c,bool down,int16_t x,int16_t y,uint32_t tick){
+ (void)tick;if(!c||!c->enabled)return false;if(down){if(!c->is_touch_down&&ui_rect_contains_point(&c->rect,x,y)){c->is_touch_down=true;c->is_dragged=false;c->down_x=x;c->down_y=y;return true;}if(c->is_touch_down&&(abs(x-c->down_x)>=SLOP||abs(y-c->down_y)>=SLOP))c->is_dragged=true;return c->is_touch_down;}if(!c->is_touch_down)return false;bool open=!c->is_dragged&&ui_rect_contains_point(&c->rect,x,y);c->is_touch_down=false;c->is_dragged=false;if(open){c->pending_gpio=c->selected_gpio;size_t n=ui_pin_config_get_candidate_count(c);size_t rows=(n+LIST_COLUMNS-1u)/LIST_COLUMNS;int16_t h=(int16_t)(2*MARGIN+rows*LIST_ROW_H);if(h<c->modal.sv_body.view_rect.h)h=c->modal.sv_body.view_rect.h;c->modal.sv_body.content_h=h;ui_modal_show(&c->modal,c->title,c);}return true;
 }
-
-bool ui_pin_config_set_selected(
-    ui_pin_config_t *config,
-    uint8_t gpio
-)
-{
-    if (config == NULL) {
-        return false;
-    }
-
-    if (gpio == UI_PIN_CONFIG_INVALID_GPIO) {
-        config->selected_gpio = gpio;
-        return true;
-    }
-
-    if (!ui_pin_config_is_available(config, gpio)) {
-        return false;
-    }
-
-    config->selected_gpio = gpio;
-    return true;
-}
-
-uint8_t ui_pin_config_get_selected(const ui_pin_config_t *config)
-{
-    return config != NULL
-        ? config->selected_gpio
-        : UI_PIN_CONFIG_INVALID_GPIO;
-}
-
-static bool ui_pin_config_get_cell_rect(
-    const ui_pin_config_t *config,
-    size_t candidate_index,
-    ui_rect_t *out_rect
-)
-{
-    if (config == NULL || out_rect == NULL || config->rect.w <= 0) {
-        return false;
-    }
-
-    int16_t inner_w = (int16_t)(
-        config->rect.w - 2 * UI_PIN_CONFIG_PADDING
-    );
-    int16_t total_gap = (UI_PIN_CONFIG_COLUMNS - 1) *
-                        UI_PIN_CONFIG_CELL_GAP;
-    int16_t cell_w = (int16_t)(
-        (inner_w - total_gap) / UI_PIN_CONFIG_COLUMNS
-    );
-
-    if (cell_w <= 0) {
-        return false;
-    }
-
-    size_t row = candidate_index / UI_PIN_CONFIG_COLUMNS;
-    size_t column = candidate_index % UI_PIN_CONFIG_COLUMNS;
-
-    *out_rect = ui_rect_make(
-        (int16_t)(config->rect.x + UI_PIN_CONFIG_PADDING +
-                  column * (cell_w + UI_PIN_CONFIG_CELL_GAP)),
-        (int16_t)(config->rect.y + UI_PIN_CONFIG_PADDING +
-                  UI_PIN_CONFIG_TITLE_H +
-                  row * (UI_PIN_CONFIG_CELL_H + UI_PIN_CONFIG_CELL_GAP)),
-        cell_w,
-        UI_PIN_CONFIG_CELL_H
-    );
-    return true;
-}
-
-static uint8_t ui_pin_config_hit_gpio(
-    const ui_pin_config_t *config,
-    int16_t x,
-    int16_t y
-)
-{
-    size_t count = ui_pin_config_get_candidate_count(config);
-
-    for (size_t i = 0; i < count; ++i) {
-        const pin_init_t *pin = ui_pin_config_get_candidate(config, i);
-        ui_rect_t cell;
-
-        if (pin != NULL &&
-            ui_pin_config_get_cell_rect(config, i, &cell) &&
-            ui_rect_contains_point(&cell, x, y)) {
-            return pin->gpio;
-        }
-    }
-
-    return UI_PIN_CONFIG_INVALID_GPIO;
-}
-
-bool ui_pin_config_process_touch(
-    ui_pin_config_t *config,
-    bool is_touching,
-    int16_t tx,
-    int16_t ty,
-    uint32_t now_tick
-)
-{
-    (void)now_tick;
-
-    if (config == NULL || !config->enabled) {
-        return false;
-    }
-
-    if (is_touching) {
-        if (!config->is_touch_down) {
-            uint8_t gpio = ui_pin_config_hit_gpio(config, tx, ty);
-            if (gpio != UI_PIN_CONFIG_INVALID_GPIO &&
-                ui_pin_config_is_available(config, gpio)) {
-                config->is_touch_down = true;
-                config->is_dragged = false;
-                config->down_x = tx;
-                config->down_y = ty;
-                config->pressed_gpio = gpio;
-                return true;
-            }
-        }
-        else {
-            int16_t dx = (int16_t)abs(tx - config->down_x);
-            int16_t dy = (int16_t)abs(ty - config->down_y);
-            if (dx >= UI_PIN_CONFIG_TOUCH_SLOP ||
-                dy >= UI_PIN_CONFIG_TOUCH_SLOP) {
-                config->is_dragged = true;
-                config->pressed_gpio = UI_PIN_CONFIG_INVALID_GPIO;
-                return true;
-            }
-        }
-        return false;
-    }
-
-    if (!config->is_touch_down) {
-        return false;
-    }
-
-    uint8_t pressed_gpio = config->pressed_gpio;
-    bool choose = !config->is_dragged &&
-                  pressed_gpio != UI_PIN_CONFIG_INVALID_GPIO &&
-                  ui_pin_config_is_available(config, pressed_gpio);
-
-    config->is_touch_down = false;
-    config->is_dragged = false;
-    config->pressed_gpio = UI_PIN_CONFIG_INVALID_GPIO;
-
-    if (!choose) {
-        return true;
-    }
-
-    bool changed = config->selected_gpio != pressed_gpio;
-    config->selected_gpio = pressed_gpio;
-
-    if (changed && config->on_changed != NULL) {
-        config->on_changed(config, pressed_gpio, config->user_data);
-    }
-
-    return true;
-}
-
-void ui_pin_config_draw(
-    ui_tile_t *tile,
-    const ui_pin_config_t *config
-)
-{
-    if (tile == NULL || config == NULL) {
-        return;
-    }
-
-    ui_draw_fill_rect(tile, &config->rect, config->color_bg);
-    ui_draw_rect(tile, &config->rect, config->color_border);
-
-    if (config->title != NULL) {
-        ui_draw_string(
-            tile,
-            (int16_t)(config->rect.x + UI_PIN_CONFIG_PADDING),
-            (int16_t)(config->rect.y + UI_PIN_CONFIG_PADDING),
-            config->title,
-            FONT_16,
-            config->color_text,
-            config->color_bg
-        );
-    }
-
-    size_t count = ui_pin_config_get_candidate_count(config);
-
-    for (size_t i = 0; i < count; ++i) {
-        const pin_init_t *pin = ui_pin_config_get_candidate(config, i);
-        ui_rect_t cell;
-
-        if (pin == NULL ||
-            !ui_pin_config_get_cell_rect(config, i, &cell)) {
-            continue;
-        }
-
-        bool available = ui_pin_config_is_available(config, pin->gpio);
-        bool selected = pin->gpio == config->selected_gpio;
-        bool pressed = pin->gpio == config->pressed_gpio;
-
-        uint16_t cell_bg = !available
-            ? config->color_busy
-            : ((selected || pressed)
-                ? config->color_selected
-                : 0xFFFF);
-
-        ui_draw_fill_rect(tile, &cell, cell_bg);
-        ui_draw_rect(tile, &cell, config->color_border);
-
-        /* GPxx均为ASCII，FONT_16下每个字符宽约8像素。 */
-        int16_t text_w = (int16_t)(strlen(pin->label) * 8u);
-        int16_t text_x = (int16_t)(cell.x + (cell.w - text_w) / 2);
-        int16_t text_y = (int16_t)(cell.y + (cell.h - 16) / 2);
-
-        ui_draw_string(
-            tile,
-            text_x,
-            text_y,
-            pin->label,
-            FONT_16,
-            available ? config->color_text : 0x8410,
-            cell_bg
-        );
-    }
-}
+void ui_pin_config_draw(ui_tile_t*t,const ui_pin_config_t*c){if(!t||!c)return;ui_draw_fill_rect(t,&c->rect,c->color_bg);ui_draw_rect(t,&c->rect,c->color_border);if(c->title)ui_draw_string(t,c->rect.x+10,c->rect.y+14,c->title,FONT_16,c->color_text,c->color_bg);char s[20];if(c->selected_gpio==UINT8_MAX)strcpy(s,"Not selected >");else snprintf(s,sizeof(s),"GP%u >",c->selected_gpio);ui_draw_string(t,c->rect.x+c->rect.w-112,c->rect.y+14,s,FONT_16,c->color_text,c->color_bg);}
+bool ui_pin_config_process_modal_touch(ui_pin_config_t*c,bool d,int16_t x,int16_t y,uint32_t tick){return c&&c->modal.is_open?ui_modal_process_touch(&c->modal,d,x,y,tick):false;}
+void ui_pin_config_draw_modal(ui_tile_t*t,ui_pin_config_t*c){if(c)ui_modal_draw(t,&c->modal);}

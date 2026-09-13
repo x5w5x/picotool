@@ -7,6 +7,7 @@
 
 #include "ui_geometry.h"
 #include "ui_tile.h"
+#include "ui_modal.h"
 #include "pin_manager.h"
 
 #ifdef __cplusplus
@@ -36,6 +37,7 @@ struct ui_pin_config
 
     const char *title;
     uint8_t selected_gpio;
+    uint8_t pending_gpio;
     uint8_t pressed_gpio;
     uint32_t allowed_gpio_mask;
     uint32_t excluded_gpio_mask;
@@ -54,6 +56,7 @@ struct ui_pin_config
 
     ui_pin_config_changed_cb_t on_changed;
     void *user_data;
+    ui_modal_t modal;
 };
 
 void ui_pin_config_init(
@@ -126,6 +129,8 @@ void ui_pin_config_draw(
     ui_tile_t *tile,
     const ui_pin_config_t *config
 );
+bool ui_pin_config_process_modal_touch(ui_pin_config_t *config, bool is_touching, int16_t tx, int16_t ty, uint32_t now_tick);
+void ui_pin_config_draw_modal(ui_tile_t *tile, ui_pin_config_t *config);
 
 #ifdef __cplusplus
 }

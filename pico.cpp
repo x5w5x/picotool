@@ -46,6 +46,7 @@
 #include "app_loader.h"
 #include "app_settings.h"
 #include "app_uart.h"
+#include "app_dap.h"
 
 #define LED_PIN PICO_DEFAULT_LED_PIN
 
@@ -162,6 +163,7 @@ void app_ui_custom_init(void)
 
  
     app_manager_register(&g_app_mgr, app_uart_get_instance());
+    app_manager_register(&g_app_mgr, app_dap_get_instance());
     ui_status_bar_init(&g_status_bar, 0, 0, LCD_WIDTH, 32, "多功能嵌入式终端", on_status_bar_click);
 
     // 4. 初始化更新按键 (X:54, Y:280, W:75, H:36)
