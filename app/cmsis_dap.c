@@ -2,12 +2,21 @@
 #include "fun_pio_swd.h"
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
+#include "hardware/clocks.h"
 #include "hardware/structs/sio.h"
 #include <string.h>
+
+#define PIN_PIO_SWCLK 4
+#define PIN_PIO_SWDIO 5
 
 #define PIN_SWCLK           2   // Pico GP2 (Pin 4) -> 目标 SWCLK
 #define PIN_SWDIO           3   // Pico GP3 (Pin 5) -> 目标 SWDIO
 
+#undef PIN_SWCLK
+#undef PIN_SWDIO
+/* CMSIS-DAP的PIO和软件回退始终使用同一物理引脚。 */
+#define PIN_SWCLK           4
+#define PIN_SWDIO           5
 #define SWCLK_HIGH()        sio_hw->gpio_set = (1u << PIN_SWCLK)
 #define SWCLK_LOW()         sio_hw->gpio_clr = (1u << PIN_SWCLK)
 #define SWDIO_HIGH()        sio_hw->gpio_set = (1u << PIN_SWDIO)
@@ -17,6 +26,18 @@
 volatile bool     g_dap_enabled        = false;
 volatile uint32_t g_dap_packet_counter = 0;
 volatile uint32_t g_dap_cur_clock_hz   = 5000000;
+volatile uint32_t g_dap_pio_transfer_count = 0;
+volatile uint32_t g_dap_pio_fallback_count = 0;
+volatile uint8_t  g_dap_pio_last_request = 0;
+volatile uint8_t  g_dap_pio_last_ack = 0;
+volatile uint8_t  g_dap_pio_last_stage = 0;
+volatile uint32_t g_dap_command_count = 0;
+volatile uint8_t  g_dap_last_command = 0;
+volatile uint8_t  g_dap_command_busy = 0;
+volatile uint32_t g_dap_pio_read_count = 0;
+volatile uint32_t g_dap_pio_write_count = 0;
+volatile uint32_t g_dap_pio_actual_clock_hz = 0;
+volatile uint8_t  g_dap_pio_active = 0;
 
 static volatile uint32_t s_dap_delay_cnt = 6;
 static uint8_t           s_idle_cycles   = 0;
@@ -25,11 +46,13 @@ static uint16_t          s_match_retry   = 8192;
 static uint8_t           s_nreset_pin    = 1;
 static uint32_t          s_match_mask    = 0xFFFFFFFF;
 /* 当前仍默认使用软件 SWD。PIO 后端接口完成后，只需切换此变量即可。 */
-static cmsis_dap_backend_t s_backend = CMSIS_DAP_BACKEND_SOFTWARE;
+static cmsis_dap_backend_t s_backend = CMSIS_DAP_BACKEND_PIO;
+static fun_pio_swd_t s_pio_swd;
 static uint8_t dap_backend_transfer_word(uint8_t req, uint32_t *data);
 
 void cmsis_dap_set_backend(cmsis_dap_backend_t backend)
 {
+    if (s_pio_swd.opened) fun_pio_swd_close(&s_pio_swd);
     /* PIO 尚未覆盖完整 CMSIS-DAP 传输，暂不允许半成品后端接管 USB。 */
     s_backend = (backend == CMSIS_DAP_BACKEND_PIO)
                     ? CMSIS_DAP_BACKEND_PIO : CMSIS_DAP_BACKEND_SOFTWARE;
@@ -84,7 +107,7 @@ static inline uint8_t dap_gen_req(uint8_t dap_req) {
     return req;
 }
 
-static uint8_t dap_swd_transfer_word(uint8_t req, uint32_t *data) {
+static uint8_t dap_software_transfer_word(uint8_t req, uint32_t *data) {
     uint8_t ack = 0;
     uint8_t p = 0;
 
@@ -141,6 +164,68 @@ static uint8_t dap_swd_transfer_word(uint8_t req, uint32_t *data) {
     return ack;
 }
 
+static uint8_t dap_backend_transfer_word(uint8_t req, uint32_t *data)
+{
+    if (s_backend == CMSIS_DAP_BACKEND_PIO) {
+        ++g_dap_pio_transfer_count;
+        g_dap_pio_last_request = req;
+        g_dap_pio_last_stage = 1u; /* 准备PIO后端 */
+        if (!s_pio_swd.opened) {
+            fun_pio_swd_init(&s_pio_swd);
+            /* Keil已经通过SWJ_Sequence建立会话，这里只接管线路，不再复位目标。 */
+            if (!fun_pio_swd_open_session(&s_pio_swd,
+                                          pio_manager_get_default(),
+                                          PIN_PIO_SWCLK, PIN_PIO_SWDIO,
+                                          g_dap_cur_clock_hz, false)) {
+                g_dap_pio_last_ack = 7u;
+                g_dap_pio_last_stage = 5u; /* PIO资源/初始化失败 */
+                return 7u;
+            }
+        }
+        bool read = (req & (1u << 2)) != 0u;
+        uint8_t ack = 7u;
+        bool ap = (req & (1u << 1)) != 0u;
+        /* SWD request中的A2/A3位于bit3/bit4，寄存器地址需要右移一位。 */
+        uint8_t address = (uint8_t)((req >> 1) & 0x0Cu);
+        g_dap_pio_last_stage = 2u; /* 正在执行PIO事务 */
+        bool ok = read
+            ? fun_pio_swd_read_register(&s_pio_swd, ap, address, data, &ack)
+            : fun_pio_swd_write_register(&s_pio_swd, ap, address,
+                                          data ? *data : 0u, &ack);
+        g_dap_pio_active = s_pio_swd.opened ? 1u : 0u;
+        if (s_pio_swd.opened && s_pio_swd.clock_hz) {
+            float divider = (float)clock_get_hz(clk_sys) /
+                            ((float)s_pio_swd.clock_hz * 2.0f);
+            if (divider < 1.0f) divider = 1.0f;
+            uint32_t divider256 = (uint32_t)(divider * 256.0f + 0.5f);
+            g_dap_pio_actual_clock_hz =
+                (uint32_t)(((uint64_t)clock_get_hz(clk_sys) * 128u) /
+                           divider256);
+        } else {
+            g_dap_pio_actual_clock_hz = 0u;
+        }
+        if (read) ++g_dap_pio_read_count;
+        else ++g_dap_pio_write_count;
+        /* WAIT/FAULT是目标返回的合法SWD响应，交给DAP上层重试或清错。 */
+        g_dap_pio_last_ack = ack;
+        if (ok) {
+            g_dap_pio_last_stage = 3u; /* ACK OK */
+            return ack;
+        }
+        if (ack == 2u || ack == 4u) {
+            g_dap_pio_last_stage = 4u; /* 合法WAIT/FAULT */
+            return ack;
+        }
+        g_dap_pio_last_stage = 6u; /* ACK 7或本地PIO超时 */
+        /* 强制PIO模式：失败保持PIO后端，绝不静默降级。 */
+        /* 不重复已经失败的事务；下一笔DAP事务再由软件后端处理。 */
+        return ack;
+    }
+    return dap_software_transfer_word(req, data);
+}
+
+#define dap_swd_transfer_word dap_backend_transfer_word
+
 static void target_mem_write(uint32_t addr, uint32_t val) {
     uint32_t tmp;
     tmp = 0x00000000; dap_backend_transfer_word(dap_gen_req(0x08), &tmp); // DP SELECT = 0
@@ -154,6 +239,9 @@ static void target_mem_write(uint32_t addr, uint32_t val) {
 
 uint32_t dap_process_command(const uint8_t *req, uint8_t *resp) {
     uint8_t cmd = req[0];
+    ++g_dap_command_count;
+    g_dap_last_command = cmd;
+    g_dap_command_busy = 1u;
     resp[0] = cmd;
     uint32_t resp_len = 1;
 
@@ -212,6 +300,10 @@ uint32_t dap_process_command(const uint8_t *req, uint8_t *resp) {
         }
 
         case ID_DAP_Connect: {
+            if (s_pio_swd.opened) fun_pio_swd_close(&s_pio_swd);
+            s_backend = CMSIS_DAP_BACKEND_PIO;
+            g_dap_pio_active = 0u;
+            g_dap_pio_actual_clock_hz = 0u;
             gpio_init(PIN_SWCLK);
             gpio_init(PIN_SWDIO);
             gpio_set_dir(PIN_SWCLK, GPIO_OUT);
@@ -231,6 +323,7 @@ uint32_t dap_process_command(const uint8_t *req, uint8_t *resp) {
         }
 
         case ID_DAP_Disconnect: {
+            if (s_pio_swd.opened) fun_pio_swd_close(&s_pio_swd);
             gpio_set_dir(PIN_SWCLK, GPIO_IN);
             gpio_set_dir(PIN_SWDIO, GPIO_IN);
             resp[1] = DAP_OK;
@@ -239,6 +332,7 @@ uint32_t dap_process_command(const uint8_t *req, uint8_t *resp) {
         }
 
         case ID_DAP_SWJ_Pins: {
+            if (s_pio_swd.opened) fun_pio_swd_close(&s_pio_swd);
             uint8_t pin_val = req[1];
             uint8_t pin_sel = req[2];
             uint32_t wait_us = req[3] | (req[4] << 8) | (req[5] << 16) | (req[6] << 24);
@@ -271,6 +365,8 @@ uint32_t dap_process_command(const uint8_t *req, uint8_t *resp) {
         case ID_DAP_SWJ_Clock: {
             uint32_t clk_hz = req[1] | (req[2] << 8) | (req[3] << 16) | (req[4] << 24);
             g_dap_cur_clock_hz = clk_hz;
+            if (s_pio_swd.opened && clk_hz != 0u)
+                fun_pio_swd_set_clock(&s_pio_swd, clk_hz);
             if (clk_hz >= 10000000)     s_dap_delay_cnt = 2;  // ~10MHz
             else if (clk_hz >= 5000000) s_dap_delay_cnt = 6;  // ~5MHz
             else if (clk_hz >= 2000000) s_dap_delay_cnt = 16; // ~2.5MHz
@@ -282,6 +378,7 @@ uint32_t dap_process_command(const uint8_t *req, uint8_t *resp) {
         }
 
         case ID_DAP_SWJ_Sequence: {
+            if (s_pio_swd.opened) fun_pio_swd_close(&s_pio_swd);
             uint16_t bit_cnt = req[1] ? req[1] : 256;
             const uint8_t *p_data = &req[2];
             swdio_out();
@@ -636,16 +733,6 @@ uint32_t dap_process_command(const uint8_t *req, uint8_t *resp) {
             break;
     }
 
+    g_dap_command_busy = 0u;
     return resp_len;
-}
-
-/* CMSIS-DAP 统一传输入口。
- * 目前 PIO 后端尚未实现完整的 AP/DP 传输，因此继续走已验证的软件实现；
- * 后续只需在这里根据 s_backend 分派，不需要修改上层 Transfer/Block 逻辑。 */
-static uint8_t dap_backend_transfer_word(uint8_t req, uint32_t *data)
-{
-    if (s_backend == CMSIS_DAP_BACKEND_PIO) {
-        /* 保留切换点：PIO 支持完整传输后在此调用 fun_pio_swd_transfer()。 */
-    }
-    return dap_swd_transfer_word(req, data);
 }

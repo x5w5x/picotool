@@ -51,6 +51,18 @@ typedef enum {
 void cmsis_dap_set_backend(cmsis_dap_backend_t backend);
 cmsis_dap_backend_t cmsis_dap_get_backend(void);
 extern volatile uint32_t g_dap_cur_clock_hz;
+extern volatile uint32_t g_dap_pio_transfer_count;
+extern volatile uint32_t g_dap_pio_fallback_count;
+extern volatile uint8_t g_dap_pio_last_request;
+extern volatile uint8_t g_dap_pio_last_ack;
+extern volatile uint8_t g_dap_pio_last_stage;
+extern volatile uint32_t g_dap_command_count;
+extern volatile uint8_t g_dap_last_command;
+extern volatile uint8_t g_dap_command_busy;
+extern volatile uint32_t g_dap_pio_read_count;
+extern volatile uint32_t g_dap_pio_write_count;
+extern volatile uint32_t g_dap_pio_actual_clock_hz;
+extern volatile uint8_t g_dap_pio_active;
 
 // 协议解析分发主函数[cite: 6, 14, 18]
 uint32_t dap_process_command(const uint8_t *req, uint8_t *resp);

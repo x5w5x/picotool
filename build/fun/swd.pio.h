@@ -13,37 +13,47 @@
 // -------- //
 
 #define swd_read_wrap_target 0
-#define swd_read_wrap 18
+#define swd_read_wrap 28
 #define swd_read_pio_version 0
 
 static const uint16_t swd_read_program_instructions[] = {
             //     .wrap_target
     0x90a0, //  0: pull   block           side 1
-    0xf027, //  1: set    x, 7            side 1
-    0x6001, //  2: out    pins, 1         side 0
-    0x1042, //  3: jmp    x--, 2          side 1
-    0xe080, //  4: set    pindirs, 0      side 0
-    0xb042, //  5: nop                    side 1
-    0xe022, //  6: set    x, 2            side 0
-    0x5001, //  7: in     pins, 1         side 1
-    0x0047, //  8: jmp    x--, 7          side 0
-    0x8020, //  9: push   block           side 0
-    0xe03f, // 10: set    x, 31           side 0
-    0x5001, // 11: in     pins, 1         side 1
-    0x004b, // 12: jmp    x--, 11         side 0
-    0x8020, // 13: push   block           side 0
-    0x5001, // 14: in     pins, 1         side 1
-    0x8020, // 15: push   block           side 0
-    0xa042, // 16: nop                    side 0
-    0xf081, // 17: set    pindirs, 1      side 1
-    0xf001, // 18: set    pins, 1         side 1
+    0xf001, //  1: set    pins, 1         side 1
+    0xf027, //  2: set    x, 7            side 1
+    0x6001, //  3: out    pins, 1         side 0
+    0x1043, //  4: jmp    x--, 3          side 1
+    0xf080, //  5: set    pindirs, 0      side 1
+    0xa042, //  6: nop                    side 0
+    0xb042, //  7: nop                    side 1
+    0xe022, //  8: set    x, 2            side 0
+    0x5001, //  9: in     pins, 1         side 1
+    0x0049, // 10: jmp    x--, 9          side 0
+    0x8020, // 11: push   block           side 0
+    0x80a0, // 12: pull   block           side 0
+    0x6021, // 13: out    x, 1            side 0
+    0x0035, // 14: jmp    !x, 21          side 0
+    0xe03f, // 15: set    x, 31           side 0
+    0x5001, // 16: in     pins, 1         side 1
+    0x0050, // 17: jmp    x--, 16         side 0
+    0x8020, // 18: push   block           side 0
+    0x5001, // 19: in     pins, 1         side 1
+    0x8020, // 20: push   block           side 0
+    0xa042, // 21: nop                    side 0
+    0xb042, // 22: nop                    side 1
+    0xf081, // 23: set    pindirs, 1      side 1
+    0xf000, // 24: set    pins, 0         side 1
+    0xe02a, // 25: set    x, 10           side 0
+    0xb042, // 26: nop                    side 1
+    0x005a, // 27: jmp    x--, 26         side 0
+    0xb042, // 28: nop                    side 1
             //     .wrap
 };
 
 #if !PICO_NO_HARDWARE
 static const struct pio_program swd_read_program = {
     .instructions = swd_read_program_instructions,
-    .length = 19,
+    .length = 29,
     .origin = -1,
     .pio_version = swd_read_pio_version,
 #if PICO_PIO_VERSION > 0
@@ -54,6 +64,64 @@ static const struct pio_program swd_read_program = {
 static inline pio_sm_config swd_read_program_get_default_config(uint offset) {
     pio_sm_config c = pio_get_default_sm_config();
     sm_config_set_wrap(&c, offset + swd_read_wrap_target, offset + swd_read_wrap);
+    sm_config_set_sideset(&c, 1, false, false);
+    return c;
+}
+#endif
+
+// --------- //
+// swd_write //
+// --------- //
+
+#define swd_write_wrap_target 0
+#define swd_write_wrap 25
+#define swd_write_pio_version 0
+
+static const uint16_t swd_write_program_instructions[] = {
+            //     .wrap_target
+    0x90a0, //  0: pull   block           side 1
+    0xf001, //  1: set    pins, 1         side 1
+    0xf027, //  2: set    x, 7            side 1
+    0x6001, //  3: out    pins, 1         side 0
+    0x1043, //  4: jmp    x--, 3          side 1
+    0xf080, //  5: set    pindirs, 0      side 1
+    0xa042, //  6: nop                    side 0
+    0xb042, //  7: nop                    side 1
+    0xe022, //  8: set    x, 2            side 0
+    0x5001, //  9: in     pins, 1         side 1
+    0x0049, // 10: jmp    x--, 9          side 0
+    0x8020, // 11: push   block           side 0
+    0xb042, // 12: nop                    side 1
+    0xf081, // 13: set    pindirs, 1      side 1
+    0x90a0, // 14: pull   block           side 1
+    0xf03f, // 15: set    x, 31           side 1
+    0x6001, // 16: out    pins, 1         side 0
+    0x1050, // 17: jmp    x--, 16         side 1
+    0x90a0, // 18: pull   block           side 1
+    0x6001, // 19: out    pins, 1         side 0
+    0xb042, // 20: nop                    side 1
+    0xf000, // 21: set    pins, 0         side 1
+    0xe02a, // 22: set    x, 10           side 0
+    0xb042, // 23: nop                    side 1
+    0x0057, // 24: jmp    x--, 23         side 0
+    0xb042, // 25: nop                    side 1
+            //     .wrap
+};
+
+#if !PICO_NO_HARDWARE
+static const struct pio_program swd_write_program = {
+    .instructions = swd_write_program_instructions,
+    .length = 26,
+    .origin = -1,
+    .pio_version = swd_write_pio_version,
+#if PICO_PIO_VERSION > 0
+    .used_gpio_ranges = 0x0
+#endif
+};
+
+static inline pio_sm_config swd_write_program_get_default_config(uint offset) {
+    pio_sm_config c = pio_get_default_sm_config();
+    sm_config_set_wrap(&c, offset + swd_write_wrap_target, offset + swd_write_wrap);
     sm_config_set_sideset(&c, 1, false, false);
     return c;
 }

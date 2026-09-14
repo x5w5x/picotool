@@ -20,6 +20,8 @@
 static const char *s_dap_tabs[] = { "状态", "配置", "终端" };
 #define DAP_TAB_COUNT ((uint8_t)(sizeof(s_dap_tabs) / sizeof(s_dap_tabs[0])))
 #define DAP_CONTENT_H 420
+#define DAP_PIO_SWCLK_PIN 4u
+#define DAP_PIO_SWDIO_PIN 5u
 
 typedef struct {
     /* 必须放在第一个字段，app_manager 依赖它获取脏矩形。 */
@@ -33,9 +35,18 @@ typedef struct {
     ui_dropdown_t pio_clock;
     fun_pio_swd_t pio_swd;
     uint8_t pio_ack;
+    uint8_t pio_ctrl_ack;
+    bool pio_powered;
     bool connected;
     uint32_t dp_id, cpuid, dbg_id, flash_size;
     uint32_t pio_ctrl_stat;
+    uint32_t last_dap_transfer_count;
+    uint32_t last_dap_fallback_count;
+    uint8_t last_dap_ack;
+    uint8_t last_dap_stage;
+    uint32_t last_dap_command_count;
+    uint8_t last_dap_command;
+    uint8_t last_dap_command_busy;
 } dap_data_t;
 
 static const char *s_pio_clock_items[] = { "500 kHz", "1 MHz", "2 MHz", "5 MHz", "10 MHz" };
@@ -57,23 +68,45 @@ static void dap_pio_probe_click(ui_btn_t *btn, void *user_data)
     (void)btn;
     dap_data_t *data = (dap_data_t *)user_data;
     if (!data) return;
-    if (data->pio_swd.opened) fun_pio_swd_close(&data->pio_swd);
+    cmsis_dap_set_backend(CMSIS_DAP_BACKEND_PIO);
     data->dp_id = 0;
     data->pio_ctrl_stat = 0;
     data->pio_ack = 0;
-    bool opened = fun_pio_swd_open_auto(&data->pio_swd,
-                                        pio_manager_get_default(),
-                                        FUN_SWD_SWCLK_PIN,
-                                        FUN_SWD_SWDIO_PIN,
-                                        10000000u);
+    data->pio_ctrl_ack = 0;
+    data->pio_powered = false;
+    data->cpuid = 0;
+    data->dbg_id = 0;
+    data->flash_size = 0;
+    /*
+     * PIO 当前只负责已经验证过的 DP 读取。每次探测前先完全释放
+     * 状态机，再用软件 SWD 执行线路复位、清 sticky error 和 DP
+     * 上电握手，避免上一次 PIO 事务留下的线路状态影响下一次探测。
+     */
+    bool opened = data->pio_swd.opened
+        ? fun_pio_swd_recover(&data->pio_swd)
+        : fun_pio_swd_open_auto(&data->pio_swd,
+                                pio_manager_get_default(),
+                                DAP_PIO_SWCLK_PIN,
+                                DAP_PIO_SWDIO_PIN,
+                                10000000u);
     data->connected = opened && fun_pio_swd_read_dp_idcode(
         &data->pio_swd, &data->dp_id, &data->pio_ack);
     if (data->connected) {
-        uint8_t ctrl_ack = 0;
-        /* 读取 DP CTRL/STAT，确认调试端口不仅能返回 ID，还能正常访问寄存器。 */
-        (void)fun_pio_swd_read_dp_register(&data->pio_swd, 0x04u,
-                                           &data->pio_ctrl_stat, &ctrl_ack);
+        data->pio_powered = fun_pio_swd_power_up(&data->pio_swd);
+        (void)fun_pio_swd_read_dp_register(
+            &data->pio_swd, 0x04u,
+            &data->pio_ctrl_stat, &data->pio_ctrl_ack);
+        if (data->pio_powered) {
+            (void)fun_pio_swd_read_memory32(
+                &data->pio_swd, 0xE000ED00u, &data->cpuid);
+            (void)fun_pio_swd_read_memory32(
+                &data->pio_swd, 0xE0042000u, &data->dbg_id);
+            (void)fun_pio_swd_read_memory32(
+                &data->pio_swd, 0x1FFFF7E0u, &data->flash_size);
+            data->flash_size &= 0xFFFFu;
+        }
     }
+    /* 当前只验证单笔 PIO DP 读取；不要在一次点击中追加第二笔事务。 */
     data->dirty_rect = data->tabview.content_rect;
 }
 
@@ -81,8 +114,11 @@ static void dap_switch_changed(ui_switch_t *sw, bool enabled, void *user_data)
 {
     dap_data_t *data = (dap_data_t *)user_data;
     if (!data) return;
+    if (data->pio_swd.opened) fun_pio_swd_close(&data->pio_swd);
     g_dap_enabled = enabled;
     if (enabled) {
+        /* CMSIS-DAP开启时默认使用PIO后端；失败由后端自动回退软件SWD。 */
+        cmsis_dap_set_backend(CMSIS_DAP_BACKEND_PIO);
         gpio_init(FUN_SWD_SWCLK_PIN);
         gpio_init(FUN_SWD_SWDIO_PIN);
         gpio_set_dir(FUN_SWD_SWCLK_PIN, GPIO_OUT);
@@ -92,6 +128,7 @@ static void dap_switch_changed(ui_switch_t *sw, bool enabled, void *user_data)
         gpio_pull_up(FUN_SWD_SWDIO_PIN);
         tud_connect();
     } else {
+        cmsis_dap_set_backend(CMSIS_DAP_BACKEND_SOFTWARE);
         tud_disconnect();
         gpio_set_dir(FUN_SWD_SWCLK_PIN, GPIO_IN);
         gpio_set_dir(FUN_SWD_SWDIO_PIN, GPIO_IN);
@@ -105,6 +142,8 @@ static void dap_probe_click(ui_btn_t *btn, void *user_data)
     (void)btn;
     dap_data_t *data = (dap_data_t *)user_data;
     if (!data) return;
+    if (data->pio_swd.opened) fun_pio_swd_close(&data->pio_swd);
+    cmsis_dap_set_backend(CMSIS_DAP_BACKEND_SOFTWARE);
     data->connected = fun_swd_init();
     if (data->connected) {
         data->dp_id = fun_swd_read(0xE000EDF0u);
@@ -159,12 +198,50 @@ static void dap_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
                  data->pio_swd.opened ? data->pio_swd.pio_index : 0u,
                  (unsigned long)data->pio_swd.clock_hz);
         ui_draw_string(tile, x, y + 164, text, FONT_16, 0x632C, 0xFFFF);
-        snprintf(text, sizeof(text), "PIO CTRL: %08lX",
-                 (unsigned long)data->pio_ctrl_stat);
+        snprintf(text, sizeof(text), "PIO CTRL: %08lX ACK:%u",
+                 (unsigned long)data->pio_ctrl_stat,
+                 data->pio_ctrl_ack);
         ui_draw_string(tile, x, y + 188, text, FONT_16, 0x632C, 0xFFFF);
+        ui_draw_string(tile, x, y + 212,
+                       data->pio_powered ? "PIO POWER: OK" : "PIO POWER: FAIL",
+                       FONT_16, 0x632C, 0xFFFF);
+        snprintf(text, sizeof(text), "WRITE ACK:%u STAGE:%u",
+                 data->pio_swd.last_write_ack,
+                 data->pio_swd.power_stage);
+        ui_draw_string(tile, x, y + 236, text, FONT_16, 0x632C, 0xFFFF);
     } else if (data->tabview.active_tab_idx == 1) {
         ui_draw_string(tile, x, y + 48, "CMSIS-DAP USB", FONT_20, 0x4208, 0xFFFF);
         ui_draw_string(tile, x, y + 82, g_dap_enabled ? "状态: 已开启" : "状态: 已关闭", FONT_16, 0x632C, 0xFFFF);
+        ui_draw_string(tile, x, y + 108,
+                       cmsis_dap_get_backend() == CMSIS_DAP_BACKEND_PIO
+                           ? "SWD后端: PIO" : "SWD后端: 软件",
+                       FONT_16, 0x632C, 0xFFFF);
+        char diag[64];
+        snprintf(diag, sizeof(diag), "DAP TX:%lu FB:%lu",
+                 (unsigned long)g_dap_pio_transfer_count,
+                 (unsigned long)g_dap_pio_fallback_count);
+        ui_draw_string(tile, x, y + 136, diag, FONT_16, 0x632C, 0xFFFF);
+        snprintf(diag, sizeof(diag), "REQ:%02X A:%u S:%u",
+                 g_dap_pio_last_request,
+                 g_dap_pio_last_ack,
+                 g_dap_pio_last_stage);
+        ui_draw_string(tile, x, y + 162, diag, FONT_16, 0x632C, 0xFFFF);
+        snprintf(diag, sizeof(diag), "CMD:%02X N:%lu BUSY:%u",
+                 g_dap_last_command,
+                 (unsigned long)g_dap_command_count,
+                 g_dap_command_busy);
+        ui_draw_string(tile, x, y + 188, diag, FONT_16, 0x632C, 0xFFFF);
+        snprintf(diag, sizeof(diag), "DAP CLOCK:%lu Hz",
+                 (unsigned long)g_dap_cur_clock_hz);
+        ui_draw_string(tile, x, y + 214, diag, FONT_16, 0x632C, 0xFFFF);
+        snprintf(diag, sizeof(diag), "PIO:%s CLK:%lu",
+                 g_dap_pio_active ? "ACTIVE" : "IDLE",
+                 (unsigned long)g_dap_pio_actual_clock_hz);
+        ui_draw_string(tile, x, y + 240, diag, FONT_16, 0x632C, 0xFFFF);
+        snprintf(diag, sizeof(diag), "PIO R:%lu W:%lu",
+                 (unsigned long)g_dap_pio_read_count,
+                 (unsigned long)g_dap_pio_write_count);
+        ui_draw_string(tile, x, y + 266, diag, FONT_16, 0x632C, 0xFFFF);
     }
 }
 
@@ -214,7 +291,28 @@ static void dap_exit(app_t *self)
     self->user_data = NULL;
 }
 static void dap_update(app_t *self, uint32_t now_tick)
-{ (void)self; (void)now_tick; }
+{
+    (void)now_tick;
+    dap_data_t *data = (dap_data_t *)self->user_data;
+    if (!data) return;
+    if (data->last_dap_transfer_count != g_dap_pio_transfer_count ||
+        data->last_dap_fallback_count != g_dap_pio_fallback_count ||
+        data->last_dap_ack != g_dap_pio_last_ack ||
+        data->last_dap_stage != g_dap_pio_last_stage ||
+        data->last_dap_command_count != g_dap_command_count ||
+        data->last_dap_command != g_dap_last_command ||
+        data->last_dap_command_busy != g_dap_command_busy) {
+        data->last_dap_transfer_count = g_dap_pio_transfer_count;
+        data->last_dap_fallback_count = g_dap_pio_fallback_count;
+        data->last_dap_ack = g_dap_pio_last_ack;
+        data->last_dap_stage = g_dap_pio_last_stage;
+        data->last_dap_command_count = g_dap_command_count;
+        data->last_dap_command = g_dap_last_command;
+        data->last_dap_command_busy = g_dap_command_busy;
+        if (data->tabview.active_tab_idx == 0u)
+            data->dirty_rect = data->scroll[0].view_rect;
+    }
+}
 
 static bool dap_process_touch(app_t *self, bool touching, int16_t x,
                               int16_t y, uint32_t tick)

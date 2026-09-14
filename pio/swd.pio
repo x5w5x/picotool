@@ -5,13 +5,18 @@
 ; RX FIFO: ACK first, then 32-bit data, then parity bit
 .wrap_target
     pull block        side 1
+    ; Software SWD leaves SWDIO low after idle. Raise the fixed start bit
+    ; only after a new request arrives, while SWCLK is still high.
+    set pins, 1       side 1
     set x, 7          side 1
 request_loop:
     out pins, 1       side 0
     jmp x-- request_loop side 1
 
-    ; One turnaround cycle: host releases SWDIO, target takes ownership.
-    set pindirs, 0    side 0
+    ; Match the software implementation exactly: release SWDIO while
+    ; SWCLK is still high, then generate one complete turnaround clock.
+    set pindirs, 0    side 1
+    nop               side 0
     nop               side 1
 
     set x, 2          side 0
@@ -19,6 +24,12 @@ ack_loop:
     in pins, 1        side 1
     jmp x-- ack_loop  side 0
     push block        side 0
+
+    ; CPU sends 1 for ACK OK, 0 for WAIT/FAULT. Targets do not drive a
+    ; data phase after non-OK ACK, so skip directly to turnaround.
+    pull block        side 0
+    out x, 1          side 0
+    jmp !x read_finish side 0
 
     set x, 31         side 0
 data_loop:
@@ -29,8 +40,64 @@ data_loop:
     in pins, 1        side 1
     push block        side 0
 
-    ; Turnaround back to host and leave the bus high.
+read_finish:
+    ; Turnaround back to host. Keep SWDIO released for the complete
+    ; low->high turnaround clock, then take ownership without an edge.
     nop               side 0
+    nop               side 1
     set pindirs, 1    side 1
+    ; 与软件SWD一致：事务结束后输出12个SWDIO低电平空闲周期。
+    set pins, 0       side 1
+    ; Eleven complete low/high/low cycles, followed by the final rising
+    ; edge below. This produces exactly 12 idle clocks and ends high.
+    set x, 10         side 0
+idle_loop:
+    nop               side 1
+    jmp x-- idle_loop side 0
+    nop               side 1
+    ; Keep SWDIO low while idle, matching fun_swd_transfer().
+.wrap
+
+; Dedicated SWD write transaction.
+; TX FIFO: request, then (after ACK OK) 32-bit data and one parity bit.
+; RX FIFO: ACK in bits 31:29.
+.program swd_write
+.side_set 1
+.wrap_target
+    pull block        side 1
     set pins, 1       side 1
+    set x, 7          side 1
+write_request_loop:
+    out pins, 1       side 0
+    jmp x-- write_request_loop side 1
+
+    ; Host-to-target turnaround and three ACK bits.
+    set pindirs, 0    side 1
+    nop               side 0
+    nop               side 1
+    set x, 2          side 0
+write_ack_loop:
+    in pins, 1        side 1
+    jmp x-- write_ack_loop side 0
+    push block        side 0
+
+    ; Target-to-host turnaround. The SM waits here until ACK is checked.
+    nop               side 1
+    set pindirs, 1    side 1
+    pull block        side 1
+    set x, 31         side 1
+write_data_loop:
+    out pins, 1       side 0
+    jmp x-- write_data_loop side 1
+    pull block        side 1
+    out pins, 1       side 0
+    nop               side 1
+
+    ; Match the software backend: 12 idle clocks with SWDIO low.
+    set pins, 0       side 1
+    set x, 10         side 0
+write_idle_loop:
+    nop               side 1
+    jmp x-- write_idle_loop side 0
+    nop               side 1
 .wrap

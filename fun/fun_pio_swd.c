@@ -6,6 +6,7 @@
 #include <string.h>
 
 #define PIO_SWD_PROGRAM_NAME "swd_read"
+#define PIO_SWD_WRITE_PROGRAM_NAME "swd_write"
 
 static uint8_t make_request(bool ap, bool read, uint8_t address)
 {
@@ -26,6 +27,27 @@ static uint8_t parity32(uint32_t value)
     return value & 1u;
 }
 
+static bool wait_rx_word(PIO pio, uint8_t sm, uint32_t *word,
+                         uint32_t timeout_us);
+static bool wait_sm_at(PIO pio, uint8_t sm, uint offset,
+                       uint32_t timeout_us);
+static bool ensure_write_sm(fun_pio_swd_t *swd);
+static void restart_read_sm(fun_pio_swd_t *swd);
+static bool pio_read_register(fun_pio_swd_t *swd, bool ap,
+                              uint8_t address, uint32_t *value,
+                              uint8_t *ack);
+static bool pio_write_register(fun_pio_swd_t *swd, bool ap,
+                               uint8_t address, uint32_t value,
+                               uint8_t *ack);
+
+static void restore_read_sm(fun_pio_swd_t *swd)
+{
+    pio_gpio_init(swd->pio, swd->swclk_gpio);
+    pio_gpio_init(swd->pio, swd->swdio_gpio);
+    gpio_pull_up(swd->swdio_gpio);
+    restart_read_sm(swd);
+}
+
 void fun_pio_swd_init(fun_pio_swd_t *swd)
 {
     if (swd) memset(swd, 0, sizeof(*swd));
@@ -33,10 +55,13 @@ void fun_pio_swd_init(fun_pio_swd_t *swd)
 
 static void line_reset_gpio(uint8_t clk, uint8_t io)
 {
+    /* 先预装SIO输出锁存器和方向，再切功能，避免切换瞬间产生低脉冲。 */
+    gpio_put(clk, 1);
+    gpio_put(io, 1);
+    gpio_set_dir(clk, GPIO_OUT);
+    gpio_set_dir(io, GPIO_OUT);
     gpio_set_function(clk, GPIO_FUNC_SIO);
     gpio_set_function(io, GPIO_FUNC_SIO);
-    gpio_set_dir(clk, GPIO_OUT); gpio_set_dir(io, GPIO_OUT);
-    gpio_put(clk, 1); gpio_put(io, 1);
     for (uint16_t i = 0; i < 64; ++i) {
         sleep_us(1); gpio_put(clk, 0); sleep_us(1); gpio_put(clk, 1);
     }
@@ -57,8 +82,71 @@ static void line_reset_gpio(uint8_t clk, uint8_t io)
     gpio_put(io, 1);
 }
 
+static void line_reset_repeated(uint8_t clk, uint8_t io)
+{
+    /* 与已经验证的软件SWD初始化一致，多次复位可恢复中断在半截事务的目标。 */
+    for (uint8_t attempt = 0; attempt < 5u; ++attempt) {
+        line_reset_gpio(clk, io);
+        sleep_ms(2);
+    }
+}
+
+static void restart_read_sm(fun_pio_swd_t *swd)
+{
+    float div = (float)clock_get_hz(clk_sys) /
+                ((float)swd->clock_hz * 2.0f);
+    if (div < 1.0f) div = 1.0f;
+
+    pio_sm_config cfg =
+        swd_read_program_get_default_config(swd->offset);
+    sm_config_set_out_pins(&cfg, swd->swdio_gpio, 1);
+    sm_config_set_set_pins(&cfg, swd->swdio_gpio, 1);
+    sm_config_set_in_pins(&cfg, swd->swdio_gpio);
+    sm_config_set_sideset_pins(&cfg, swd->swclk_gpio);
+    sm_config_set_out_shift(&cfg, true, false, 32);
+    sm_config_set_in_shift(&cfg, true, false, 32);
+    sm_config_set_clkdiv(&cfg, div);
+
+    pio_sm_set_enabled(swd->pio, swd->sm, false);
+    pio_sm_clear_fifos(swd->pio, swd->sm);
+    /* pio_sm_init会重置PC、移位计数器、FIFO状态和时钟分频状态。 */
+    pio_sm_init(swd->pio, swd->sm, swd->offset, &cfg);
+    pio_sm_set_pindirs_with_mask(swd->pio, swd->sm,
+                                 (1u << swd->swclk_gpio) |
+                                 (1u << swd->swdio_gpio),
+                                 (1u << swd->swclk_gpio) |
+                                 (1u << swd->swdio_gpio));
+    pio_sm_set_pins_with_mask(swd->pio, swd->sm,
+                              (1u << swd->swclk_gpio),
+                              (1u << swd->swclk_gpio) |
+                              (1u << swd->swdio_gpio));
+    pio_sm_set_enabled(swd->pio, swd->sm, true);
+}
+
+bool fun_pio_swd_recover(fun_pio_swd_t *swd)
+{
+    if (!swd || !swd->opened) return false;
+    pio_sm_set_enabled(swd->pio, swd->sm, false);
+
+    /* 使用实例自己的引脚恢复线路，避免固定GP2/GP3的软件SWD干扰。 */
+    line_reset_repeated(swd->swclk_gpio, swd->swdio_gpio);
+
+    pio_gpio_init(swd->pio, swd->swclk_gpio);
+    pio_gpio_init(swd->pio, swd->swdio_gpio);
+    gpio_pull_up(swd->swdio_gpio);
+    restart_read_sm(swd);
+    return true;
+}
+
 bool fun_pio_swd_open_auto(fun_pio_swd_t *swd, pio_manager_t *manager,
                            uint8_t clk, uint8_t io, uint32_t hz)
+{
+    return fun_pio_swd_open_session(swd, manager, clk, io, hz, true);
+}
+
+bool fun_pio_swd_open_session(fun_pio_swd_t *swd, pio_manager_t *manager,
+                              uint8_t clk, uint8_t io, uint32_t hz,
+                              bool line_reset)
 {
     if (!swd || !manager || swd->opened || clk >= 30 || io >= 30 ||
         clk == io || hz == 0) return false;
@@ -81,7 +169,7 @@ bool fun_pio_swd_open_auto(fun_pio_swd_t *swd, pio_manager_t *manager,
         sm_config_set_out_shift(&cfg, true, false, 32);
         sm_config_set_in_shift(&cfg, true, false, 32);
         sm_config_set_clkdiv(&cfg, div);
-        line_reset_gpio(clk, io);
+        if (line_reset) line_reset_repeated(clk, io);
         pio_gpio_init(pio, clk); pio_gpio_init(pio, io);
         gpio_pull_up(io);
         pio_sm_set_enabled(pio, sm, false);
@@ -89,7 +177,8 @@ bool fun_pio_swd_open_auto(fun_pio_swd_t *swd, pio_manager_t *manager,
         pio_sm_init(pio, sm, (uint)offset, &cfg);
         pio_sm_set_pindirs_with_mask(pio, sm, (1u << clk) | (1u << io),
                                      (1u << clk) | (1u << io));
-        pio_sm_set_pins_with_mask(pio, sm, (1u << clk) | (1u << io),
+        /* 已验证的事务空闲状态：SWCLK高、SWDIO低。 */
+        pio_sm_set_pins_with_mask(pio, sm, (1u << clk),
                                   (1u << clk) | (1u << io));
         pio_sm_set_enabled(pio, sm, true);
         swd->opened = true; swd->manager = manager; swd->pio = pio;
@@ -103,6 +192,14 @@ bool fun_pio_swd_open_auto(fun_pio_swd_t *swd, pio_manager_t *manager,
 void fun_pio_swd_close(fun_pio_swd_t *swd)
 {
     if (!swd || !swd->opened) return;
+    if (swd->write_opened) {
+        pio_sm_set_enabled(swd->write_pio, swd->write_sm, false);
+        pio_sm_clear_fifos(swd->write_pio, swd->write_sm);
+        pio_manager_release_program(swd->manager, swd->write_pio_index,
+                                    PIO_SWD_WRITE_PROGRAM_NAME);
+        pio_manager_release_sm(swd->manager, swd->write_pio_index,
+                               swd->write_sm);
+    }
     pio_sm_set_enabled(swd->pio, swd->sm, false);
     pio_sm_clear_fifos(swd->pio, swd->sm);
     pio_manager_release_program(swd->manager, swd->pio_index, PIO_SWD_PROGRAM_NAME);
@@ -112,6 +209,34 @@ void fun_pio_swd_close(fun_pio_swd_t *swd)
     gpio_set_dir(swd->swclk_gpio, GPIO_IN);
     gpio_set_dir(swd->swdio_gpio, GPIO_IN);
     fun_pio_swd_init(swd);
+}
+
+static bool ensure_write_sm(fun_pio_swd_t *swd)
+{
+    if (!swd || !swd->opened) return false;
+    if (swd->write_opened) return true;
+
+    for (uint8_t block = 0; block < PIO_BLOCK_COUNT; ++block) {
+        if (block == swd->pio_index) continue;
+        int sm_id = pio_manager_claim_sm_from(
+            swd->manager, block, PIO_SWD_WRITE_PROGRAM_NAME);
+        if (sm_id < 0) continue;
+        uint8_t sm = (uint8_t)(sm_id % PIO_SM_COUNT);
+        int offset = pio_manager_load_program(
+            swd->manager, block, PIO_SWD_WRITE_PROGRAM_NAME,
+            &swd_write_program);
+        if (offset < 0) {
+            pio_manager_release_sm(swd->manager, block, sm);
+            continue;
+        }
+        swd->write_pio = pio_manager_get_hardware(swd->manager, block);
+        swd->write_pio_index = block;
+        swd->write_sm = sm;
+        swd->write_offset = (uint)offset;
+        swd->write_opened = true;
+        return true;
+    }
+    return false;
 }
 
 bool fun_pio_swd_set_clock(fun_pio_swd_t *swd, uint32_t clock_hz)
@@ -133,7 +258,303 @@ bool fun_pio_swd_read_dp_idcode(fun_pio_swd_t *swd, uint32_t *idcode,
 bool fun_pio_swd_read_dp_register(fun_pio_swd_t *swd, uint8_t address,
                                   uint32_t *value, uint8_t *ack)
 {
+    return pio_read_register(swd, false, address, value, ack);
+}
+
+bool fun_pio_swd_read_register(fun_pio_swd_t *swd, bool ap, uint8_t address,
+                               uint32_t *value, uint8_t *ack)
+{
+    return pio_read_register(swd, ap, address, value, ack);
+}
+
+static bool pio_read_register(fun_pio_swd_t *swd, bool ap,
+                              uint8_t address, uint32_t *value,
+                              uint8_t *ack)
+{
     if (!swd || !swd->opened || !value || (address & 3u)) return false;
+    *value = 0u;
+    pio_sm_clear_fifos(swd->pio, swd->sm);
+    pio_sm_put_blocking(swd->pio, swd->sm,
+                        make_request(ap, true, address));
+    uint32_t word = 0u;
+    if (!wait_rx_word(swd->pio, swd->sm, &word, 5000u)) {
+        (void)fun_pio_swd_recover(swd);
+        if (ack) *ack = 7u;
+        return false;
+    }
+    uint8_t response = (uint8_t)(word >> 29);
+    /* 告诉PIO是否存在数据阶段；WAIT/FAULT时必须直接收尾。 */
+    pio_sm_put_blocking(swd->pio, swd->sm, response == 1u ? 1u : 0u);
+    if (response != 1u) {
+        if (!wait_sm_at(swd->pio, swd->sm, swd->offset, 5000u)) {
+            (void)fun_pio_swd_recover(swd);
+            response = 7u;
+        }
+        if (ack) *ack = response;
+        return false;
+    }
+    uint32_t raw_value = 0u, parity_word = 0u;
+    if (!wait_rx_word(swd->pio, swd->sm, &raw_value, 5000u) ||
+        !wait_rx_word(swd->pio, swd->sm, &parity_word, 5000u)) {
+        (void)fun_pio_swd_recover(swd);
+        if (ack) *ack = 7u;
+        return false;
+    }
+    /* 等待12个空闲周期真正完成并回到pull，再允许上层结束本次探测。 */
+    if (!wait_sm_at(swd->pio, swd->sm, swd->offset, 5000u)) {
+        (void)fun_pio_swd_recover(swd);
+        if (ack) *ack = 7u;
+        return false;
+    }
+    if (response == 1u &&
+        ((uint8_t)(parity_word >> 31) != parity32(raw_value)))
+        response = 4u;
+    if (ack) *ack = response;
+    if (response != 1u) return false;
+    *value = raw_value;
+    return true;
+}
+
+static bool wait_rx_word(PIO pio, uint8_t sm, uint32_t *word,
+                         uint32_t timeout_us)
+{
+    absolute_time_t deadline = make_timeout_time_us(timeout_us);
+    while (pio_sm_is_rx_fifo_empty(pio, sm)) {
+        if (absolute_time_diff_us(get_absolute_time(), deadline) <= 0)
+            return false;
+        tight_loop_contents();
+    }
+    *word = pio_sm_get(pio, sm);
+    return true;
+}
+
+static bool wait_sm_at(PIO pio, uint8_t sm, uint offset,
+                       uint32_t timeout_us)
+{
+    absolute_time_t deadline = make_timeout_time_us(timeout_us);
+    while (pio_sm_get_pc(pio, sm) != offset) {
+        if (absolute_time_diff_us(get_absolute_time(), deadline) <= 0)
+            return false;
+        tight_loop_contents();
+    }
+    return true;
+}
+
+uint8_t fun_pio_swd_transfer(fun_pio_swd_t *swd, uint8_t request,
+                             uint32_t *data)
+{
+    if (!swd || !swd->opened || !data) return 7u;
+
+    bool read = (request & (1u << 2)) != 0u;
+    uint8_t active_sm = swd->sm;
+    uint active_offset = swd->offset;
+
+    pio_sm_set_enabled(swd->pio, active_sm, false);
+    pio_sm_clear_fifos(swd->pio, active_sm);
+    pio_sm_restart(swd->pio, active_sm);
+    pio_sm_exec(swd->pio, active_sm, pio_encode_jmp(active_offset));
+    pio_sm_put(swd->pio, active_sm, request);
+    pio_sm_set_enabled(swd->pio, active_sm, true);
+
+    uint32_t fifo_word = 0u;
+    if (!wait_rx_word(swd->pio, active_sm, &fifo_word, 5000u)) {
+        (void)fun_pio_swd_recover(swd);
+        return 7u;
+    }
+    uint8_t response = (uint8_t)(fifo_word >> 29);
+    if (response != 1u) {
+        pio_sm_set_enabled(swd->pio, active_sm, false);
+        pio_sm_clear_fifos(swd->pio, active_sm);
+        pio_sm_restart(swd->pio, active_sm);
+        pio_sm_exec(swd->pio, active_sm, pio_encode_jmp(active_offset));
+        pio_sm_set_enabled(swd->pio, active_sm, true);
+        return response;
+    }
+    pio_sm_put_blocking(swd->pio, active_sm, read ? 0u : 1u);
+
+    {
+        if (read) {
+            uint32_t raw_value = 0u;
+            uint32_t parity_word = 0u;
+            if (!wait_rx_word(swd->pio, active_sm, &raw_value, 5000u) ||
+                !wait_rx_word(swd->pio, active_sm, &parity_word, 5000u)) {
+                (void)fun_pio_swd_recover(swd);
+                return 7u;
+            }
+            uint8_t received_parity = (uint8_t)(parity_word >> 31);
+            *data = raw_value;
+            if (received_parity != parity32(raw_value)) response = 4u;
+        } else {
+            pio_sm_put_blocking(swd->pio, active_sm, *data);
+            pio_sm_put_blocking(swd->pio, active_sm, parity32(*data));
+        }
+    }
+
+    while (!pio_sm_is_tx_fifo_empty(swd->pio, active_sm)) tight_loop_contents();
+    if (!wait_sm_at(swd->pio, active_sm, active_offset, 5000u)) {
+        (void)fun_pio_swd_recover(swd);
+        return 7u;
+    }
+    pio_sm_set_enabled(swd->pio, active_sm, false);
+
+    /* 默认恢复读状态机并停在pull等待，便于下一次事务。 */
+    pio_sm_clear_fifos(swd->pio, swd->sm);
+    pio_sm_restart(swd->pio, swd->sm);
+    pio_sm_exec(swd->pio, swd->sm, pio_encode_jmp(swd->offset));
+    pio_sm_set_enabled(swd->pio, swd->sm, true);
+    return response;
+}
+
+bool fun_pio_swd_write_dp_register(fun_pio_swd_t *swd, uint8_t address,
+                                   uint32_t value, uint8_t *ack)
+{
+    return pio_write_register(swd, false, address, value, ack);
+}
+
+bool fun_pio_swd_write_register(fun_pio_swd_t *swd, bool ap, uint8_t address,
+                                uint32_t value, uint8_t *ack)
+{
+    return pio_write_register(swd, ap, address, value, ack);
+}
+
+static bool pio_write_register(fun_pio_swd_t *swd, bool ap,
+                               uint8_t address, uint32_t value,
+                               uint8_t *ack)
+{
+    if (!swd || !swd->opened || (address & 3u)) return false;
+    if (!ensure_write_sm(swd)) {
+        if (ack) *ack = 7u;
+        return false;
+    }
+
+    float div = (float)clock_get_hz(clk_sys) /
+                ((float)swd->clock_hz * 2.0f);
+    if (div < 1.0f) div = 1.0f;
+    pio_sm_config cfg =
+        swd_write_program_get_default_config(swd->write_offset);
+    sm_config_set_out_pins(&cfg, swd->swdio_gpio, 1);
+    sm_config_set_set_pins(&cfg, swd->swdio_gpio, 1);
+    sm_config_set_in_pins(&cfg, swd->swdio_gpio);
+    sm_config_set_sideset_pins(&cfg, swd->swclk_gpio);
+    sm_config_set_out_shift(&cfg, true, false, 32);
+    sm_config_set_in_shift(&cfg, true, false, 32);
+    sm_config_set_clkdiv(&cfg, div);
+
+    pio_sm_set_enabled(swd->pio, swd->sm, false);
+    pio_sm_set_enabled(swd->write_pio, swd->write_sm, false);
+    pio_sm_clear_fifos(swd->write_pio, swd->write_sm);
+    pio_sm_init(swd->write_pio, swd->write_sm,
+                swd->write_offset, &cfg);
+    pio_sm_set_pins_with_mask(
+        swd->write_pio, swd->write_sm,
+        (1u << swd->swclk_gpio) | (1u << swd->swdio_gpio),
+        (1u << swd->swclk_gpio) | (1u << swd->swdio_gpio));
+    pio_sm_set_pindirs_with_mask(
+        swd->write_pio, swd->write_sm,
+        (1u << swd->swclk_gpio) | (1u << swd->swdio_gpio),
+        (1u << swd->swclk_gpio) | (1u << swd->swdio_gpio));
+    pio_gpio_init(swd->write_pio, swd->swclk_gpio);
+    pio_gpio_init(swd->write_pio, swd->swdio_gpio);
+    gpio_pull_up(swd->swdio_gpio);
+    pio_sm_set_enabled(swd->write_pio, swd->write_sm, true);
+    pio_sm_put_blocking(swd->write_pio, swd->write_sm,
+                        make_request(ap, false, address));
+
+    uint32_t ack_word = 0u;
+    if (!wait_rx_word(swd->write_pio, swd->write_sm,
+                      &ack_word, 5000u)) {
+        pio_sm_set_enabled(swd->write_pio, swd->write_sm, false);
+        restore_read_sm(swd);
+        if (ack) *ack = 7u;
+        return false;
+    }
+    uint8_t response = (uint8_t)(ack_word >> 29);
+    if (response == 1u) {
+        pio_sm_put_blocking(swd->write_pio, swd->write_sm, value);
+        pio_sm_put_blocking(swd->write_pio, swd->write_sm,
+                            parity32(value));
+        if (!wait_sm_at(swd->write_pio, swd->write_sm,
+                        swd->write_offset, 5000u)) {
+            response = 7u;
+        }
+    }
+    pio_sm_set_enabled(swd->write_pio, swd->write_sm, false);
+    restore_read_sm(swd);
+    if (ack) *ack = response;
+    swd->last_write_ack = response;
+    return response == 1u;
+}
+
+static uint8_t transfer_retry(fun_pio_swd_t *swd, uint8_t request,
+                              uint32_t *data)
+{
+    uint8_t ack = 0u;
+    for (uint16_t retry = 0; retry < 200u; ++retry) {
+        ack = fun_pio_swd_transfer(swd, request, data);
+        if (ack == 1u) return ack;
+        if (ack == 2u) continue;
+        if (ack == 4u) {
+            uint32_t abort_value = 0x1Eu;
+            (void)fun_pio_swd_transfer(
+                swd, make_request(false, false, 0x00u), &abort_value);
+            continue;
+        }
+        break;
+    }
+    return ack;
+}
+
+bool fun_pio_swd_power_up(fun_pio_swd_t *swd)
+{
+    if (!swd || !swd->opened) return false;
+    swd->power_stage = 0u;
+    uint8_t ack = 0u;
+    if (!fun_pio_swd_write_dp_register(swd, 0x00u, 0x1Eu, &ack)) {
+        swd->power_stage = 1u;
+        return false;
+    }
+    if (!fun_pio_swd_write_dp_register(
+            swd, 0x04u, (1u << 28) | (1u << 30), &ack)) {
+        swd->power_stage = 2u;
+        return false;
+    }
+    swd->power_stage = 3u;
+    for (uint16_t retry = 0; retry < 500u; ++retry) {
+        uint32_t value = 0u;
+        if (fun_pio_swd_read_dp_register(swd, 0x04u, &value, &ack) &&
+            (value & (1u << 29)) && (value & (1u << 31))) {
+            swd->power_stage = 4u;
+            return true;
+        }
+        /* ACK OK但电源确认位尚未置位时也必须继续轮询。 */
+        if (ack != 1u && ack != 2u) break;
+        tight_loop_contents();
+    }
+    swd->power_stage = 5u;
+    return false;
+}
+
+bool fun_pio_swd_read_memory32(fun_pio_swd_t *swd, uint32_t address,
+                               uint32_t *value)
+{
+    if (!swd || !swd->opened || !value) return false;
+    uint8_t ack = 0u;
+    uint32_t posted = 0u;
+
+    /* SELECT: APSEL=0, APBANKSEL=0. */
+    if (!pio_write_register(swd, false, 0x08u, 0u, &ack)) return false;
+    /* AHB-AP CSW: 32-bit transfer, auto increment disabled. */
+    if (!pio_write_register(swd, true, 0x00u, 0x23000002u, &ack))
+        return false;
+    /* TAR selects the target memory address. */
+    if (!pio_write_register(swd, true, 0x04u, address, &ack)) return false;
+    /* AP reads are posted: discard this immediate result. */
+    if (!pio_read_register(swd, true, 0x0Cu, &posted, &ack)) return false;
+    /* The actual memory value is returned through DP RDBUFF. */
+    return pio_read_register(swd, false, 0x0Cu, value, &ack);
+}
+
+#if 0 /* 旧固定读取实现，保留在本次迁移中便于对照。 */
     pio_sm_clear_fifos(swd->pio, swd->sm);
     pio_sm_put_blocking(swd->pio, swd->sm, make_request(false, true, address));
     uint8_t response = (uint8_t)(pio_sm_get_blocking(swd->pio, swd->sm) >> 29);
@@ -142,4 +563,4 @@ bool fun_pio_swd_read_dp_register(fun_pio_swd_t *swd, uint8_t address,
     if (ack) *ack = response;
     *value = raw_value;
     return response == 1u && received_parity == parity32(raw_value);
-}
+#endif
