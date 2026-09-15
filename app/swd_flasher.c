@@ -2,6 +2,7 @@
 #include "algo_def.h"
 #include "fun_swd.h"
 #include "fun_pio_swd.h"
+#include "fun_swd_config.h"
 #include "pio_manager.h"
 #include "ff.h"
 #include "pico/stdlib.h"
@@ -35,9 +36,6 @@
 #define DEMCR           0xE000EDFC
 #define DEMCR_FAULT_CATCH 0x000007F0u
 
-#define PIN_SWCLK       2
-#define PIN_SWDIO       3
-
 static flasher_status_t s_flasher_status;
 static FIL              s_bin_file;
 static bool             s_bin_open = false;
@@ -65,6 +63,8 @@ static uint32_t         s_algo_stub_addr = 0u;
 static uint32_t         s_algo_stack_addr = 0u;
 static uint8_t          s_target_call_stage = 0u;
 static uint32_t         s_target_call_pc = 0u;
+static uint8_t          s_active_swclk = 2u;
+static uint8_t          s_active_swdio = 3u;
 
 /* Offline flashing is forced to PIO. Software SWD remains in the project,
  * but must never be selected silently: otherwise a 10 MHz request can look
@@ -83,9 +83,13 @@ static bool target_swd_init(void) {
     s_pio_power_stage = 0;
     target_swd_close();
     fun_pio_swd_init(&s_flasher_pio_swd);
+    const fun_swd_config_t *config = fun_swd_config_get();
+    s_active_swclk = config->swclk_gpio;
+    s_active_swdio = config->swdio_gpio;
     if (!fun_pio_swd_open_auto(&s_flasher_pio_swd,
                                pio_manager_get_default(),
-                               PIN_SWCLK, PIN_SWDIO, 10000000u)) {
+                               s_active_swclk, s_active_swdio,
+                               config->clock_hz)) {
         s_pio_connect_stage = 1; /* PIO program/SM allocation failed. */
         return false;
     }
@@ -528,20 +532,20 @@ void swd_flasher_abort(void) {
         Target_Write(DHCSR, DHCSR_DBGKEY | 0x0000);
     }
     target_swd_close();
-    gpio_set_function(PIN_SWCLK, GPIO_FUNC_SIO);
-    gpio_set_function(PIN_SWDIO, GPIO_FUNC_SIO);
-    gpio_set_dir(PIN_SWCLK, GPIO_IN);
-    gpio_set_dir(PIN_SWDIO, GPIO_IN);
+    gpio_set_function(s_active_swclk, GPIO_FUNC_SIO);
+    gpio_set_function(s_active_swdio, GPIO_FUNC_SIO);
+    gpio_set_dir(s_active_swclk, GPIO_IN);
+    gpio_set_dir(s_active_swdio, GPIO_IN);
     s_flasher_status.stage = FLASHER_IDLE;
     strcpy(s_flasher_status.status_msg, "已中止烧录");
 }
 
 void swd_flasher_release_bus(void) {
     target_swd_close();
-    gpio_set_function(PIN_SWCLK, GPIO_FUNC_SIO);
-    gpio_set_function(PIN_SWDIO, GPIO_FUNC_SIO);
-    gpio_set_dir(PIN_SWCLK, GPIO_IN);
-    gpio_set_dir(PIN_SWDIO, GPIO_IN);
+    gpio_set_function(s_active_swclk, GPIO_FUNC_SIO);
+    gpio_set_function(s_active_swdio, GPIO_FUNC_SIO);
+    gpio_set_dir(s_active_swclk, GPIO_IN);
+    gpio_set_dir(s_active_swdio, GPIO_IN);
 }
 
 void swd_flasher_step(void) {
@@ -825,10 +829,10 @@ void swd_flasher_step(void) {
             Target_Write(0xE000ED0C, 0x05FA0004u);
             sleep_ms(10);
             target_swd_close();
-            gpio_set_function(PIN_SWCLK, GPIO_FUNC_SIO);
-            gpio_set_function(PIN_SWDIO, GPIO_FUNC_SIO);
-            gpio_set_dir(PIN_SWCLK, GPIO_IN);
-            gpio_set_dir(PIN_SWDIO, GPIO_IN);
+            gpio_set_function(s_active_swclk, GPIO_FUNC_SIO);
+            gpio_set_function(s_active_swdio, GPIO_FUNC_SIO);
+            gpio_set_dir(s_active_swclk, GPIO_IN);
+            gpio_set_dir(s_active_swdio, GPIO_IN);
             s_flasher_status.cost_time_ms =
                 (uint32_t)((time_us_64() - s_flash_start_us) / 1000u);
             s_flasher_status.progress_percent = 100u;
@@ -858,12 +862,12 @@ void swd_flasher_step(void) {
             sleep_ms(10);
 
             target_swd_close();
-            gpio_set_function(PIN_SWCLK, GPIO_FUNC_SIO);
-            gpio_set_function(PIN_SWDIO, GPIO_FUNC_SIO);
+            gpio_set_function(s_active_swclk, GPIO_FUNC_SIO);
+            gpio_set_function(s_active_swdio, GPIO_FUNC_SIO);
 
             // ⚡ 释放 SWD 引脚为高阻态
-            gpio_set_dir(PIN_SWCLK, GPIO_IN);
-            gpio_set_dir(PIN_SWDIO, GPIO_IN);
+            gpio_set_dir(s_active_swclk, GPIO_IN);
+            gpio_set_dir(s_active_swdio, GPIO_IN);
 
             s_flasher_status.cost_time_ms = (uint32_t)((time_us_64() - s_flash_start_us) / 1000);
             s_flasher_status.progress_percent = 100;

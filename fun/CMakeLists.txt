@@ -5,6 +5,7 @@ add_library(fun STATIC
     fun_pio_uart.c
     pin_manager.c
     fun_swd.c
+    fun_swd_config.c
     fun_pio_swd.c
 )
 

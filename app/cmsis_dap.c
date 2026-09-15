@@ -1,13 +1,14 @@
 #include "cmsis_dap.h"
 #include "fun_pio_swd.h"
+#include "fun_swd_config.h"
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
 #include "hardware/clocks.h"
 #include "hardware/structs/sio.h"
 #include <string.h>
 
-#define PIN_PIO_SWCLK 4
-#define PIN_PIO_SWDIO 5
+static inline uint8_t dap_swclk_pin(void) { return fun_swd_config_get()->swclk_gpio; }
+static inline uint8_t dap_swdio_pin(void) { return fun_swd_config_get()->swdio_gpio; }
 
 #define PIN_SWCLK           2   // Pico GP2 (Pin 4) -> 目标 SWCLK
 #define PIN_SWDIO           3   // Pico GP3 (Pin 5) -> 目标 SWDIO
@@ -15,8 +16,8 @@
 #undef PIN_SWCLK
 #undef PIN_SWDIO
 /* CMSIS-DAP的PIO和软件回退始终使用同一物理引脚。 */
-#define PIN_SWCLK           4
-#define PIN_SWDIO           5
+#define PIN_SWCLK           dap_swclk_pin()
+#define PIN_SWDIO           dap_swdio_pin()
 #define SWCLK_HIGH()        sio_hw->gpio_set = (1u << PIN_SWCLK)
 #define SWCLK_LOW()         sio_hw->gpio_clr = (1u << PIN_SWCLK)
 #define SWDIO_HIGH()        sio_hw->gpio_set = (1u << PIN_SWDIO)
@@ -173,9 +174,11 @@ static uint8_t dap_backend_transfer_word(uint8_t req, uint32_t *data)
         if (!s_pio_swd.opened) {
             fun_pio_swd_init(&s_pio_swd);
             /* Keil已经通过SWJ_Sequence建立会话，这里只接管线路，不再复位目标。 */
+            const fun_swd_config_t *pin_config = fun_swd_config_get();
             if (!fun_pio_swd_open_session(&s_pio_swd,
                                           pio_manager_get_default(),
-                                          PIN_PIO_SWCLK, PIN_PIO_SWDIO,
+                                          pin_config->swclk_gpio,
+                                          pin_config->swdio_gpio,
                                           g_dap_cur_clock_hz, false)) {
                 g_dap_pio_last_ack = 7u;
                 g_dap_pio_last_stage = 5u; /* PIO资源/初始化失败 */

@@ -39,6 +39,11 @@ static bool pio_read_register(fun_pio_swd_t *swd, bool ap,
 static bool pio_write_register(fun_pio_swd_t *swd, bool ap,
                                uint8_t address, uint32_t value,
                                uint8_t *ack);
+static bool pio_write_session_begin(fun_pio_swd_t *swd);
+static bool pio_write_transaction_active(fun_pio_swd_t *swd, bool ap,
+                                         uint8_t address, uint32_t value,
+                                         uint8_t *ack);
+static void pio_write_session_end(fun_pio_swd_t *swd);
 
 static void restore_read_sm(fun_pio_swd_t *swd)
 {
@@ -425,10 +430,20 @@ static bool pio_write_register(fun_pio_swd_t *swd, bool ap,
                                uint8_t *ack)
 {
     if (!swd || !swd->opened || (address & 3u)) return false;
-    if (!ensure_write_sm(swd)) {
+    if (!pio_write_session_begin(swd)) {
         if (ack) *ack = 7u;
         return false;
     }
+    bool ok = pio_write_transaction_active(swd, ap, address, value, ack);
+    pio_write_session_end(swd);
+    return ok;
+}
+
+/* Switch the pins to the write SM once. A block transfer can then issue many
+ * complete SWD write transactions without reinitialising either PIO block. */
+static bool pio_write_session_begin(fun_pio_swd_t *swd)
+{
+    if (!swd || !swd->opened || !ensure_write_sm(swd)) return false;
 
     float div = (float)clock_get_hz(clk_sys) /
                 ((float)swd->clock_hz * 2.0f);
@@ -460,14 +475,20 @@ static bool pio_write_register(fun_pio_swd_t *swd, bool ap,
     pio_gpio_init(swd->write_pio, swd->swdio_gpio);
     gpio_pull_up(swd->swdio_gpio);
     pio_sm_set_enabled(swd->write_pio, swd->write_sm, true);
+    return true;
+}
+
+static bool pio_write_transaction_active(fun_pio_swd_t *swd, bool ap,
+                                         uint8_t address, uint32_t value,
+                                         uint8_t *ack)
+{
+    if (!swd || !swd->write_opened || (address & 3u)) return false;
     pio_sm_put_blocking(swd->write_pio, swd->write_sm,
                         make_request(ap, false, address));
 
     uint32_t ack_word = 0u;
     if (!wait_rx_word(swd->write_pio, swd->write_sm,
                       &ack_word, 5000u)) {
-        pio_sm_set_enabled(swd->write_pio, swd->write_sm, false);
-        restore_read_sm(swd);
         if (ack) *ack = 7u;
         return false;
     }
@@ -481,11 +502,16 @@ static bool pio_write_register(fun_pio_swd_t *swd, bool ap,
             response = 7u;
         }
     }
-    pio_sm_set_enabled(swd->write_pio, swd->write_sm, false);
-    restore_read_sm(swd);
     if (ack) *ack = response;
     swd->last_write_ack = response;
     return response == 1u;
+}
+
+static void pio_write_session_end(fun_pio_swd_t *swd)
+{
+    if (!swd || !swd->write_opened) return;
+    pio_sm_set_enabled(swd->write_pio, swd->write_sm, false);
+    restore_read_sm(swd);
 }
 
 static uint8_t transfer_retry(fun_pio_swd_t *swd, uint8_t request,
@@ -628,13 +654,21 @@ bool fun_pio_swd_write_memory_block32(fun_pio_swd_t *swd, uint32_t address,
         swd->mem_csw_valid = true;
     }
 
+    /* Program TAR once before taking the long-lived write session. */
+    if (!pio_write_register(swd, true, 0x04u, address, &ack)) return false;
+    if (!pio_write_session_begin(swd)) return false;
+
+    bool ok = true;
     uint32_t offset = 0u;
     while (offset < length) {
         uint32_t current = address + offset;
         /* AHB-AP auto increment wraps at a 1 KiB boundary. */
-        if (offset == 0u || (current & 0x3FFu) == 0u) {
-            if (!pio_write_register(swd, true, 0x04u, current, &ack))
-                return false;
+        if (offset != 0u && (current & 0x3FFu) == 0u) {
+            if (!pio_write_transaction_active(swd, true, 0x04u,
+                                              current, &ack)) {
+                ok = false;
+                break;
+            }
         }
 
         uint32_t word = 0xFFFFFFFFu;
@@ -647,13 +681,18 @@ bool fun_pio_swd_write_memory_block32(fun_pio_swd_t *swd, uint32_t address,
             for (uint32_t i = take; i < 4u; ++i)
                 word |= 0xFFu << (8u * i);
         }
-        if (!pio_write_register(swd, true, 0x0Cu, word, &ack)) return false;
+        if (!pio_write_transaction_active(swd, true, 0x0Cu,
+                                          word, &ack)) {
+            ok = false;
+            break;
+        }
         offset += take;
     }
+    pio_write_session_end(swd);
 
     /* Auto-increment makes the cached TAR ambiguous at the 1 KiB wrap. */
     swd->mem_tar_valid = false;
-    return true;
+    return ok;
 }
 
 #if 0 /* 旧固定读取实现，保留在本次迁移中便于对照。 */

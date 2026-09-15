@@ -7,8 +7,10 @@
 #include "ui_btn.h"
 #include "ui_switch.h"
 #include "ui_dropdown.h"
+#include "ui_pin_config.h"
 #include "fun_swd.h"
 #include "fun_pio_swd.h"
+#include "fun_swd_config.h"
 #include "cmsis_dap.h"
 #include "tusb.h"
 #include "lcd.h"
@@ -20,8 +22,6 @@
 static const char *s_dap_tabs[] = { "状态", "配置", "终端" };
 #define DAP_TAB_COUNT ((uint8_t)(sizeof(s_dap_tabs) / sizeof(s_dap_tabs[0])))
 #define DAP_CONTENT_H 420
-#define DAP_PIO_SWCLK_PIN 4u
-#define DAP_PIO_SWDIO_PIN 5u
 
 typedef struct {
     /* 必须放在第一个字段，app_manager 依赖它获取脏矩形。 */
@@ -31,8 +31,11 @@ typedef struct {
     ui_scrollview_t scroll[DAP_TAB_COUNT];
     ui_btn_t probe;
     ui_btn_t pio_probe;
+    ui_btn_t apply_pins;
     ui_switch_t dap_switch;
     ui_dropdown_t pio_clock;
+    ui_pin_config_t swclk_pin;
+    ui_pin_config_t swdio_pin;
     fun_pio_swd_t pio_swd;
     uint8_t pio_ack;
     uint8_t pio_ctrl_ack;
@@ -48,6 +51,33 @@ typedef struct {
     uint8_t last_dap_command;
     uint8_t last_dap_command_busy;
 } dap_data_t;
+
+static void dap_pin_changed(ui_pin_config_t *config, uint8_t gpio, void *user_data)
+{
+    (void)config; (void)gpio;
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data) return;
+    uint8_t clk = ui_pin_config_get_selected(&data->swclk_pin);
+    uint8_t io = ui_pin_config_get_selected(&data->swdio_pin);
+    ui_pin_config_set_excluded_mask(&data->swclk_pin, 1u << io);
+    ui_pin_config_set_excluded_mask(&data->swdio_pin, 1u << clk);
+    if (clk != UI_PIN_CONFIG_INVALID_GPIO && io != UI_PIN_CONFIG_INVALID_GPIO)
+        (void)fun_swd_config_set_pins(clk, io);
+    data->dirty_rect = data->tabview.content_rect;
+}
+
+static void dap_apply_pins_click(ui_btn_t *btn, void *user_data)
+{
+    (void)btn;
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data) return;
+    uint8_t clk = ui_pin_config_get_selected(&data->swclk_pin);
+    uint8_t io = ui_pin_config_get_selected(&data->swdio_pin);
+    if (clk == UI_PIN_CONFIG_INVALID_GPIO ||
+        io == UI_PIN_CONFIG_INVALID_GPIO || clk == io) return;
+    if (fun_swd_config_set_pins(clk, io))
+        data->dirty_rect = data->tabview.content_rect;
+}
 
 static const char *s_pio_clock_items[] = { "500 kHz", "1 MHz", "2 MHz", "5 MHz", "10 MHz" };
 static const uint32_t s_pio_clock_hz[] = { 500000u, 1000000u, 2000000u, 5000000u, 10000000u };
@@ -86,9 +116,9 @@ static void dap_pio_probe_click(ui_btn_t *btn, void *user_data)
         ? fun_pio_swd_recover(&data->pio_swd)
         : fun_pio_swd_open_auto(&data->pio_swd,
                                 pio_manager_get_default(),
-                                DAP_PIO_SWCLK_PIN,
-                                DAP_PIO_SWDIO_PIN,
-                                10000000u);
+                                fun_swd_config_get()->swclk_gpio,
+                                fun_swd_config_get()->swdio_gpio,
+                                fun_swd_config_get()->clock_hz);
     data->connected = opened && fun_pio_swd_read_dp_idcode(
         &data->pio_swd, &data->dp_id, &data->pio_ack);
     if (data->connected) {
@@ -134,6 +164,8 @@ static void dap_switch_changed(ui_switch_t *sw, bool enabled, void *user_data)
         gpio_set_dir(FUN_SWD_SWDIO_PIN, GPIO_IN);
     }
     sw->is_checked = enabled;
+    ui_pin_config_set_enabled(&data->swclk_pin, !enabled);
+    ui_pin_config_set_enabled(&data->swdio_pin, !enabled);
     data->dirty_rect = data->scroll[1].view_rect;
 }
 
@@ -282,6 +314,26 @@ static void dap_enter(app_t *self)
     ui_switch_init(&data->dap_switch, 350, 102, 64, 32,
                    g_dap_enabled, dap_switch_changed);
     data->dap_switch.user_data = data;
+    ui_btn_init(&data->apply_pins, 140, 254, 280, 34,
+                "应用引脚配置", dap_apply_pins_click);
+    data->apply_pins.user_data = data;
+    data->apply_pins.style = UI_BTN_STYLE_ROUND;
+    ui_btn_set_color(&data->apply_pins, 0xDEFB, 0xBDF7, 0x4208);
+    const fun_swd_config_t *pins = fun_swd_config_get();
+    ui_pin_config_init(&data->swclk_pin, 140, 150, 280, "SWCLK Pin",
+                       pin_manager_get_default(), PIN_OWNER_SWD,
+                       PIN_SOURCE_PIO, PIN_FUNC_PIO, 0u,
+                       pins->swclk_gpio, dap_pin_changed);
+    data->swclk_pin.user_data = data;
+    ui_pin_config_init(&data->swdio_pin, 140, 202, 280, "SWDIO Pin",
+                       pin_manager_get_default(), PIN_OWNER_SWD,
+                       PIN_SOURCE_PIO, PIN_FUNC_PIO, 0u,
+                       pins->swdio_gpio, dap_pin_changed);
+    data->swdio_pin.user_data = data;
+    ui_pin_config_set_excluded_mask(&data->swclk_pin, 1u << pins->swdio_gpio);
+    ui_pin_config_set_excluded_mask(&data->swdio_pin, 1u << pins->swclk_gpio);
+    ui_pin_config_set_enabled(&data->swclk_pin, !g_dap_enabled);
+    ui_pin_config_set_enabled(&data->swdio_pin, !g_dap_enabled);
 }
 
 static void dap_exit(app_t *self)
@@ -319,6 +371,12 @@ static bool dap_process_touch(app_t *self, bool touching, int16_t x,
 {
     dap_data_t *data = (dap_data_t *)self->user_data;
     if (!data) return false;
+    if (data->swclk_pin.modal.is_open)
+        return ui_pin_config_process_modal_touch(&data->swclk_pin,
+                                                  touching, x, y, tick);
+    if (data->swdio_pin.modal.is_open)
+        return ui_pin_config_process_modal_touch(&data->swdio_pin,
+                                                  touching, x, y, tick);
     if (ui_tabview_process_touch(&data->tabview, touching, x, y, tick)) {
         data->dirty_rect = data->tabview.rect;
         return true;
@@ -345,6 +403,16 @@ static bool dap_process_touch(app_t *self, bool touching, int16_t x,
         data->dirty_rect = data->scroll[1].view_rect;
         return true;
     }
+    if (tab == 1 && ui_btn_process_touch(&data->apply_pins, touching, x, y, tick)) {
+        data->dirty_rect = data->tabview.content_rect;
+        return true;
+    }
+    if (tab == 1 &&
+        (ui_pin_config_process_touch(&data->swclk_pin, touching, x, y, tick) ||
+         ui_pin_config_process_touch(&data->swdio_pin, touching, x, y, tick))) {
+        data->dirty_rect = data->tabview.content_rect;
+        return true;
+    }
     return false;
 }
 
@@ -364,7 +432,14 @@ static void dap_draw(app_t *self, ui_tile_t *tile)
         ui_btn_draw(tile, &data->pio_probe);
         ui_dropdown_draw(tile, &data->pio_clock);
     }
-    if (data->tabview.active_tab_idx == 1) ui_switch_draw(tile, &data->dap_switch);
+    if (data->tabview.active_tab_idx == 1) {
+        ui_switch_draw(tile, &data->dap_switch);
+        ui_pin_config_draw(tile, &data->swclk_pin);
+        ui_pin_config_draw(tile, &data->swdio_pin);
+        ui_btn_draw(tile, &data->apply_pins);
+    }
+    ui_pin_config_draw_modal(tile, &data->swclk_pin);
+    ui_pin_config_draw_modal(tile, &data->swdio_pin);
 }
 
 app_t *app_dap_get_instance(void)

@@ -59,9 +59,15 @@ static void modal_draw(ui_tile_t *t,const ui_rect_t *v,int16_t sy,void *ud)
         ui_draw_fill_rect(t,&r,bg);
         ui_draw_rect(t,&r,c->color_border);
         ui_draw_string(t,r.x+8,r.y+9,p->label,FONT_16,a?c->color_text:0x8410,bg);
-        const char *k=pin_manager_supports(p->gpio,c->function)
-            ?(c->function==PIN_FUNC_UART_TX?"UART1 TX":"UART1 RX"):"PIO";
-        ui_draw_string(t,r.x+52,r.y+9,k,FONT_16,a?0x632C:0x8410,bg);
+        /* UART selectors show whether a candidate uses hardware UART or PIO.
+         * SWD is always PIO and only needs a clean two-column GPIO list. */
+        if (c->owner == PIN_OWNER_UART) {
+            const char *k = pin_manager_supports(p->gpio, c->function)
+                ? (c->function == PIN_FUNC_UART_TX ? "UART TX" : "UART RX")
+                : "PIO";
+            ui_draw_string(t, r.x + 52, r.y + 9, k, FONT_16,
+                           a ? 0x632C : 0x8410, bg);
+        }
     }
 }
 static bool modal_touch(ui_modal_t*m,bool down,int16_t x,int16_t y,uint32_t tick,void*ud){
