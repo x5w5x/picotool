@@ -49,6 +49,7 @@
 #include "app_dap.h"
 
 #define LED_PIN PICO_DEFAULT_LED_PIN
+#define CHIP_TEMP_OFFSET_C 13.0f
 
 // 屏幕物理背景色: 纯白 (0xFFFF)
 #define SCREEN_BG_COLOR 0xFFFF
@@ -107,7 +108,7 @@ static int16_t chip_temp_read(void)
     float voltage = raw_avg * (vref / 4096.0f);
 
     // 4. 官方温感公式计算
-    float temp_c = 27.0f - (voltage - 0.706f) / 0.001721f;
+    float temp_c = 27.0f - (voltage - 0.706f) / 0.001721f+CHIP_TEMP_OFFSET_C;
 
     return (int16_t)(temp_c + 0.5f);
 }
@@ -145,7 +146,7 @@ void app_ui_custom_init(void)
 
     // app_manager_register(&g_app_mgr, app_uart_term_get_instance());
     // app_manager_register(&g_app_mgr, app_swd_probe_get_instance());
-    // app_manager_register(&g_app_mgr, app_sd_msc_get_instance());
+    app_manager_register(&g_app_mgr, app_sd_msc_get_instance());
 
     // app_manager_register(&g_app_mgr, app_adc_get_instance());
 
@@ -360,7 +361,7 @@ esp_send_string("#PWM:204\r\n"); //80%亮度
         {
             last_sec_tick = now; //
             int16_t cur_temp = chip_temp_read();
-
+            
             if ((uint8_t)g_cpu_usage_real != g_last_cpu_val ||
                 (uint8_t)g_sys_fps_real != g_last_fps_val ||
                 cur_temp != g_last_temp_val)

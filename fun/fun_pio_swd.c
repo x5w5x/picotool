@@ -554,6 +554,33 @@ bool fun_pio_swd_read_memory32(fun_pio_swd_t *swd, uint32_t address,
     return pio_read_register(swd, false, 0x0Cu, value, &ack);
 }
 
+static bool pio_write_memory(fun_pio_swd_t *swd, uint32_t address,
+                             uint32_t value, uint32_t csw)
+{
+    if (!swd || !swd->opened) return false;
+    uint8_t ack = 0u;
+    if (!pio_write_register(swd, false, 0x08u, 0u, &ack)) return false;
+    if (!pio_write_register(swd, true, 0x00u, csw, &ack)) return false;
+    if (!pio_write_register(swd, true, 0x04u, address, &ack)) return false;
+    return pio_write_register(swd, true, 0x0Cu, value, &ack);
+}
+
+bool fun_pio_swd_write_memory32(fun_pio_swd_t *swd, uint32_t address,
+                                uint32_t value)
+{
+    if ((address & 3u) != 0u) return false;
+    return pio_write_memory(swd, address, value, 0x23000002u);
+}
+
+bool fun_pio_swd_write_memory16(fun_pio_swd_t *swd, uint32_t address,
+                                uint16_t value)
+{
+    if ((address & 1u) != 0u) return false;
+    uint32_t drw = (address & 2u) ? ((uint32_t)value << 16)
+                                  : (uint32_t)value;
+    return pio_write_memory(swd, address, drw, 0x23000001u);
+}
+
 #if 0 /* 旧固定读取实现，保留在本次迁移中便于对照。 */
     pio_sm_clear_fifos(swd->pio, swd->sm);
     pio_sm_put_blocking(swd->pio, swd->sm, make_request(false, true, address));

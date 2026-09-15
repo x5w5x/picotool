@@ -1,6 +1,8 @@
 #include "swd_flasher.h"
 #include "algo_def.h"
-#include "app_swd_probe.h"
+#include "fun_swd.h"
+#include "fun_pio_swd.h"
+#include "pio_manager.h"
 #include "ff.h"
 #include "pico/stdlib.h"
 #include "pico/time.h"
@@ -33,12 +35,100 @@ static bool             s_bin_open = false;
 static char             s_bin_path_cache[256];
 static uint8_t          s_page_buffer[1024];
 static uint64_t         s_flash_start_us = 0;
+static uint64_t         s_program_start_us = 0;
 
 #define FIRMWARE_BUF_SIZE  (32 * 1024)
 static uint8_t          s_firmware_buf[FIRMWARE_BUF_SIZE];
 static uint32_t         s_firmware_size   = 0;
 static uint32_t         s_firmware_offset = 0;
 static bool             s_firmware_is_hex = false;
+static fun_pio_swd_t    s_flasher_pio_swd;
+static bool             s_flasher_use_pio = false;
+static bool             s_target_io_ok = true;
+static uint8_t          s_pio_connect_stage = 0;
+static uint8_t          s_pio_connect_ack = 0;
+static uint8_t          s_pio_power_stage = 0;
+
+/* Offline flashing is forced to PIO. Software SWD remains in the project,
+ * but must never be selected silently: otherwise a 10 MHz request can look
+ * successful while the bus is actually running at the ~3 MHz GPIO limit. */
+static void target_swd_close(void) {
+    if (s_flasher_pio_swd.opened) {
+        fun_pio_swd_close(&s_flasher_pio_swd);
+    }
+    s_flasher_use_pio = false;
+}
+
+static bool target_swd_init(void) {
+    s_target_io_ok = false;
+    s_pio_connect_stage = 0;
+    s_pio_connect_ack = 0;
+    s_pio_power_stage = 0;
+    target_swd_close();
+    fun_pio_swd_init(&s_flasher_pio_swd);
+    if (!fun_pio_swd_open_auto(&s_flasher_pio_swd,
+                               pio_manager_get_default(),
+                               PIN_SWCLK, PIN_SWDIO, 10000000u)) {
+        s_pio_connect_stage = 1; /* PIO program/SM allocation failed. */
+        return false;
+    }
+
+    /* Keep exactly the same order as the proven PIO probe path. */
+    uint32_t idcode = 0u;
+    uint8_t ack = 0u;
+    if (!fun_pio_swd_read_dp_idcode(&s_flasher_pio_swd,
+                                    &idcode, &ack) ||
+        ack != 1u || idcode == 0u || idcode == 0xFFFFFFFFu) {
+        s_pio_connect_stage = 2;
+        s_pio_connect_ack = ack;
+        target_swd_close();
+        return false;
+    }
+    if (!fun_pio_swd_power_up(&s_flasher_pio_swd)) {
+        s_pio_connect_stage = 3;
+        s_pio_connect_ack = s_flasher_pio_swd.last_write_ack;
+        s_pio_power_stage = s_flasher_pio_swd.power_stage;
+        target_swd_close();
+        return false;
+    }
+
+    s_flasher_use_pio = true;
+    s_target_io_ok = true;
+    return true;
+}
+
+static uint32_t target_read32(uint32_t address) {
+    if (!s_flasher_use_pio) return fun_swd_read(address);
+    uint32_t value = 0xFFFFFFFFu;
+    if (!fun_pio_swd_read_memory32(&s_flasher_pio_swd, address, &value)) {
+        s_target_io_ok = false;
+    }
+    return value;
+}
+
+static void target_write32(uint32_t address, uint32_t value) {
+    if (s_flasher_use_pio) {
+        if (!fun_pio_swd_write_memory32(&s_flasher_pio_swd, address, value)) {
+            s_target_io_ok = false;
+        }
+    } else {
+        fun_swd_write(address, value);
+    }
+}
+
+static void target_write16(uint32_t address, uint16_t value) {
+    if (s_flasher_use_pio) {
+        if (!fun_pio_swd_write_memory16(&s_flasher_pio_swd, address, value)) {
+            s_target_io_ok = false;
+        }
+    } else {
+        fun_swd_write_half(address, value);
+    }
+}
+
+#define Target_Read       target_read32
+#define Target_Write      target_write32
+#define Target_WriteHalf  target_write16
 
 /* ================= Intel HEX 解析 ================= */
 
@@ -183,6 +273,8 @@ static bool load_bin_file(const char *path) {
 /* ================= 烧录状态机 ================= */
 
 void swd_flasher_init(void) {
+    fun_pio_swd_init(&s_flasher_pio_swd);
+    s_flasher_use_pio = false;
     memset(&s_flasher_status, 0, sizeof(flasher_status_t));
     s_flasher_status.stage = FLASHER_IDLE;
 }
@@ -220,10 +312,13 @@ bool swd_flasher_start(const char *bin_path, const char *algo_path) {
     s_flasher_status.total_bytes  = s_firmware_size;
     s_flasher_status.burned_bytes = 0;
     s_flasher_status.progress_percent = 0;
+    s_flasher_status.using_pio = false;
+    s_target_io_ok = true;
     s_flasher_status.stage        = FLASHER_STAGE_CONNECT;
     strcpy(s_flasher_status.chip_name, "STM32F10x");
     strcpy(s_flasher_status.status_msg, s_firmware_is_hex ? "正在连接 (HEX已就绪)..." : "正在连接 (BIN已就绪)...");
     s_flash_start_us = time_us_64();
+    s_program_start_us = 0;
     return true;
 }
 
@@ -234,6 +329,9 @@ void swd_flasher_abort(void) {
     }
     Target_Write(0xE000ED0C, 0x05FA0004);
     Target_Write(DHCSR, DHCSR_DBGKEY | 0x0000);
+    target_swd_close();
+    gpio_set_function(PIN_SWCLK, GPIO_FUNC_SIO);
+    gpio_set_function(PIN_SWDIO, GPIO_FUNC_SIO);
     gpio_set_dir(PIN_SWCLK, GPIO_IN);
     gpio_set_dir(PIN_SWDIO, GPIO_IN);
     s_flasher_status.stage = FLASHER_IDLE;
@@ -244,22 +342,46 @@ void swd_flasher_step(void) {
     if (s_flasher_status.stage == FLASHER_IDLE || 
         s_flasher_status.stage == FLASHER_STAGE_SUCCESS || 
         s_flasher_status.stage == FLASHER_STAGE_ERROR) {
+        if (s_flasher_status.stage == FLASHER_STAGE_ERROR &&
+            s_flasher_pio_swd.opened) {
+            target_swd_close();
+        }
         return;
     }
+
+    /* Total time covers connect, erase, program, verify and reset. */
+    s_flasher_status.cost_time_ms =
+        (uint32_t)((time_us_64() - s_flash_start_us) / 1000u);
 
     switch (s_flasher_status.stage) {
         case FLASHER_STAGE_CONNECT: {
             if (!target_swd_init()) {
-                snprintf(s_flasher_status.status_msg, sizeof(s_flasher_status.status_msg), "SWD 初始化失败 (无 ACK)");
+                if (s_pio_connect_stage == 1u) {
+                    snprintf(s_flasher_status.status_msg,
+                             sizeof(s_flasher_status.status_msg),
+                             "PIO资源不足(SM/指令空间)");
+                } else if (s_pio_connect_stage == 2u) {
+                    snprintf(s_flasher_status.status_msg,
+                             sizeof(s_flasher_status.status_msg),
+                             "PIO读DP ID失败 ACK=%u", s_pio_connect_ack);
+                } else {
+                    snprintf(s_flasher_status.status_msg,
+                             sizeof(s_flasher_status.status_msg),
+                             "PIO上电失败 stage=%u ACK=%u",
+                             s_pio_power_stage,
+                             s_pio_connect_ack);
+                }
                 s_flasher_status.stage = FLASHER_STAGE_ERROR;
                 break;
             }
+
+            s_flasher_status.using_pio = s_flasher_use_pio;
 
             Target_Write(DHCSR, DHCSR_DBGKEY | 0x0003); // HALT
             sleep_ms(5);
 
             s_flasher_status.stage = FLASHER_STAGE_INIT_ALGO;
-            strcpy(s_flasher_status.status_msg, "正在解锁 Flash 控制器...");
+            strcpy(s_flasher_status.status_msg, "PIO 10MHz: 正在解锁Flash...");
             break;
         }
 
@@ -299,6 +421,7 @@ void swd_flasher_step(void) {
             }
 
             s_flasher_status.stage = FLASHER_STAGE_PROGRAM;
+            s_program_start_us = time_us_64();
             strcpy(s_flasher_status.status_msg, "正在烧录固件...");
             break;
         }
@@ -323,6 +446,14 @@ void swd_flasher_step(void) {
             for (uint32_t i = 0; i < br; i += 2) {
                 uint16_t hw = (uint16_t)s_page_buffer[i] | ((uint16_t)s_page_buffer[i + 1] << 8);
                 Target_WriteHalf(flash_addr + i, hw);
+                if (!s_target_io_ok) {
+                    snprintf(s_flasher_status.status_msg,
+                             sizeof(s_flasher_status.status_msg),
+                             "SWD write failed @0x%lX", flash_addr + i);
+                    s_flasher_status.stage = FLASHER_STAGE_ERROR;
+                    target_swd_close();
+                    return;
+                }
 
                 int busy_wait = 200;
                 while (busy_wait-- > 0) {
@@ -346,9 +477,11 @@ void swd_flasher_step(void) {
                 s_flasher_status.progress_percent = (uint8_t)((uint64_t)s_firmware_offset * 100 / s_flasher_status.total_bytes);
             }
 
-            uint64_t elapsed_us = time_us_64() - s_flash_start_us;
-            if (elapsed_us > 1000) {
-                s_flasher_status.speed_kbs = (uint32_t)((uint64_t)s_firmware_offset * 1000000ULL / elapsed_us / 1024);
+            uint64_t program_us = time_us_64() - s_program_start_us;
+            if (s_program_start_us != 0u && program_us > 0u) {
+                s_flasher_status.speed_kbs =
+                    (uint32_t)((uint64_t)s_firmware_offset * 1000000ULL /
+                               program_us / 1024ULL);
             }
             break;
         }
@@ -372,6 +505,10 @@ void swd_flasher_step(void) {
             sleep_ms(5);
             Target_Write(0xE000ED0C, 0x05FA0004);        // SYSRESETREQ (软复位)
             sleep_ms(10);
+
+            target_swd_close();
+            gpio_set_function(PIN_SWCLK, GPIO_FUNC_SIO);
+            gpio_set_function(PIN_SWDIO, GPIO_FUNC_SIO);
 
             // ⚡ 释放 SWD 引脚为高阻态
             gpio_set_dir(PIN_SWCLK, GPIO_IN);

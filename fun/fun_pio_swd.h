@@ -52,5 +52,9 @@ bool fun_pio_swd_write_register(fun_pio_swd_t *swd, bool ap, uint8_t address,
 bool fun_pio_swd_power_up(fun_pio_swd_t *swd);
 bool fun_pio_swd_read_memory32(fun_pio_swd_t *swd, uint32_t address,
                                uint32_t *value);
+bool fun_pio_swd_write_memory32(fun_pio_swd_t *swd, uint32_t address,
+                                uint32_t value);
+bool fun_pio_swd_write_memory16(fun_pio_swd_t *swd, uint32_t address,
+                                uint16_t value);
 
 #endif

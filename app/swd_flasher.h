@@ -33,6 +33,7 @@ typedef struct {
     uint8_t         progress_percent; // 0 ~ 100
     uint32_t        speed_kbs;
     uint32_t        cost_time_ms;
+    bool            using_pio;
     char            status_msg[64];
     char            chip_name[16];
 } flasher_status_t;

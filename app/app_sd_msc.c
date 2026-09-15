@@ -409,15 +409,15 @@ static void app_sd_enter(app_t *self) {
     ui_btn_set_color(&data->btn_close_hex, 0x8410, 0x4208, 0xFFFF);
 
     data->flash_card = ui_rect_make(120, 40, 350, 268);
-    ui_progressbar_init(&data->prog_bar, 140, 175, 310, 20, true);
+    ui_progressbar_init(&data->prog_bar, 140, 218, 310, 20, true);
     ui_progressbar_set_progress(&data->prog_bar, 0);
 
-    ui_btn_init(&data->btn_start_flash, 140, 245, 140, 42, "立即烧录", on_start_flash_click);
+    ui_btn_init(&data->btn_start_flash, 140, 252, 140, 42, "立即烧录", on_start_flash_click);
     data->btn_start_flash.user_data = data;
     data->btn_start_flash.style     = UI_BTN_STYLE_ROUND;
     ui_btn_set_color(&data->btn_start_flash, 0x05E0, 0x03E0, 0xFFFF);
 
-    ui_btn_init(&data->btn_close_flash, 310, 245, 140, 42, "取消/返回", on_close_flash_click);
+    ui_btn_init(&data->btn_close_flash, 310, 252, 140, 42, "取消/返回", on_close_flash_click);
     data->btn_close_flash.user_data = data;
     data->btn_close_flash.style     = UI_BTN_STYLE_ROUND;
     ui_btn_set_color(&data->btn_close_flash, 0xF800, 0xB000, 0xFFFF);
@@ -605,18 +605,34 @@ static void app_sd_draw(app_t *self, ui_tile_t *tile) {
                     ui_draw_string(tile, 140, 80, str_buf, FONT_16, 0x03DF, 0xEF7D);
 
                     const flasher_status_t *st = swd_flasher_get_status();
-                    snprintf(str_buf, sizeof(str_buf), "算法: %s", st->chip_name[0] ? st->chip_name : "STM32F10x");
+                    snprintf(str_buf, sizeof(str_buf), "后端: %s  %s",
+                             st->using_pio ? "PIO 10MHz" : "未连接",
+                             st->chip_name[0] ? st->chip_name : "STM32F10x");
                     ui_draw_string(tile, 140, 104, str_buf, FONT_16, 0x1A7B, 0xEF7D);
 
-                    snprintf(str_buf, sizeof(str_buf), "大小: %lu KB  速度: %lu KB/s", st->total_bytes / 1024, st->speed_kbs);
+                    if (st->total_bytes < 10240u) {
+                        snprintf(str_buf, sizeof(str_buf), "大小: %lu B", st->total_bytes);
+                    } else {
+                        snprintf(str_buf, sizeof(str_buf), "大小: %lu.%lu KB",
+                                 st->total_bytes / 1024u,
+                                 ((st->total_bytes % 1024u) * 10u) / 1024u);
+                    }
                     ui_draw_string(tile, 140, 128, str_buf, FONT_16, 0x1A7B, 0xEF7D);
+
+                    snprintf(str_buf, sizeof(str_buf), "编程速度: %lu KB/s", st->speed_kbs);
+                    ui_draw_string(tile, 140, 150, str_buf, FONT_16, 0x1A7B, 0xEF7D);
+
+                    uint32_t time_x10 = st->cost_time_ms / 100u;
+                    snprintf(str_buf, sizeof(str_buf), "总耗时: %lu.%lu s",
+                             time_x10 / 10u, time_x10 % 10u);
+                    ui_draw_string(tile, 140, 172, str_buf, FONT_16, 0x1A7B, 0xEF7D);
 
                     uint16_t status_color = (st->stage == FLASHER_STAGE_SUCCESS) ? 0x05E0 : ((st->stage == FLASHER_STAGE_ERROR) ? 0xF800 : 0x1A7B);
                     snprintf(str_buf, sizeof(str_buf), "状态: %s", st->status_msg);
-                    ui_draw_string(tile, 140, 152, str_buf, FONT_16, status_color, 0xEF7D);
+                    ui_draw_string(tile, 140, 194, str_buf, FONT_16, status_color, 0xEF7D);
 
                     snprintf(str_buf, sizeof(str_buf), "%u%%", st->progress_percent);
-                    ui_draw_string(tile, 415, 178, str_buf, FONT_16, 0x03DF, 0xEF7D);
+                    ui_draw_string(tile, 415, 220, str_buf, FONT_16, 0x03DF, 0xEF7D);
                 }
 
                 ui_progressbar_draw(tile, &data->prog_bar);
