@@ -93,6 +93,8 @@ typedef struct {
     bool               msc_active;            // 第 1 层：U 盘使能
     bool               auto_flash_en;         // 第 2 层：拖拽自动烧录使能
     bool               msc_was_auto_dropped;  // ⚡ 记录是否为拖拽触发的烧录（用于烧录成功后自动恢复 U 盘）
+    bool               auto_result_pending;
+    uint32_t           auto_result_tick;
     ui_rect_t          msc_card;
     ui_switch_t        sw_msc_en;             // 开关 1
     ui_switch_t        sw_auto_flash;         // 开关 2
@@ -163,6 +165,20 @@ static bool find_latest_firmware(app_sd_data_t *data, char *out_path, char *out_
     }
     f_closedir(&dir);
     return found;
+}
+
+static void restore_auto_msc(app_sd_data_t *data) {
+    if (!data) return;
+    data->msc_was_auto_dropped = false;
+    if (data->fs_mounted) {
+        f_mount(NULL, "0:", 1);
+        data->fs_mounted = false;
+    }
+    data->msc_active = true;
+    msc_disk_reset_write_state();
+    msc_set_enabled(true);
+    usb_switch_mode(1);
+    ui_switch_set_state(&data->sw_msc_en, true);
 }
 
 static void on_file_item_click(ui_file_browser_t *fb, int8_t index, const ui_file_item_t *item, void *user_data) {
@@ -346,7 +362,6 @@ static void on_msc_switch(ui_switch_t *sw, bool state, void *user_data) {
     if (!data) return;
     data->msc_active = state;
     data->msc_was_auto_dropped = false;
-    msc_set_enabled(state);
 
     if (state) {
         if (data->fs_mounted) {
@@ -354,8 +369,10 @@ static void on_msc_switch(ui_switch_t *sw, bool state, void *user_data) {
             data->fs_mounted = false;
         }
         msc_disk_reset_write_state();
+        msc_set_enabled(true);
         usb_switch_mode(1);
     } else {
+        msc_set_enabled(false);
         usb_switch_mode(0);
     }
     data->dirty_rect = data->tabview.content_rect;
@@ -486,17 +503,19 @@ static void app_sd_update(app_t *self, uint32_t now_tick) {
 
             data->tabview.active_tab_idx = TAB_SD_BROWSER;
             data->view_mode = VIEW_MODE_FLASHING;
+            data->auto_result_pending = false;
             ui_progressbar_set_progress(&data->prog_bar, 0);
 
-            swd_flasher_start(data->selected_file_path, data->matched_algo_path);
+            if (!swd_flasher_start(data->selected_file_path,
+                                   data->matched_algo_path)) {
+                restore_auto_msc(data);
+                data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
+                return;
+            }
             data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
             return;
         } else {
-            data->msc_was_auto_dropped = false;
-            if (data->fs_mounted) { f_mount(NULL, "0:", 1); data->fs_mounted = false; }
-            data->msc_active = true;
-            msc_set_enabled(true);
-            usb_switch_mode(1);
+            restore_auto_msc(data);
         }
     }
 
@@ -507,17 +526,23 @@ static void app_sd_update(app_t *self, uint32_t now_tick) {
             ui_progressbar_set_progress(&data->prog_bar, st->progress_percent);
             data->dirty_rect = data->flash_card;
 
-            if (st->stage == FLASHER_STAGE_SUCCESS && data->msc_was_auto_dropped) {
-                data->msc_was_auto_dropped = false;
-                if (data->fs_mounted) {
-                    f_mount(NULL, "0:", 1);
-                    data->fs_mounted = false;
-                }
-                data->msc_active = true;
-                msc_set_enabled(true);
-                usb_switch_mode(1);
-                ui_switch_set_state(&data->sw_msc_en, true);
-            }
+        }
+        if ((st->stage == FLASHER_STAGE_SUCCESS ||
+             st->stage == FLASHER_STAGE_ERROR) &&
+            data->msc_was_auto_dropped &&
+            !data->auto_result_pending) {
+            swd_flasher_release_bus();
+            data->auto_result_pending = true;
+            data->auto_result_tick = now_tick;
+            data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
+        }
+
+        /* Keep the result panel visible briefly, then reconnect the disk. */
+        if (data->auto_result_pending &&
+            (uint32_t)(now_tick - data->auto_result_tick) >= 1200u) {
+            data->auto_result_pending = false;
+            restore_auto_msc(data);
+            data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
         }
     }
 }

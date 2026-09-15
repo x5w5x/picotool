@@ -41,6 +41,7 @@ typedef struct {
 void swd_flasher_init(void);
 bool swd_flasher_start(const char *bin_path, const char *algo_path);
 void swd_flasher_abort(void);
+void swd_flasher_release_bus(void);
 void swd_flasher_step(void);
 const flasher_status_t *swd_flasher_get_status(void);
 

@@ -327,8 +327,13 @@ void swd_flasher_abort(void) {
         f_close(&s_bin_file);
         s_bin_open = false;
     }
-    Target_Write(0xE000ED0C, 0x05FA0004);
-    Target_Write(DHCSR, DHCSR_DBGKEY | 0x0000);
+    bool active = s_flasher_status.stage != FLASHER_IDLE &&
+                  s_flasher_status.stage != FLASHER_STAGE_SUCCESS &&
+                  s_flasher_status.stage != FLASHER_STAGE_ERROR;
+    if (active && (s_flasher_use_pio || s_flasher_pio_swd.opened)) {
+        Target_Write(0xE000ED0C, 0x05FA0004);
+        Target_Write(DHCSR, DHCSR_DBGKEY | 0x0000);
+    }
     target_swd_close();
     gpio_set_function(PIN_SWCLK, GPIO_FUNC_SIO);
     gpio_set_function(PIN_SWDIO, GPIO_FUNC_SIO);
@@ -336,6 +341,14 @@ void swd_flasher_abort(void) {
     gpio_set_dir(PIN_SWDIO, GPIO_IN);
     s_flasher_status.stage = FLASHER_IDLE;
     strcpy(s_flasher_status.status_msg, "已中止烧录");
+}
+
+void swd_flasher_release_bus(void) {
+    target_swd_close();
+    gpio_set_function(PIN_SWCLK, GPIO_FUNC_SIO);
+    gpio_set_function(PIN_SWDIO, GPIO_FUNC_SIO);
+    gpio_set_dir(PIN_SWCLK, GPIO_IN);
+    gpio_set_dir(PIN_SWDIO, GPIO_IN);
 }
 
 void swd_flasher_step(void) {
