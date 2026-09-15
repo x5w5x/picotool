@@ -195,8 +195,11 @@ def make_algo_header(elf, code_blob):
     # 与目标芯片实际 SRAM 基址无关。我们直接覆盖为目标芯片的 SRAM 起点。
     if fd:
         flash_base = fd['dev_adr']
-        ram_size   = fd['ram_size']
-        buf_size   = fd['prog_size']
+        # FlashDevice 中 152/156 分别是 toProg/toErase 超时，并不是
+        # RAM/缓冲区描述。算法装载布局由探针端约定：前 2 KiB 留给
+        # PrgCode、PrgData 和向下增长的栈，后 1 KiB 作为页缓冲。
+        ram_size   = 0x00001000
+        buf_size   = fd['sz_page']
         chip_name  = _pick_chip_name(fd['name'])
     else:
         flash_base = 0x08000000
@@ -212,7 +215,7 @@ def make_algo_header(elf, code_blob):
     if buf_size > ram_size:
         buffer_addr = ram_base  # 没有真正的缓冲,直接用 SRAM 起点
     else:
-        buffer_addr = ram_base + ram_size - buf_size
+        buffer_addr = ram_base + 0x00000800
 
     name_bytes = chip_name.encode('ascii', errors='replace')
     if len(name_bytes) < 16:

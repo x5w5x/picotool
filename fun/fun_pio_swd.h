@@ -22,6 +22,11 @@ typedef struct {
     uint write_offset;
     uint8_t last_write_ack;
     uint8_t power_stage;
+    bool mem_select_valid;
+    bool mem_csw_valid;
+    bool mem_tar_valid;
+    uint32_t mem_csw;
+    uint32_t mem_tar;
 } fun_pio_swd_t;
 
 void fun_pio_swd_init(fun_pio_swd_t *swd);
@@ -56,5 +61,9 @@ bool fun_pio_swd_write_memory32(fun_pio_swd_t *swd, uint32_t address,
                                 uint32_t value);
 bool fun_pio_swd_write_memory16(fun_pio_swd_t *swd, uint32_t address,
                                 uint16_t value);
+/* Write an arbitrary byte buffer through MEM-AP. The transfer uses 32-bit
+ * address auto-increment and restarts TAR at every 1 KiB MEM-AP boundary. */
+bool fun_pio_swd_write_memory_block32(fun_pio_swd_t *swd, uint32_t address,
+                                      const uint8_t *data, uint32_t length);
 
 #endif

@@ -127,6 +127,9 @@ bool fun_pio_swd_recover(fun_pio_swd_t *swd)
 {
     if (!swd || !swd->opened) return false;
     pio_sm_set_enabled(swd->pio, swd->sm, false);
+    swd->mem_select_valid = false;
+    swd->mem_csw_valid = false;
+    swd->mem_tar_valid = false;
 
     /* 使用实例自己的引脚恢复线路，避免固定GP2/GP3的软件SWD干扰。 */
     line_reset_repeated(swd->swclk_gpio, swd->swdio_gpio);
@@ -541,17 +544,30 @@ bool fun_pio_swd_read_memory32(fun_pio_swd_t *swd, uint32_t address,
     uint8_t ack = 0u;
     uint32_t posted = 0u;
 
-    /* SELECT: APSEL=0, APBANKSEL=0. */
-    if (!pio_write_register(swd, false, 0x08u, 0u, &ack)) return false;
+    /* SELECT is shared by all MEM-AP bank-0 accesses; avoid rewriting it. */
+    if (!swd->mem_select_valid) {
+        if (!pio_write_register(swd, false, 0x08u, 0u, &ack)) return false;
+        swd->mem_select_valid = true;
+    }
     /* AHB-AP CSW: 32-bit transfer, auto increment disabled. */
-    if (!pio_write_register(swd, true, 0x00u, 0x23000002u, &ack))
-        return false;
+    if (!swd->mem_csw_valid || swd->mem_csw != 0x23000002u) {
+        if (!pio_write_register(swd, true, 0x00u, 0x23000002u, &ack))
+            return false;
+        swd->mem_csw = 0x23000002u;
+        swd->mem_csw_valid = true;
+    }
     /* TAR selects the target memory address. */
-    if (!pio_write_register(swd, true, 0x04u, address, &ack)) return false;
+    if (!swd->mem_tar_valid || swd->mem_tar != address) {
+        if (!pio_write_register(swd, true, 0x04u, address, &ack)) return false;
+        swd->mem_tar = address;
+        swd->mem_tar_valid = true;
+    }
     /* AP reads are posted: discard this immediate result. */
     if (!pio_read_register(swd, true, 0x0Cu, &posted, &ack)) return false;
     /* The actual memory value is returned through DP RDBUFF. */
-    return pio_read_register(swd, false, 0x0Cu, value, &ack);
+    bool ok = pio_read_register(swd, false, 0x0Cu, value, &ack);
+    /* No increment is enabled, so TAR still addresses the same word. */
+    return ok;
 }
 
 static bool pio_write_memory(fun_pio_swd_t *swd, uint32_t address,
@@ -559,9 +575,20 @@ static bool pio_write_memory(fun_pio_swd_t *swd, uint32_t address,
 {
     if (!swd || !swd->opened) return false;
     uint8_t ack = 0u;
-    if (!pio_write_register(swd, false, 0x08u, 0u, &ack)) return false;
-    if (!pio_write_register(swd, true, 0x00u, csw, &ack)) return false;
-    if (!pio_write_register(swd, true, 0x04u, address, &ack)) return false;
+    if (!swd->mem_select_valid) {
+        if (!pio_write_register(swd, false, 0x08u, 0u, &ack)) return false;
+        swd->mem_select_valid = true;
+    }
+    if (!swd->mem_csw_valid || swd->mem_csw != csw) {
+        if (!pio_write_register(swd, true, 0x00u, csw, &ack)) return false;
+        swd->mem_csw = csw;
+        swd->mem_csw_valid = true;
+    }
+    if (!swd->mem_tar_valid || swd->mem_tar != address) {
+        if (!pio_write_register(swd, true, 0x04u, address, &ack)) return false;
+        swd->mem_tar = address;
+        swd->mem_tar_valid = true;
+    }
     return pio_write_register(swd, true, 0x0Cu, value, &ack);
 }
 
@@ -579,6 +606,54 @@ bool fun_pio_swd_write_memory16(fun_pio_swd_t *swd, uint32_t address,
     uint32_t drw = (address & 2u) ? ((uint32_t)value << 16)
                                   : (uint32_t)value;
     return pio_write_memory(swd, address, drw, 0x23000001u);
+}
+
+bool fun_pio_swd_write_memory_block32(fun_pio_swd_t *swd, uint32_t address,
+                                      const uint8_t *data, uint32_t length)
+{
+    if (!swd || !swd->opened || (!data && length != 0u) ||
+        (address & 3u) != 0u) return false;
+
+    uint8_t ack = 0u;
+    if (!swd->mem_select_valid) {
+        if (!pio_write_register(swd, false, 0x08u, 0u, &ack)) return false;
+        swd->mem_select_valid = true;
+    }
+
+    /* SIZE=word, AddrInc=single. */
+    const uint32_t csw = 0x23000012u;
+    if (!swd->mem_csw_valid || swd->mem_csw != csw) {
+        if (!pio_write_register(swd, true, 0x00u, csw, &ack)) return false;
+        swd->mem_csw = csw;
+        swd->mem_csw_valid = true;
+    }
+
+    uint32_t offset = 0u;
+    while (offset < length) {
+        uint32_t current = address + offset;
+        /* AHB-AP auto increment wraps at a 1 KiB boundary. */
+        if (offset == 0u || (current & 0x3FFu) == 0u) {
+            if (!pio_write_register(swd, true, 0x04u, current, &ack))
+                return false;
+        }
+
+        uint32_t word = 0xFFFFFFFFu;
+        uint32_t remain = length - offset;
+        uint32_t take = remain < 4u ? remain : 4u;
+        word = 0u;
+        for (uint32_t i = 0u; i < take; ++i)
+            word |= (uint32_t)data[offset + i] << (8u * i);
+        if (take < 4u) {
+            for (uint32_t i = take; i < 4u; ++i)
+                word |= 0xFFu << (8u * i);
+        }
+        if (!pio_write_register(swd, true, 0x0Cu, word, &ack)) return false;
+        offset += take;
+    }
+
+    /* Auto-increment makes the cached TAR ambiguous at the 1 KiB wrap. */
+    swd->mem_tar_valid = false;
+    return true;
 }
 
 #if 0 /* 旧固定读取实现，保留在本次迁移中便于对照。 */
