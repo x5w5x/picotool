@@ -5,6 +5,7 @@
 #include "hardware/gpio.h"
 #include "hardware/clocks.h"
 #include "hardware/structs/sio.h"
+#include <stdio.h>
 #include <string.h>
 
 static inline uint8_t dap_swclk_pin(void) { return fun_swd_config_get()->swclk_gpio; }
@@ -229,6 +230,41 @@ static uint8_t dap_backend_transfer_word(uint8_t req, uint32_t *data)
 
 #define dap_swd_transfer_word dap_backend_transfer_word
 
+/* 只有 SWCLK/SWDIO 时，用 AIRCR.SYSRESETREQ 模拟 nRESET。 */
+static bool dap_request_software_reset(void)
+{
+    uint32_t tmp;
+    uint8_t ack;
+
+    tmp = 0x00000000u;
+    ack = dap_swd_transfer_word(dap_gen_req(0x08), &tmp);
+    if (ack != 1u) return false;
+
+    tmp = 0x23000002u;
+    ack = dap_swd_transfer_word(dap_gen_req(0x01), &tmp);
+    if (ack != 1u) return false;
+
+    tmp = 0xE000ED0Cu;
+    ack = dap_swd_transfer_word(dap_gen_req(0x05), &tmp);
+    if (ack != 1u) return false;
+
+    tmp = 0x05FA0004u;
+    ack = dap_swd_transfer_word(dap_gen_req(0x0D), &tmp);
+    if (ack != 1u) return false;
+
+    ack = dap_swd_transfer_word(dap_gen_req(0x0E), &tmp);
+    if (ack != 1u) return false;
+
+    sleep_us(500);
+
+    /*
+     * 复位后不要立刻访问 DHCSR：
+     * 目标可能仍处于复位窗口，Keil 会在后续命令中重新连接并释放
+     * 调试状态。这样可以避免复位后再次访问失效的 MEM-AP。
+     */
+    return true;
+}
+
 static void target_mem_write(uint32_t addr, uint32_t val) {
     uint32_t tmp;
     tmp = 0x00000000; dap_backend_transfer_word(dap_gen_req(0x08), &tmp); // DP SELECT = 0
@@ -236,6 +272,21 @@ static void target_mem_write(uint32_t addr, uint32_t val) {
     tmp = addr;       dap_backend_transfer_word(dap_gen_req(0x05), &tmp); // AP TAR = addr
     dap_backend_transfer_word(dap_gen_req(0x0D), &val);                    // AP DRW = val
     dap_backend_transfer_word(dap_gen_req(0x0E), &tmp);                    // DP RDBUFF 提交
+}
+
+static bool target_mem_read(uint32_t addr, uint32_t *val) {
+    uint32_t tmp;
+    if (!val) return false;
+
+    tmp = 0x00000000;
+    if (dap_backend_transfer_word(dap_gen_req(0x08), &tmp) != 1u) return false; // DP SELECT = 0
+    tmp = 0x23000002;
+    if (dap_backend_transfer_word(dap_gen_req(0x01), &tmp) != 1u) return false; // AP CSW = 32-bit
+    tmp = addr;
+    if (dap_backend_transfer_word(dap_gen_req(0x05), &tmp) != 1u) return false; // AP TAR = addr
+    tmp = 0u;
+    if (dap_backend_transfer_word(dap_gen_req(0x0F), &tmp) != 1u) return false; // AP DRW read request
+    return dap_backend_transfer_word(dap_gen_req(0x0E), val) == 1u;             // DP RDBUFF gets data
 }
 
 /* ================= 核心 DAP 指令分发器 ================= */
@@ -326,6 +377,8 @@ uint32_t dap_process_command(const uint8_t *req, uint8_t *resp) {
         }
 
         case ID_DAP_Disconnect: {
+            printf("[DAP] Disconnect pio=%u backend=%u\n",
+                   s_pio_swd.opened ? 1u : 0u, (unsigned)s_backend);
             if (s_pio_swd.opened) fun_pio_swd_close(&s_pio_swd);
             gpio_set_dir(PIN_SWCLK, GPIO_IN);
             gpio_set_dir(PIN_SWDIO, GPIO_IN);
@@ -335,10 +388,12 @@ uint32_t dap_process_command(const uint8_t *req, uint8_t *resp) {
         }
 
         case ID_DAP_SWJ_Pins: {
-            if (s_pio_swd.opened) fun_pio_swd_close(&s_pio_swd);
             uint8_t pin_val = req[1];
             uint8_t pin_sel = req[2];
             uint32_t wait_us = req[3] | (req[4] << 8) | (req[5] << 16) | (req[6] << 24);
+            printf("[DAP] SWJ_Pins val=%02X sel=%02X wait=%lu pio=%u\n",
+                   pin_val, pin_sel, (unsigned long)wait_us,
+                   s_pio_swd.opened ? 1u : 0u);
 
             if (pin_sel & 0x01) {
                 if (pin_val & 0x01) SWCLK_HIGH(); else SWCLK_LOW();
@@ -347,11 +402,15 @@ uint32_t dap_process_command(const uint8_t *req, uint8_t *resp) {
                 if (pin_val & 0x02) SWDIO_HIGH(); else SWDIO_LOW();
             }
             if (pin_sel & 0x80) {
-                s_nreset_pin = (pin_val & 0x80) ? 1 : 0;
-                if (s_nreset_pin == 0) {
-                    // ⚡ 软复位 (无 nRESET 硬件线):通过 SWD 写 AIRCR.SYSRESETREQ
-                    // 完整序列:DP SELECT=0 → AP CSW=32bit → TAR=AIRCR → DRW=0x05FA0004 → RDBUFF 提交
-                    target_mem_write(0xE000ED0C, 0x05FA0004);
+                /*
+                 * 当前硬件只有 SWCLK/SWDIO，没有物理 nRESET。
+                 * Keil 常通过 SWJ_Pins 拉低 bit7 请求复位，因此这里
+                 * 必须执行软件复位，不能只返回一个虚拟状态。
+                 */
+                s_nreset_pin = (pin_val & 0x80u) ? 1u : 0u;
+                if (s_nreset_pin == 0u) {
+                    (void)dap_request_software_reset();
+                    s_nreset_pin = 1u;
                 }
             }
 
@@ -706,27 +765,11 @@ uint32_t dap_process_command(const uint8_t *req, uint8_t *resp) {
             break;
         }
 
-        // ⚡ 标准复位：关闭捕获 -> 释放 Halt -> 触发系统复位
         case ID_DAP_ResetTarget: {
-            // ⚡ 安全单次软件复位：防止连续写总线造成 Pico 挂起
-            uint32_t tmp;
-            // 1. 发送一次复位请求 (AIRCR.SYSRESETREQ)
-            tmp = 0x00000000; dap_swd_transfer_word(dap_gen_req(0x08), &tmp); // DP SELECT = 0
-            tmp = 0x23000002; dap_swd_transfer_word(dap_gen_req(0x01), &tmp); // AP CSW
-            tmp = 0xE000ED0C; dap_swd_transfer_word(dap_gen_req(0x05), &tmp); // AP TAR = AIRCR
-            tmp = 0x05FA0004; dap_swd_transfer_word(dap_gen_req(0x0D), &tmp); // AP DRW = SYSRESETREQ
-            dap_swd_transfer_word(dap_gen_req(0x0E), &tmp);                    // 提交
-
-            sleep_us(500); // 极短延时等待目标板硬件重启
-
-            // 2. 释放内核挂起，允许全速运行
-            tmp = 0xE000EDF0; dap_swd_transfer_word(dap_gen_req(0x05), &tmp); // AP TAR = DHCSR
-            tmp = 0xA05F0000; dap_swd_transfer_word(dap_gen_req(0x0D), &tmp); // AP DRW = 释放
-            dap_swd_transfer_word(dap_gen_req(0x0E), &tmp);                    // 提交
-
-            resp[1] = DAP_OK;
-            resp[2] = 0x00; // 0x00 告知 Keil 复位已由调试器在内部完全处理完毕
-            resp_len = 3;
+            bool ok = dap_request_software_reset();
+            resp[1] = ok ? DAP_OK : DAP_ERROR;
+            /* CMSIS-DAP ResetTarget 的基本响应为 command + status。 */
+            resp_len = 2;
             break;
         }
 

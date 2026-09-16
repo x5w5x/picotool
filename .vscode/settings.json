@@ -67,6 +67,7 @@
         "stddef.h": "c",
         "fun_pio_uart.h": "c",
         "string.h": "c",
-        "cmsis_dap.h": "c"
+        "cmsis_dap.h": "c",
+        "cstdio": "c"
     }
 }
