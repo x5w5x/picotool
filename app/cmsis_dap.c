@@ -251,16 +251,15 @@ static bool dap_request_software_reset(void)
     tmp = 0x05FA0004u;
     ack = dap_swd_transfer_word(dap_gen_req(0x0D), &tmp);
     if (ack != 1u) return false;
-
-    ack = dap_swd_transfer_word(dap_gen_req(0x0E), &tmp);
-    if (ack != 1u) return false;
-
-    sleep_us(500);
-
+   //超级bug 不能加加了就会死改了三天 2026.9.17 13：42
+    // ack = dap_swd_transfer_word(dap_gen_req(0x0E), &tmp);
+    // if (ack != 1u) return false;
+    // sleep_us(500);
     /*
      * 复位后不要立刻访问 DHCSR：
      * 目标可能仍处于复位窗口，Keil 会在后续命令中重新连接并释放
-     * 调试状态。这样可以避免复位后再次访问失效的 MEM-AP。
+     * 调试状态+
+     * 这样可以避免复位后再次访问失效的 MEM-AP。
      */
     return true;
 }
