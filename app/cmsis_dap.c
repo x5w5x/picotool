@@ -25,7 +25,12 @@ static inline uint8_t dap_swdio_pin(void) { return fun_swd_config_get()->swdio_g
 #define SWDIO_LOW()         sio_hw->gpio_clr = (1u << PIN_SWDIO)
 #define SWDIO_READ()        ((sio_hw->gpio_in & (1u << PIN_SWDIO)) ? 1 : 0)
 
-volatile bool     g_dap_enabled        = false;
+/*
+ * USB 默认描述符就是 DAP + CDC，因此上电后必须立即响应主机的
+ * CMSIS-DAP HID 请求。PIO 后端仍采用懒加载，在第一笔 SWD 传输时
+ * 才申请状态机，不会影响系统启动。
+ */
+volatile bool     g_dap_enabled        = true;
 volatile uint32_t g_dap_packet_counter = 0;
 volatile uint32_t g_dap_cur_clock_hz   = 5000000;
 volatile uint32_t g_dap_pio_transfer_count = 0;

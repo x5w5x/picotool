@@ -5337,33 +5337,36 @@ LOAD C:/Users/xwx/.pico-sdk/toolchain/14_2_Rel1/bin/../lib/gcc/arm-none-eabi/14.
  .data.g_dap_cur_clock_hz
                 0x200012e4        0x4 app/libappmgr.a(cmsis_dap.c.obj)
                 0x200012e4                g_dap_cur_clock_hz
+ .data.g_dap_enabled
+                0x200012e8        0x1 app/libappmgr.a(cmsis_dap.c.obj)
+                0x200012e8                g_dap_enabled
+ *fill*         0x200012e9        0x3 
  .data.desc_device
-                0x200012e8       0x12 app/libappmgr.a(usb_descriptors.c.obj)
- *fill*         0x200012fa        0x2 
+                0x200012ec       0x12 app/libappmgr.a(usb_descriptors.c.obj)
+ *fill*         0x200012fe        0x2 
  .data.s_sd_tabs
-                0x200012fc       0x10 app/libappmgr.a(app_sd_msc.c.obj)
+                0x20001300       0x10 app/libappmgr.a(app_sd_msc.c.obj)
  .data.s_hex_base
-                0x2000130c        0x4 app/libappmgr.a(swd_flasher.c.obj)
+                0x20001310        0x4 app/libappmgr.a(swd_flasher.c.obj)
  .data.s_active_swdio
-                0x20001310        0x1 app/libappmgr.a(swd_flasher.c.obj)
+                0x20001314        0x1 app/libappmgr.a(swd_flasher.c.obj)
  .data.s_active_swclk
-                0x20001311        0x1 app/libappmgr.a(swd_flasher.c.obj)
+                0x20001315        0x1 app/libappmgr.a(swd_flasher.c.obj)
  .data.s_target_io_ok
-                0x20001312        0x1 app/libappmgr.a(swd_flasher.c.obj)
- *fill*         0x20001313        0x1 
+                0x20001316        0x1 app/libappmgr.a(swd_flasher.c.obj)
+ *fill*         0x20001317        0x1 
  .data.s_settings_tabs
-                0x20001314        0xc app/libappmgr.a(app_settings.c.obj)
+                0x20001318        0xc app/libappmgr.a(app_settings.c.obj)
  .data.s_swd_delay_count
-                0x20001320        0x4 fun/libfun.a(fun_swd.c.obj)
+                0x20001324        0x4 fun/libfun.a(fun_swd.c.obj)
  .data.s_config
-                0x20001324        0x8 fun/libfun.a(fun_swd_config.c.obj)
+                0x20001328        0x8 fun/libfun.a(fun_swd_config.c.obj)
  .data.__malloc_sbrk_base
-                0x2000132c        0x4 C:/Users/xwx/.pico-sdk/toolchain/14_2_Rel1/bin/../lib/gcc/arm-none-eabi/14.2.1/thumb/v6-m/nofp\libg.a(libc_a-mallocr.o)
-                0x2000132c                __malloc_sbrk_base
- .data.__malloc_trim_threshold
                 0x20001330        0x4 C:/Users/xwx/.pico-sdk/toolchain/14_2_Rel1/bin/../lib/gcc/arm-none-eabi/14.2.1/thumb/v6-m/nofp\libg.a(libc_a-mallocr.o)
-                0x20001330                __malloc_trim_threshold
- *fill*         0x20001334        0x4 
+                0x20001330                __malloc_sbrk_base
+ .data.__malloc_trim_threshold
+                0x20001334        0x4 C:/Users/xwx/.pico-sdk/toolchain/14_2_Rel1/bin/../lib/gcc/arm-none-eabi/14.2.1/thumb/v6-m/nofp\libg.a(libc_a-mallocr.o)
+                0x20001334                __malloc_trim_threshold
  .data.__malloc_av_
                 0x20001338      0x408 C:/Users/xwx/.pico-sdk/toolchain/14_2_Rel1/bin/../lib/gcc/arm-none-eabi/14.2.1/thumb/v6-m/nofp\libg.a(libc_a-mallocr.o)
                 0x20001338                __malloc_av_
@@ -5667,82 +5670,79 @@ LOAD C:/Users/xwx/.pico-sdk/toolchain/14_2_Rel1/bin/../lib/gcc/arm-none-eabi/14.
  .bss.g_dap_command_busy
                 0x20020150        0x1 app/libappmgr.a(cmsis_dap.c.obj)
                 0x20020150                g_dap_command_busy
- .bss.g_dap_enabled
-                0x20020151        0x1 app/libappmgr.a(cmsis_dap.c.obj)
-                0x20020151                g_dap_enabled
  .bss.g_dap_last_command
-                0x20020152        0x1 app/libappmgr.a(cmsis_dap.c.obj)
-                0x20020152                g_dap_last_command
+                0x20020151        0x1 app/libappmgr.a(cmsis_dap.c.obj)
+                0x20020151                g_dap_last_command
  .bss.g_dap_pio_active
-                0x20020153        0x1 app/libappmgr.a(cmsis_dap.c.obj)
-                0x20020153                g_dap_pio_active
+                0x20020152        0x1 app/libappmgr.a(cmsis_dap.c.obj)
+                0x20020152                g_dap_pio_active
  .bss.g_dap_pio_last_ack
-                0x20020154        0x1 app/libappmgr.a(cmsis_dap.c.obj)
-                0x20020154                g_dap_pio_last_ack
+                0x20020153        0x1 app/libappmgr.a(cmsis_dap.c.obj)
+                0x20020153                g_dap_pio_last_ack
  .bss.g_dap_pio_last_request
-                0x20020155        0x1 app/libappmgr.a(cmsis_dap.c.obj)
-                0x20020155                g_dap_pio_last_request
+                0x20020154        0x1 app/libappmgr.a(cmsis_dap.c.obj)
+                0x20020154                g_dap_pio_last_request
  .bss.g_dap_pio_last_stage
-                0x20020156        0x1 app/libappmgr.a(cmsis_dap.c.obj)
-                0x20020156                g_dap_pio_last_stage
+                0x20020155        0x1 app/libappmgr.a(cmsis_dap.c.obj)
+                0x20020155                g_dap_pio_last_stage
  .bss.g_has_touch_irq
-                0x20020157        0x1 Drivers/libdrivelib.a(touch.c.obj)
+                0x20020156        0x1 Drivers/libdrivelib.a(touch.c.obj)
  .bss.history_idx
-                0x20020158        0x1 Drivers/libdrivelib.a(touch.c.obj)
+                0x20020157        0x1 Drivers/libdrivelib.a(touch.c.obj)
  .bss.irq_handler_chain_free_slot_head
-                0x20020159        0x1 CMakeFiles/pico.dir/C_/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_irq/irq.c.obj
+                0x20020158        0x1 CMakeFiles/pico.dir/C_/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_irq/irq.c.obj
  .bss.low_priority_irq_num
-                0x2002015a        0x1 CMakeFiles/pico.dir/C_/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdio_usb/stdio_usb.c.obj
+                0x20020159        0x1 CMakeFiles/pico.dir/C_/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdio_usb/stdio_usb.c.obj
  .bss.one_shot_timer_pending
-                0x2002015b        0x1 CMakeFiles/pico.dir/C_/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdio_usb/stdio_usb.c.obj
+                0x2002015a        0x1 CMakeFiles/pico.dir/C_/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdio_usb/stdio_usb.c.obj
  .bss.s_bin_open
-                0x2002015c        0x1 app/libappmgr.a(swd_flasher.c.obj)
+                0x2002015b        0x1 app/libappmgr.a(swd_flasher.c.obj)
  .bss.s_default_manager_initialized
-                0x2002015d        0x1 pio/libpio_manager.a(pio_manager.c.obj)
+                0x2002015c        0x1 pio/libpio_manager.a(pio_manager.c.obj)
  .bss.s_default_manager_initialized
-                0x2002015e        0x1 fun/libfun.a(pin_manager.c.obj)
+                0x2002015d        0x1 fun/libfun.a(pin_manager.c.obj)
  .bss.s_firmware_is_hex
-                0x2002015f        0x1 app/libappmgr.a(swd_flasher.c.obj)
+                0x2002015e        0x1 app/libappmgr.a(swd_flasher.c.obj)
  .bss.s_flasher_use_pio
-                0x20020160        0x1 app/libappmgr.a(swd_flasher.c.obj)
+                0x2002015f        0x1 app/libappmgr.a(swd_flasher.c.obj)
  .bss.s_idle_cycles
-                0x20020161        0x1 app/libappmgr.a(cmsis_dap.c.obj)
+                0x20020160        0x1 app/libappmgr.a(cmsis_dap.c.obj)
  .bss.s_initialized
-                0x20020162        0x1 fun/libfun.a(fun_esp.c.obj)
+                0x20020161        0x1 fun/libfun.a(fun_esp.c.obj)
  .bss.s_last_is_touching.0
-                0x20020163        0x1 app/libappmgr.a(app_loader.c.obj)
+                0x20020162        0x1 app/libappmgr.a(app_loader.c.obj)
  .bss.s_last_read_ack
-                0x20020164        0x1 fun/libfun.a(fun_swd.c.obj)
+                0x20020163        0x1 fun/libfun.a(fun_swd.c.obj)
  .bss.s_last_write_ack
-                0x20020165        0x1 fun/libfun.a(fun_swd.c.obj)
+                0x20020164        0x1 fun/libfun.a(fun_swd.c.obj)
  .bss.s_msc_has_written
-                0x20020166        0x1 app/libappmgr.a(msc_disk.c.obj)
+                0x20020165        0x1 app/libappmgr.a(msc_disk.c.obj)
  .bss.s_msc_ready
-                0x20020167        0x1 app/libappmgr.a(msc_disk.c.obj)
+                0x20020166        0x1 app/libappmgr.a(msc_disk.c.obj)
  .bss.s_pio_connect_ack
-                0x20020168        0x1 app/libappmgr.a(swd_flasher.c.obj)
+                0x20020167        0x1 app/libappmgr.a(swd_flasher.c.obj)
  .bss.s_pio_connect_stage
-                0x20020169        0x1 app/libappmgr.a(swd_flasher.c.obj)
+                0x20020168        0x1 app/libappmgr.a(swd_flasher.c.obj)
  .bss.s_pio_power_stage
-                0x2002016a        0x1 app/libappmgr.a(swd_flasher.c.obj)
+                0x20020169        0x1 app/libappmgr.a(swd_flasher.c.obj)
  .bss.s_plugin_fat_mounted
-                0x2002016b        0x1 app/libappmgr.a(app_loader.c.obj)
+                0x2002016a        0x1 app/libappmgr.a(app_loader.c.obj)
  .bss.s_plugin_running
-                0x2002016c        0x1 app/libappmgr.a(app_loader.c.obj)
+                0x2002016b        0x1 app/libappmgr.a(app_loader.c.obj)
  .bss.s_redraw_pending
-                0x2002016d        0x1 app/libappmgr.a(app_loader.c.obj)
+                0x2002016c        0x1 app/libappmgr.a(app_loader.c.obj)
  .bss.s_skip_carried_touch
-                0x2002016e        0x1 app/libappmgr.a(app_loader.c.obj)
+                0x2002016d        0x1 app/libappmgr.a(app_loader.c.obj)
  .bss.s_target_call_stage
-                0x2002016f        0x1 app/libappmgr.a(swd_flasher.c.obj)
+                0x2002016e        0x1 app/libappmgr.a(swd_flasher.c.obj)
  .bss.s_usb_mode
-                0x20020170        0x1 app/libappmgr.a(usb_descriptors.c.obj)
- .bss.tf_ready  0x20020171        0x1 Drivers/libdrivelib.a(tf.c.obj)
+                0x2002016f        0x1 app/libappmgr.a(usb_descriptors.c.obj)
+ .bss.tf_ready  0x20020170        0x1 Drivers/libdrivelib.a(tf.c.obj)
  .bss.user_irq_claimed
-                0x20020172        0x1 CMakeFiles/pico.dir/C_/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_irq/irq.c.obj
+                0x20020171        0x1 CMakeFiles/pico.dir/C_/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_irq/irq.c.obj
  *(COMMON)
                 0x20020174                        . = ALIGN (0x4)
- *fill*         0x20020173        0x1 
+ *fill*         0x20020172        0x2 
                 0x20020174                        __bss_end__ = .
 
 .heap           0x20020174      0x800 load address 0x1004c9fc
@@ -6333,7 +6333,7 @@ LOAD linker stubs
  .comment       0x00000045       0x46 ui/libuigeom.a(ui_file_browser.c.obj)
  .comment       0x00000045       0x46 ui/libuigeom.a(ui_hex_view.c.obj)
 
-.debug_info     0x00000000    0x958aa
+.debug_info     0x00000000    0x958ac
  .debug_info    0x00000000     0x3664 CMakeFiles/pico.dir/pico.cpp.obj
  .debug_info    0x00003664       0xb4 CMakeFiles/pico.dir/config.c.obj
  .debug_info    0x00003718     0x2421 CMakeFiles/pico.dir/C_/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_gpio/gpio.c.obj
@@ -6409,31 +6409,31 @@ LOAD linker stubs
  .debug_info    0x0005710d     0x406b app/libappmgr.a(app_dap.c.obj)
  .debug_info    0x0005b178     0x24df app/libappmgr.a(ui_pin_config.c.obj)
  .debug_info    0x0005d657     0x18c8 app/libappmgr.a(app_manager.c.obj)
- .debug_info    0x0005ef1f     0x3e70 app/libappmgr.a(cmsis_dap.c.obj)
- .debug_info    0x00062d8f      0xb38 app/libappmgr.a(usb_descriptors.c.obj)
- .debug_info    0x000638c7      0x6f7 app/libappmgr.a(msc_disk.c.obj)
- .debug_info    0x00063fbe     0x4f87 app/libappmgr.a(app_sd_msc.c.obj)
- .debug_info    0x00068f45     0x419c app/libappmgr.a(swd_flasher.c.obj)
- .debug_info    0x0006d0e1     0x2d4e app/libappmgr.a(app_loader.c.obj)
- .debug_info    0x0006fe2f     0x3ac0 app/libappmgr.a(app_settings.c.obj)
- .debug_info    0x000738ef     0x175a pio/libpio_manager.a(pio_manager.c.obj)
- .debug_info    0x00075049      0xad5 fun/libfun.a(fun_esp.c.obj)
- .debug_info    0x00075b1e     0x12a4 fun/libfun.a(pin_manager.c.obj)
- .debug_info    0x00076dc2     0x40d1 fun/libfun.a(fun_swd.c.obj)
- .debug_info    0x0007ae93      0x244 fun/libfun.a(fun_swd_config.c.obj)
- .debug_info    0x0007b0d7     0x93be fun/libfun.a(fun_pio_swd.c.obj)
- .debug_info    0x00084495     0x5bc6 fatfs/libFatFs_SPI.a(ff.c.obj)
- .debug_info    0x0008a05b      0x4c5 fatfs/libFatFs_SPI.a(glue.c.obj)
- .debug_info    0x0008a520      0x29a fatfs/libFatFs_SPI.a(ffunicode.c.obj)
- .debug_info    0x0008a7ba     0x40b6 Drivers/libdrivelib.a(tf.c.obj)
- .debug_info    0x0008e870      0xc53 ui/libuigeom.a(ui_slider.c.obj)
- .debug_info    0x0008f4c3      0x835 ui/libuigeom.a(ui_switch.c.obj)
- .debug_info    0x0008fcf8     0x10b4 ui/libuigeom.a(ui_dropdown.c.obj)
- .debug_info    0x00090dac     0x10b3 ui/libuigeom.a(ui_modal.c.obj)
- .debug_info    0x00091e5f      0xdbe ui/libuigeom.a(ui_tabview.c.obj)
- .debug_info    0x00092c1d      0xbad ui/libuigeom.a(ui_progressbar.c.obj)
- .debug_info    0x000937ca     0x1339 ui/libuigeom.a(ui_file_browser.c.obj)
- .debug_info    0x00094b03      0xda7 ui/libuigeom.a(ui_hex_view.c.obj)
+ .debug_info    0x0005ef1f     0x3e72 app/libappmgr.a(cmsis_dap.c.obj)
+ .debug_info    0x00062d91      0xb38 app/libappmgr.a(usb_descriptors.c.obj)
+ .debug_info    0x000638c9      0x6f7 app/libappmgr.a(msc_disk.c.obj)
+ .debug_info    0x00063fc0     0x4f87 app/libappmgr.a(app_sd_msc.c.obj)
+ .debug_info    0x00068f47     0x419c app/libappmgr.a(swd_flasher.c.obj)
+ .debug_info    0x0006d0e3     0x2d4e app/libappmgr.a(app_loader.c.obj)
+ .debug_info    0x0006fe31     0x3ac0 app/libappmgr.a(app_settings.c.obj)
+ .debug_info    0x000738f1     0x175a pio/libpio_manager.a(pio_manager.c.obj)
+ .debug_info    0x0007504b      0xad5 fun/libfun.a(fun_esp.c.obj)
+ .debug_info    0x00075b20     0x12a4 fun/libfun.a(pin_manager.c.obj)
+ .debug_info    0x00076dc4     0x40d1 fun/libfun.a(fun_swd.c.obj)
+ .debug_info    0x0007ae95      0x244 fun/libfun.a(fun_swd_config.c.obj)
+ .debug_info    0x0007b0d9     0x93be fun/libfun.a(fun_pio_swd.c.obj)
+ .debug_info    0x00084497     0x5bc6 fatfs/libFatFs_SPI.a(ff.c.obj)
+ .debug_info    0x0008a05d      0x4c5 fatfs/libFatFs_SPI.a(glue.c.obj)
+ .debug_info    0x0008a522      0x29a fatfs/libFatFs_SPI.a(ffunicode.c.obj)
+ .debug_info    0x0008a7bc     0x40b6 Drivers/libdrivelib.a(tf.c.obj)
+ .debug_info    0x0008e872      0xc53 ui/libuigeom.a(ui_slider.c.obj)
+ .debug_info    0x0008f4c5      0x835 ui/libuigeom.a(ui_switch.c.obj)
+ .debug_info    0x0008fcfa     0x10b4 ui/libuigeom.a(ui_dropdown.c.obj)
+ .debug_info    0x00090dae     0x10b3 ui/libuigeom.a(ui_modal.c.obj)
+ .debug_info    0x00091e61      0xdbe ui/libuigeom.a(ui_tabview.c.obj)
+ .debug_info    0x00092c1f      0xbad ui/libuigeom.a(ui_progressbar.c.obj)
+ .debug_info    0x000937cc     0x1339 ui/libuigeom.a(ui_file_browser.c.obj)
+ .debug_info    0x00094b05      0xda7 ui/libuigeom.a(ui_hex_view.c.obj)
 
 .debug_abbrev   0x00000000    0x1409e
  .debug_abbrev  0x00000000      0x631 CMakeFiles/pico.dir/pico.cpp.obj
@@ -7111,7 +7111,7 @@ LOAD linker stubs
  .debug_rnglists
                 0x0000cc00      0x11e ui/libuigeom.a(ui_hex_view.c.obj)
 
-.debug_line     0x00000000    0x64e98
+.debug_line     0x00000000    0x64ea2
  .debug_line    0x00000000     0x1587 CMakeFiles/pico.dir/pico.cpp.obj
  .debug_line    0x00001587       0xf1 CMakeFiles/pico.dir/config.c.obj
  .debug_line    0x00001678     0x1c64 CMakeFiles/pico.dir/C_/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_gpio/gpio.c.obj
@@ -7187,31 +7187,31 @@ LOAD linker stubs
  .debug_line    0x0003bad7     0x12de app/libappmgr.a(app_dap.c.obj)
  .debug_line    0x0003cdb5     0x196d app/libappmgr.a(ui_pin_config.c.obj)
  .debug_line    0x0003e722      0xd0e app/libappmgr.a(app_manager.c.obj)
- .debug_line    0x0003f430     0x3b09 app/libappmgr.a(cmsis_dap.c.obj)
- .debug_line    0x00042f39      0x608 app/libappmgr.a(usb_descriptors.c.obj)
- .debug_line    0x00043541      0x4af app/libappmgr.a(msc_disk.c.obj)
- .debug_line    0x000439f0     0x187d app/libappmgr.a(app_sd_msc.c.obj)
- .debug_line    0x0004526d     0x2a91 app/libappmgr.a(swd_flasher.c.obj)
- .debug_line    0x00047cfe     0x129d app/libappmgr.a(app_loader.c.obj)
- .debug_line    0x00048f9b     0x15bf app/libappmgr.a(app_settings.c.obj)
- .debug_line    0x0004a55a     0x1f96 pio/libpio_manager.a(pio_manager.c.obj)
- .debug_line    0x0004c4f0      0x801 fun/libfun.a(fun_esp.c.obj)
- .debug_line    0x0004ccf1     0x20eb fun/libfun.a(pin_manager.c.obj)
- .debug_line    0x0004eddc     0x23ce fun/libfun.a(fun_swd.c.obj)
- .debug_line    0x000511aa      0x1be fun/libfun.a(fun_swd_config.c.obj)
- .debug_line    0x00051368     0x4e9a fun/libfun.a(fun_pio_swd.c.obj)
- .debug_line    0x00056202     0x7e93 fatfs/libFatFs_SPI.a(ff.c.obj)
- .debug_line    0x0005e095      0x3ad fatfs/libFatFs_SPI.a(glue.c.obj)
- .debug_line    0x0005e442      0x392 fatfs/libFatFs_SPI.a(ffunicode.c.obj)
- .debug_line    0x0005e7d4     0x1d0c Drivers/libdrivelib.a(tf.c.obj)
- .debug_line    0x000604e0      0x7c0 ui/libuigeom.a(ui_slider.c.obj)
- .debug_line    0x00060ca0      0x4a7 ui/libuigeom.a(ui_switch.c.obj)
- .debug_line    0x00061147      0xba7 ui/libuigeom.a(ui_dropdown.c.obj)
- .debug_line    0x00061cee      0x6c6 ui/libuigeom.a(ui_modal.c.obj)
- .debug_line    0x000623b4      0xd4a ui/libuigeom.a(ui_tabview.c.obj)
- .debug_line    0x000630fe      0x708 ui/libuigeom.a(ui_progressbar.c.obj)
- .debug_line    0x00063806      0xd11 ui/libuigeom.a(ui_file_browser.c.obj)
- .debug_line    0x00064517      0x981 ui/libuigeom.a(ui_hex_view.c.obj)
+ .debug_line    0x0003f430     0x3b13 app/libappmgr.a(cmsis_dap.c.obj)
+ .debug_line    0x00042f43      0x608 app/libappmgr.a(usb_descriptors.c.obj)
+ .debug_line    0x0004354b      0x4af app/libappmgr.a(msc_disk.c.obj)
+ .debug_line    0x000439fa     0x187d app/libappmgr.a(app_sd_msc.c.obj)
+ .debug_line    0x00045277     0x2a91 app/libappmgr.a(swd_flasher.c.obj)
+ .debug_line    0x00047d08     0x129d app/libappmgr.a(app_loader.c.obj)
+ .debug_line    0x00048fa5     0x15bf app/libappmgr.a(app_settings.c.obj)
+ .debug_line    0x0004a564     0x1f96 pio/libpio_manager.a(pio_manager.c.obj)
+ .debug_line    0x0004c4fa      0x801 fun/libfun.a(fun_esp.c.obj)
+ .debug_line    0x0004ccfb     0x20eb fun/libfun.a(pin_manager.c.obj)
+ .debug_line    0x0004ede6     0x23ce fun/libfun.a(fun_swd.c.obj)
+ .debug_line    0x000511b4      0x1be fun/libfun.a(fun_swd_config.c.obj)
+ .debug_line    0x00051372     0x4e9a fun/libfun.a(fun_pio_swd.c.obj)
+ .debug_line    0x0005620c     0x7e93 fatfs/libFatFs_SPI.a(ff.c.obj)
+ .debug_line    0x0005e09f      0x3ad fatfs/libFatFs_SPI.a(glue.c.obj)
+ .debug_line    0x0005e44c      0x392 fatfs/libFatFs_SPI.a(ffunicode.c.obj)
+ .debug_line    0x0005e7de     0x1d0c Drivers/libdrivelib.a(tf.c.obj)
+ .debug_line    0x000604ea      0x7c0 ui/libuigeom.a(ui_slider.c.obj)
+ .debug_line    0x00060caa      0x4a7 ui/libuigeom.a(ui_switch.c.obj)
+ .debug_line    0x00061151      0xba7 ui/libuigeom.a(ui_dropdown.c.obj)
+ .debug_line    0x00061cf8      0x6c6 ui/libuigeom.a(ui_modal.c.obj)
+ .debug_line    0x000623be      0xd4a ui/libuigeom.a(ui_tabview.c.obj)
+ .debug_line    0x00063108      0x708 ui/libuigeom.a(ui_progressbar.c.obj)
+ .debug_line    0x00063810      0xd11 ui/libuigeom.a(ui_file_browser.c.obj)
+ .debug_line    0x00064521      0x981 ui/libuigeom.a(ui_hex_view.c.obj)
 
 .debug_str      0x00000000    0x111ad
  .debug_str     0x00000000    0x111ad CMakeFiles/pico.dir/pico.cpp.obj
