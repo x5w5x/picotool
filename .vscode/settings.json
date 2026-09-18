@@ -68,6 +68,7 @@
         "fun_pio_uart.h": "c",
         "string.h": "c",
         "cmsis_dap.h": "c",
-        "cstdio": "c"
+        "cstdio": "c",
+        "fun_swd_config.h": "c"
     }
 }

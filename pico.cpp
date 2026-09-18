@@ -296,11 +296,12 @@ static void render_custom_scene(ui_tile_t *tile)
 
 int main(void)
 {
+    
     // 1. RP2040 超频至 240MHz
     vreg_set_voltage(VREG_VOLTAGE_1_15);
     sleep_ms(5); //
     set_sys_clock_khz(240000, true);
-
+    sleep_ms(50); //等待自动更新的枚举
     stdio_init_all();
     pio_manager_system_init();
     pin_manager_system_init();

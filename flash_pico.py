@@ -21,6 +21,9 @@ import sys
 import time
 from pathlib import Path
 
+import serial
+import serial.tools.list_ports
+
 # Skip A:/B: (legacy floppy) and C: (system) by default.
 SCAN_LETTERS = "DEFGHIJKLMNOPQRSTUVWXYZ"
 SCAN_INTERVAL_SEC = 0.5
@@ -33,6 +36,59 @@ COOLDOWN_SEC = 4.0
 
 # UF2 boot volume always contains this file at the root.
 PICO_BOOT_MARKER = "INFO_UF2.TXT"
+
+
+def uf2_signature(path):
+    """返回 UF2 文件签名，用于检测编译是否生成了新文件。"""
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return (stat.st_mtime_ns, stat.st_size)
+
+
+def find_pico_cdc_port():
+    """查找当前运行应用固件的 Pico CDC 串口。"""
+    for port in serial.tools.list_ports.comports():
+        text = " ".join([
+            port.device or "",
+            port.description or "",
+            port.manufacturer or "",
+            port.product or "",
+        ]).lower()
+
+        # Raspberry Pi VID=2E8A；同时兼容 Windows 描述信息不完整的情况。
+        if port.vid == 0x2E8A or "pico" in text or "raspberry" in text:
+            return port.device
+
+    return None
+
+
+def trigger_bootsel_by_1200():
+    """对当前 Pico CDC 发送 1200 baud，触发进入 BOOTSEL。"""
+    port_name = find_pico_cdc_port()
+    if not port_name:
+        print("未找到 Pico CDC，保留手动 BOOTSEL 方式。")
+        return False
+
+    print(f"检测到新 UF2，发送 1200 baud 进入 BOOTSEL: {port_name}")
+    try:
+        serial_port = serial.Serial(port_name, 1200, timeout=0.2)
+        interruptible_sleep(0.25)
+        serial_port.close()
+        return True
+    except (serial.SerialException, OSError) as exc:
+        print(f"1200 baud 触发 BOOTSEL 失败: {exc}")
+        return False
+
+
+def wait_for_uf2_change(uf2_path, previous_signature):
+    """等待 UF2 签名变化；返回新签名，支持 Ctrl+C。"""
+    while True:
+        current_signature = uf2_signature(uf2_path)
+        if current_signature is not None and current_signature != previous_signature:
+            return current_signature
+        interruptible_sleep(0.25)
 
 
 def find_pico_boot_drive():
@@ -90,27 +146,17 @@ def flash_once(uf2_path, flash_count):
 
     Returns True on success, False if user aborted.
     """
-    print()
-    print(f"[#{flash_count}] Scanning drives for Pico BOOT ({PICO_BOOT_MARKER})...")
-    next_heartbeat = time.time() + 5.0  # first heartbeat 5s after start
+    print(f"[#{flash_count}] 等待 BOOTSEL 盘...")
     while True:
         drive = find_pico_boot_drive()
         if drive is not None:
             break
-        # Heartbeat every 5s so user knows we're alive.
-        if time.time() >= next_heartbeat:
-            # print(f"  ... waiting (elapsed {int(time.time())}s)")
-            next_heartbeat = time.time() + 5.0
         interruptible_sleep(SCAN_INTERVAL_SEC)
 
-    print(f"[#{flash_count}] Found BOOT drive: {drive}")
-    print(f"        Marker:    {drive / PICO_BOOT_MARKER}")
-    print(f"        Waiting {PRE_COPY_DELAY_SEC:.0f}s for drive to stabilize...")
+    print(f"[#{flash_count}] 已发现 {drive}，准备烧录")
     interruptible_sleep(PRE_COPY_DELAY_SEC)
 
     target = drive / uf2_path.name
-    print(f"[#{flash_count}] Copying: {uf2_path}")
-    print(f"             to: {target}")
     try:
         shutil.copy(uf2_path, target)
     except OSError as e:
@@ -119,8 +165,7 @@ def flash_once(uf2_path, flash_count):
         interruptible_sleep(2.0)
         return True  # Continue loop despite error
 
-    print(f"[#{flash_count}] Done. Pico will reset and boot.")
-    print(f"[#{flash_count}] Cooling down {COOLDOWN_SEC:.0f}s before next scan...")
+    print(f"[#{flash_count}] 烧录完成")
     interruptible_sleep(COOLDOWN_SEC)
     return True
 
@@ -129,29 +174,25 @@ def main():
     uf2_arg = sys.argv[1] if len(sys.argv) > 1 else "build/pico.uf2"
     uf2_path = Path(uf2_arg).resolve()
 
-    print("=" * 60)
-    print(" Pico UF2 Flasher (loop mode)")
-    print("=" * 60)
+    print("Pico UF2 自动烧录已启动")
 
     if not uf2_path.exists():
         print(f"ERROR: UF2 file not found: {uf2_path}")
         sys.exit(1)
 
-    print(f"UF2 file: {uf2_path} ({uf2_path.stat().st_size:,} bytes)")
-    print(f"Scan letters: {SCAN_LETTERS}")
-    print(f"Press Ctrl+C to abort.")
-    print()
-
     flash_count = 0
+    uf2_signature_now = uf2_signature(uf2_path)
+    print("等待 UF2 更新...")
     try:
         while True:
+            # 不改变现有烧录流程：只有本地 UF2 更新后，才自动请求 Pico 进入 BOOTSEL。
+            uf2_signature_now = wait_for_uf2_change(uf2_path, uf2_signature_now)
+            trigger_bootsel_by_1200()
+
             flash_count += 1
             flash_once(uf2_path, flash_count)
     except KeyboardInterrupt:
-        print()
-        print("=" * 60)
-        print(f" Aborted. Total flashes: {flash_count - 1}")
-        print("=" * 60)
+        print(f"已退出，共烧录 {flash_count - 1} 次")
         sys.exit(0)
 
 
