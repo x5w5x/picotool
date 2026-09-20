@@ -160,10 +160,8 @@ void app_ui_custom_init(void)
 
 
 
-    
-
  
-    // app_manager_register(&g_app_mgr, app_uart_get_instance());
+    app_manager_register(&g_app_mgr, app_uart_get_instance());
     app_manager_register(&g_app_mgr, app_dap_get_instance());
     ui_status_bar_init(&g_status_bar, 0, 0, LCD_WIDTH, 32, "多功能嵌入式终端", on_status_bar_click);
 
@@ -293,7 +291,6 @@ static void render_custom_scene(ui_tile_t *tile)
 }
 
 /* ================= 5. 裸机主入口与事件循环 ================= */
-
 int main(void)
 {
     

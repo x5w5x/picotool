@@ -4,7 +4,8 @@
 #include "ui_scrollview.h"
 #include "ui_draw.h"
 #include "ui_btn.h"
-#include "ui_dropdown.h"
+#include "ui_pin_config.h"
+#include "ui_toast.h"
 #include "lcd.h"
 #include <stdbool.h>
 #include "stdio.h"
@@ -14,12 +15,13 @@
 #include "fun_pio_swd.h"
 #include "fun_swd_config.h"
 #include "pin_manager.h"
+#include "pico/time.h"
 
 static const char *s_dap_tabs[] = { "状态", "配置", "终端" };
 #define DAP_TAB_COUNT          ((uint8_t)(sizeof(s_dap_tabs) / sizeof(s_dap_tabs[0])))
 
 #define DAP_STATUS_CONTENT_H   260
-#define DAP_CONFIG_CONTENT_H   360
+#define DAP_CONFIG_CONTENT_H   260
 #define DAP_TERM_CONTENT_H     360
 typedef enum
 {
@@ -68,9 +70,10 @@ typedef struct {
     bool  pio_powered;
 
     /* Tab 1: 配置页组件（预留扩展） */
-    ui_dropdown_t pin_swdio;
-    ui_dropdown_t pin_swclk;
+    ui_pin_config_t pin_swdio_cf;
+    ui_pin_config_t pin_swclk_cf;
     ui_btn_t btn_apply;
+    ui_toast_t toast;
 
     /* Tab 2: 终端页组件（预留扩展） */
 } dap_data_t;
@@ -94,7 +97,7 @@ static const char *dap_get_core_name(uint32_t cpuid,dap_core_type_t *type)
     uint32_t ip = (cpuid >>24)&0xFF;
     uint32_t port = (cpuid>>4)&0x0FFF;
     if(ip !=0x41){
-        if(type) type=DAP_CORE_UNKNOWN;
+        if(type) *type=DAP_CORE_UNKNOWN;
         return "CORE UNKNOWN" ;
     }
     switch(port){
@@ -119,7 +122,48 @@ static const char *dap_get_core_name(uint32_t cpuid,dap_core_type_t *type)
     }
 }
 
+static void on_dap_pin_config_changed(ui_pin_config_t *config,uint8_t gpio,void *user_data)
+{
+    dap_data_t *data = (dap_data_t *)user_data;
+    uint32_t mask = gpio < 32u ? (UINT32_C(1) << gpio) : 0u;
+    if (!data) return;
+    if (config == &data->pin_swclk_cf) {
+        /* SWDIO 不能选择当前已经占用的 SWCLK。 */
+        ui_pin_config_set_excluded_mask(&data->pin_swdio_cf, mask);
+    } else if (config == &data->pin_swdio_cf) {
+        /* SWCLK 不能选择当前已经占用的 SWDIO。 */
+        ui_pin_config_set_excluded_mask(&data->pin_swclk_cf, mask);
+    }
+    data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
+}
+static void on_dap_apply_click(ui_btn_t *btn,void *user_data){
+    (void)btn;
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data) return;
+    uint8_t swdio_pin = ui_pin_config_get_selected(&data->pin_swdio_cf);
+    uint8_t swclk_pin = ui_pin_config_get_selected(&data->pin_swclk_cf);
+    if(swdio_pin==UINT8_MAX||swclk_pin==UINT8_MAX||swdio_pin==swclk_pin){
+        data->dirty_rect=ui_rect_make(0,32,LCD_WIDTH,LCD_HEIGHT-32);
+        return;
+    }
+    if (!fun_swd_config_set_pins(swclk_pin, swdio_pin)) {
+        data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
+        return;
+    }
 
+    const fun_swd_config_t *cfg = fun_swd_config_get();
+    if (cfg) {
+        data->swd = *cfg;
+    }
+    if(data->pio_swd.opened){
+        fun_pio_swd_close(&data->pio_swd);
+        data->pio_powered=false;
+        data->target_detected=false;
+    }
+    ui_toast_show(&data->toast,"配置成功",UI_TOAST_SUCCESS,to_ms_since_boot(get_absolute_time()));
+    // data->dirty_rect=ui_rect_make(0,32,LCD_WIDTH,LCD_HEIGHT-32);
+    data->dirty_rect = rect_union_box(data->dirty_rect, data->config_scroll.view_rect);
+}
 static void on_probe_click(ui_btn_t *btn, void *user_data)
 {
     (void)btn;
@@ -228,9 +272,13 @@ static void dap_status_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
     snprintf(text,sizeof(text),"GPIO-%d",data->swd.swclk_gpio);
     ui_draw_string(tile,data->status_card.x+16*4+160,data->status_card.y+16,text,FONT_20,color_title,0xFFFF);
     ui_draw_string(tile,data->status_card.x+16,data->status_card.y+16*2,"CLOCK:",FONT_20,color_text,0xFFFF);
-    if(data->swd.clock_hz/1000000)
-    snprintf(text,sizeof(text),"%dMHZ",data->swd.clock_hz/1000000);
-    else snprintf(text,sizeof(text),"%dKHZ",data->swd.clock_hz/1000);
+    if (data->swd.clock_hz / 1000000u) {
+        snprintf(text, sizeof(text), "%luMHZ",
+                 (unsigned long)(data->swd.clock_hz / 1000000u));
+    } else {
+        snprintf(text, sizeof(text), "%luKHZ",
+                 (unsigned long)(data->swd.clock_hz / 1000u));
+    }
     ui_draw_string(tile,data->status_card.x+16*5,data->status_card.y+16*2,text,FONT_24,color_title,0xFFFF);
     if(!data->target_detected)
     ui_draw_string(tile,data->status_card.x+16,data->status_card.y+16*3+8,"点击探测开始探测芯片信息...",FONT_20,color_text,0xFFFF);
@@ -273,19 +321,72 @@ static bool dap_status_process_touch(dap_data_t *data, bool touching,
 static void dap_config_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
                                     int16_t scroll_y, void *user_data)
 {
-    (void)user_data;
+     dap_data_t *data =(dap_data_t *)user_data;
+    if (!data) 
+        return;
     int16_t x = viewport->x + 16;
     int16_t y = viewport->y + 16 - scroll_y;
     ui_draw_string(tile, x, y, "DAP引脚配置", FONT_24, 0x4208, 0xFFFF);
+
+    ui_pin_config_t swdio_view=data->pin_swdio_cf;
+    swdio_view.rect=ui_scrollview_content_rect_to_screen(&data->config_scroll,data->pin_swdio_cf.rect);
+    ui_pin_config_draw(tile,&swdio_view);
+    ui_pin_config_t swclk_view=data->pin_swclk_cf;
+    swclk_view.rect=ui_scrollview_content_rect_to_screen(&data->config_scroll,data->pin_swclk_cf.rect);
+    ui_pin_config_draw(tile,&swclk_view);
+    ui_btn_t apply_btn =data->btn_apply;
+    apply_btn.rect=ui_scrollview_content_rect_to_screen(&data->config_scroll,data->btn_apply.rect);
+    ui_btn_draw(tile,&apply_btn);
+
 }
 
 static bool dap_config_process_touch(dap_data_t *data, bool touching,
                                      int16_t x, int16_t y, uint32_t tick)
 {
-    if (ui_scrollview_process_touch(&data->config_scroll, touching, x, y, tick)) {
-        data->dirty_rect = rect_union_box(data->dirty_rect, data->config_scroll.view_rect);
+    if (!data) {
+        return false;
+    }
+
+    /* 弹窗打开时优先交给弹窗，避免外层页面抢走滑动手势。 */
+    if (data->pin_swdio_cf.modal.is_open) {
+        bool handled = ui_pin_config_process_modal_touch(
+            &data->pin_swdio_cf, touching, x, y, tick);
+        if (handled) {
+            data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
+        }
+        return handled;
+    }
+
+    if (data->pin_swclk_cf.modal.is_open) {
+        bool handled = ui_pin_config_process_modal_touch(
+            &data->pin_swclk_cf, touching, x, y, tick);
+        if (handled) {
+            data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
+        }
+        return handled;
+    }
+
+    /* Tab1 是固定布局，不调用 config_scroll 的触摸处理。 */
+    /* 普通控件使用 ScrollView 内容坐标；当前配置页不滚动，
+     * 但仍需减去视口原点，保证绘制区域和触摸区域一致。 */
+    int16_t content_x = (int16_t)(x - data->config_scroll.view_rect.x);
+    int16_t content_y = (int16_t)(y - data->config_scroll.view_rect.y +
+                                   data->config_scroll.scroll_y);
+
+    if (ui_pin_config_process_touch(&data->pin_swdio_cf, touching, content_x, content_y, tick)) {
+        data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
         return true;
     }
+
+    if (ui_pin_config_process_touch(&data->pin_swclk_cf, touching, content_x, content_y, tick)) {
+        data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
+        return true;
+    }
+    if (ui_btn_process_touch(&data->btn_apply,touching,content_x,content_y,tick)) {
+    data->dirty_rect = rect_union_box(data->dirty_rect, data->config_scroll.view_rect);
+    return true;
+}
+
     return false;
 }
 
@@ -341,7 +442,8 @@ static void dap_enter(app_t *self)
     memset(data, 0, sizeof(dap_data_t));
     self->user_data = data;
     data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
-
+    const fun_swd_config_t *swd_cfg =fun_swd_config_get();
+    if (swd_cfg) data->swd = *swd_cfg;
     /* 1. 初始化 TabView 容器 */
     ui_tabview_init(&data->tabview, 0, 32, LCD_WIDTH, LCD_HEIGHT - 32,
                     110, 48, s_dap_tabs, DAP_TAB_COUNT, 0, on_tab_changed);
@@ -360,7 +462,7 @@ static void dap_enter(app_t *self)
     data->config_scroll.user_data = data;
     data->config_scroll.color_bg = 0xFFFF;
     data->config_scroll.color_scrollbar = 0xA514;
-    data->config_scroll.show_scrollbar = true;
+    data->config_scroll.show_scrollbar = false;
 
     ui_scrollview_init(&data->term_scroll, 120, 40, 350, 260,
                        DAP_TERM_CONTENT_H, dap_term_draw_content);
@@ -389,7 +491,23 @@ static void dap_enter(app_t *self)
     data->pio_ctrl_ack=0;
     data->pio_ctrl_stat=0;
     //tab1配置界面
-
+    pin_manager_t *pin_manager=pin_manager_get_default();
+    ui_pin_config_init(&data->pin_swdio_cf,16,52,230,"SWDIO",pin_manager,PIN_OWNER_SWD,PIN_SOURCE_PIO,PIN_FUNC_PIO,0,data->swd.swdio_gpio,on_dap_pin_config_changed);
+    data->pin_swdio_cf.user_data=data;
+    ui_pin_config_init(&data->pin_swclk_cf,16,104,230,"SWCLK",pin_manager,PIN_OWNER_SWD,PIN_SOURCE_PIO,PIN_FUNC_PIO,0,data->swd.swclk_gpio,on_dap_pin_config_changed);
+    data->pin_swclk_cf.user_data=data;
+    ui_pin_config_set_allowed_mask(&data->pin_swdio_cf,UINT32_MAX);
+    ui_pin_config_set_allowed_mask(&data->pin_swclk_cf,UINT32_MAX);
+    uint8_t swdio_gpio =ui_pin_config_get_selected(&data->pin_swdio_cf);
+    uint8_t swclk_gpio = ui_pin_config_get_selected(&data->pin_swclk_cf);
+    ui_pin_config_set_excluded_mask(&data->pin_swdio_cf,swclk_gpio < 32u ?(UINT32_C(1) << swclk_gpio) : 0u);
+    ui_pin_config_set_excluded_mask(&data->pin_swclk_cf,swdio_gpio < 32u ?(UINT32_C(1) << swdio_gpio) : 0u);
+    ui_btn_init(&data->btn_apply,160,168,180,44,"应用配置",on_dap_apply_click);
+    data->btn_apply.user_data=data;
+    data->btn_apply.style=UI_BTN_STYLE_ROUND;
+    data->btn_apply.font_size=FONT_20;
+    ui_btn_set_color(&data->btn_apply,0xD69A,0xA514,0x4208);
+    ui_toast_init(&data->toast);
 }
 
 static void dap_exit(app_t *self)
@@ -404,17 +522,22 @@ static void dap_exit(app_t *self)
 
 static void dap_update(app_t *self, uint32_t now_tick)
 {
-    (void)self;
-    (void)now_tick;
-}
+    dap_data_t *data = (dap_data_t *)self->user_data;
+    if (!data) return;
 
+    data->dirty_rect = ui_rect_make(0, 0, 0, 0);
+    if (ui_toast_update(&data->toast, now_tick)) {
+        data->dirty_rect = rect_union_box(
+            data->dirty_rect,
+            ui_toast_get_dirty_union(&data->toast));
+    }
+}
 static bool dap_process_touch(app_t *self, bool touching, int16_t x,
                               int16_t y, uint32_t tick)
 {
     dap_data_t *data = (dap_data_t *)self->user_data;
     if (!data) return false;
 
-    /* 1. 处理 Tab 栏切页点击 */
     if (ui_tabview_process_touch(&data->tabview, touching, x, y, tick)) {
         if (data->tabview.active_tab_idx != data->last_tab_idx) {
             data->last_tab_idx = data->tabview.active_tab_idx;
@@ -425,21 +548,23 @@ static bool dap_process_touch(app_t *self, bool touching, int16_t x,
         return true;
     }
 
-    /* 2. 路由分发到激活 Tab 的专属事件处理函数 */
+    bool handled = false;
     switch (data->tabview.active_tab_idx) {
     case 0:
-        return dap_status_process_touch(data, touching, x, y, tick);
+        handled = dap_status_process_touch(data, touching, x, y, tick);
+        break;
     case 1:
-        return dap_config_process_touch(data, touching, x, y, tick);
+        handled = dap_config_process_touch(data, touching, x, y, tick);
+        break;
     case 2:
-        return dap_term_process_touch(data, touching, x, y, tick);
+        handled = dap_term_process_touch(data, touching, x, y, tick);
+        break;
     default:
         break;
     }
 
-    return false;
+    return handled || (data->dirty_rect.w > 0 && data->dirty_rect.h > 0);
 }
-
 static void dap_draw(app_t *self, ui_tile_t *tile)
 {
     dap_data_t *data = (dap_data_t *)self->user_data;
@@ -454,24 +579,31 @@ static void dap_draw(app_t *self, ui_tile_t *tile)
 
     /* 绘制 Tab 容器边框及标签栏 */
     ui_tabview_draw(tile, &data->tabview);
-    if (!ui_rect_intersect(&tile->rect, &data->tabview.content_rect, &overlap)) {
-        return;
+    if (ui_rect_intersect(&tile->rect, &data->tabview.content_rect, &overlap)) {
+        /* 路由分发到激活 Tab 的绘制 */
+        switch (data->tabview.active_tab_idx) {
+        case 0:
+            ui_scrollview_draw(tile, &data->status_scroll);
+            break;
+        case 1:
+            ui_scrollview_draw(tile, &data->config_scroll);
+            break;
+        case 2:
+            ui_scrollview_draw(tile, &data->term_scroll);
+            break;
+        default:
+            break;
+        }
+
+        /* 引脚配置弹窗是覆盖层，必须在页面内容之后绘制。 */
+        if (data->tabview.active_tab_idx == 1) {
+            ui_pin_config_draw_modal(tile, &data->pin_swdio_cf);
+            ui_pin_config_draw_modal(tile, &data->pin_swclk_cf);
+        }
     }
 
-    /* 路由分发到激活 Tab 的绘制 */
-    switch (data->tabview.active_tab_idx) {
-    case 0:
-        ui_scrollview_draw(tile, &data->status_scroll);
-        break;
-    case 1:
-        ui_scrollview_draw(tile, &data->config_scroll);
-        break;
-    case 2:
-        ui_scrollview_draw(tile, &data->term_scroll);
-        break;
-    default:
-        break;
-    }
+    /* Toast 是全局覆盖层，即使切片不在 Tab 内容区域也必须绘制。 */
+    ui_toast_draw(tile, &data->toast);
 }
 
 app_t *app_dap_get_instance(void)

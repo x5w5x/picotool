@@ -69,6 +69,8 @@
         "string.h": "c",
         "cmsis_dap.h": "c",
         "cstdio": "c",
-        "fun_swd_config.h": "c"
-    }
+        "fun_swd_config.h": "c",
+        "ui_toast.h": "c"
+    },
+    "idf.currentSetup": "D:/espidf/Espressif/frameworks/esp-idf-v5.3.1/"
 }
