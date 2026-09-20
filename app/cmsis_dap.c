@@ -324,7 +324,7 @@ uint32_t dap_process_command(const uint8_t *req, uint8_t *resp) {
                     break;
                 case DAP_INFO_FW_VER:
                     resp[1] = 6;
-                    memcpy(&resp[2], "v1.1.0", 6);
+                    memcpy(&resp[2], "v2.1.0", 6);
                     resp_len = 2 + 6;
                     break;
                 case DAP_INFO_CAPABILITIES:
@@ -431,6 +431,7 @@ uint32_t dap_process_command(const uint8_t *req, uint8_t *resp) {
         case ID_DAP_SWJ_Clock: {
             uint32_t clk_hz = req[1] | (req[2] << 8) | (req[3] << 16) | (req[4] << 24);
             g_dap_cur_clock_hz = clk_hz;
+            fun_swd_config_set_clock(clk_hz);
             if (s_pio_swd.opened && clk_hz != 0u)
                 fun_pio_swd_set_clock(&s_pio_swd, clk_hz);
             if (clk_hz >= 10000000)     s_dap_delay_cnt = 2;  // ~10MHz

@@ -6,6 +6,7 @@
 #include "ui_btn.h"
 #include "ui_pin_config.h"
 #include "ui_toast.h"
+#include "ui_switch.h"
 #include "lcd.h"
 #include <stdbool.h>
 #include "stdio.h"
@@ -74,6 +75,7 @@ typedef struct {
     ui_pin_config_t pin_swclk_cf;
     ui_btn_t btn_apply;
     ui_toast_t toast;
+    ui_switch_t dap_switch;
 
     /* Tab 2: 终端页组件（预留扩展） */
 } dap_data_t;
@@ -164,6 +166,14 @@ static void on_dap_apply_click(ui_btn_t *btn,void *user_data){
     // data->dirty_rect=ui_rect_make(0,32,LCD_WIDTH,LCD_HEIGHT-32);
     data->dirty_rect = rect_union_box(data->dirty_rect, data->config_scroll.view_rect);
 }
+static void on_dap_switch_change(ui_switch_t *sw,bool state,void *user_data)
+{
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data) return;
+    g_dap_enabled=state;
+    data->dirty_rect = rect_union_box(data->dirty_rect, data->config_scroll.view_rect);
+
+}
 static void on_probe_click(ui_btn_t *btn, void *user_data)
 {
     (void)btn;
@@ -183,7 +193,7 @@ static void on_probe_click(ui_btn_t *btn, void *user_data)
     const fun_swd_config_t *cfg=fun_swd_config_get();
     if(!cfg){
         data->probe_status = DAP_PROBE_OPEN_FAILED;
-        data->dirty_rect = rect_union_box(data->dirty_rect, data->status_card);
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->status_scroll.view_rect);
         return;
     }
     bool opened;
@@ -194,28 +204,28 @@ static void on_probe_click(ui_btn_t *btn, void *user_data)
     }
     if(!opened){
         data->probe_status = DAP_PROBE_OPEN_FAILED;
-        data->dirty_rect = rect_union_box(data->dirty_rect, data->status_card);
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->status_scroll.view_rect);
         return;
     }
     data->target_detected=fun_pio_swd_read_dp_idcode(&data->pio_swd,&data->dp_id,&data->pio_ack);
     if(!data->target_detected){
         data->probe_status = DAP_PROBE_DP_FAILED;
-        data->dirty_rect = rect_union_box(data->dirty_rect, data->status_card);
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->status_scroll.view_rect);
         return;
     }
     data->pio_powered=fun_pio_swd_power_up(&data->pio_swd);
     fun_pio_swd_read_dp_register(&data->pio_swd,0x04u,&data->pio_ctrl_stat,&data->pio_ctrl_ack);
     if(!data->pio_powered){
         data->probe_status = DAP_PROBE_POWER_FAILED;
-        data->dirty_rect = rect_union_box(data->dirty_rect, data->status_card);
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->status_scroll.view_rect);
         return;
     }
     fun_pio_swd_read_memory32(&data->pio_swd,0xE000ED00u,&data->cpu_id);
     fun_pio_swd_read_memory32(&data->pio_swd,0xE0042000u,&data->dbg_id);
     data->probe_status = DAP_PROBE_SUCCESS;
     data->swd=*cfg;
-    data->dirty_rect = rect_union_box(data->dirty_rect, data->status_card);
-    data->dirty_rect = rect_union_box(data->dirty_rect, ui_btn_get_dirty_rect(&data->pio_probe));
+    fun_pio_swd_close(&data->pio_swd);
+    data->dirty_rect = rect_union_box(data->dirty_rect, data->status_scroll.view_rect);
 }
 
 static void dap_status_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
@@ -337,11 +347,14 @@ static void dap_config_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
     ui_btn_t apply_btn =data->btn_apply;
     apply_btn.rect=ui_scrollview_content_rect_to_screen(&data->config_scroll,data->btn_apply.rect);
     ui_btn_draw(tile,&apply_btn);
+    ui_switch_t dap=data->dap_switch;
+    dap.rect=ui_scrollview_content_rect_to_screen(&data->config_scroll,data->dap_switch.rect);
+    ui_switch_draw(tile,&dap);
+    ui_draw_string(tile,x,y+150,"DAP开关",FONT_24,0x4208,0xFFFF);
 
 }
 
-static bool dap_config_process_touch(dap_data_t *data, bool touching,
-                                     int16_t x, int16_t y, uint32_t tick)
+static bool dap_config_process_touch(dap_data_t *data, bool touching,int16_t x, int16_t y, uint32_t tick)
 {
     if (!data) {
         return false;
@@ -385,7 +398,11 @@ static bool dap_config_process_touch(dap_data_t *data, bool touching,
     if (ui_btn_process_touch(&data->btn_apply,touching,content_x,content_y,tick)) {
     data->dirty_rect = rect_union_box(data->dirty_rect, data->config_scroll.view_rect);
     return true;
-}
+    }
+    if (ui_switch_process_touch(&data->dap_switch, touching,content_x, content_y, tick)) {
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->config_scroll.view_rect);
+        return true;
+    }
 
     return false;
 }
@@ -502,12 +519,15 @@ static void dap_enter(app_t *self)
     uint8_t swclk_gpio = ui_pin_config_get_selected(&data->pin_swclk_cf);
     ui_pin_config_set_excluded_mask(&data->pin_swdio_cf,swclk_gpio < 32u ?(UINT32_C(1) << swclk_gpio) : 0u);
     ui_pin_config_set_excluded_mask(&data->pin_swclk_cf,swdio_gpio < 32u ?(UINT32_C(1) << swdio_gpio) : 0u);
-    ui_btn_init(&data->btn_apply,160,168,180,44,"应用配置",on_dap_apply_click);
+    ui_btn_init(&data->btn_apply,160,168+32,180,44,"应用配置",on_dap_apply_click);
     data->btn_apply.user_data=data;
     data->btn_apply.style=UI_BTN_STYLE_ROUND;
     data->btn_apply.font_size=FONT_20;
     ui_btn_set_color(&data->btn_apply,0xD69A,0xA514,0x4208);
     ui_toast_init(&data->toast);
+    ui_switch_init(&data->dap_switch,120,160,64,32,g_dap_enabled,on_dap_switch_change);
+    data->dap_switch.user_data = data;
+    ui_switch_set_color(&data->dap_switch,0x7BEF,0x5DCC,0xFFFF); 
 }
 
 static void dap_exit(app_t *self)
@@ -530,6 +550,12 @@ static void dap_update(app_t *self, uint32_t now_tick)
         data->dirty_rect = rect_union_box(
             data->dirty_rect,
             ui_toast_get_dirty_union(&data->toast));
+    }
+    const fun_swd_config_t *cfg=fun_swd_config_get();
+    if(cfg&&cfg->clock_hz!=data->swd.clock_hz){
+        data->swd=*cfg;
+        if(data->tabview.active_tab_idx==0)
+        data->dirty_rect =rect_union_box(data->dirty_rect,data->status_card);
     }
 }
 static bool dap_process_touch(app_t *self, bool touching, int16_t x,
