@@ -4,6 +4,7 @@
 #include "ui_scrollview.h"
 #include "ui_draw.h"
 #include "ui_btn.h"
+#include "ui_dropdown.h"
 #include "lcd.h"
 #include <stdbool.h>
 #include "stdio.h"
@@ -12,6 +13,7 @@
 #include "cmsis_dap.h"
 #include "fun_pio_swd.h"
 #include "fun_swd_config.h"
+#include "pin_manager.h"
 
 static const char *s_dap_tabs[] = { "状态", "配置", "终端" };
 #define DAP_TAB_COUNT          ((uint8_t)(sizeof(s_dap_tabs) / sizeof(s_dap_tabs[0])))
@@ -19,7 +21,24 @@ static const char *s_dap_tabs[] = { "状态", "配置", "终端" };
 #define DAP_STATUS_CONTENT_H   260
 #define DAP_CONFIG_CONTENT_H   360
 #define DAP_TERM_CONTENT_H     360
-
+typedef enum
+{
+    DAP_CORE_UNKNOWN = 0,
+    DAP_CORE_ARM_CORTEX_M0,
+    DAP_CORE_ARM_CORTEX_M0PLUS,
+    DAP_CORE_ARM_CORTEX_M3,
+    DAP_CORE_ARM_CORTEX_M4,
+    DAP_CORE_ARM_CORTEX_M7,
+    DAP_CORE_RISCV
+} dap_core_type_t;
+typedef enum
+{
+    DAP_PROBE_IDLE = 0,
+    DAP_PROBE_OPEN_FAILED,
+    DAP_PROBE_DP_FAILED,
+    DAP_PROBE_POWER_FAILED,
+    DAP_PROBE_SUCCESS
+} dap_probe_status_t;
 typedef struct {
     /* 必须放在首字段供 app_manager 读取脏矩形 */
     ui_rect_t dirty_rect;
@@ -36,8 +55,22 @@ typedef struct {
     ui_btn_t pio_probe;
     bool target_detected;
     fun_swd_config_t swd;
+    fun_pio_swd_t pio_swd;
+    uint32_t dp_id;
+    uint32_t cpu_id;
+    uint32_t dbg_id;
+    uint32_t flash_size;
+    uint8_t pio_ack;
+    uint8_t pio_ctrl_ack;
+    uint32_t pio_ctrl_stat;
+    dap_probe_status_t probe_status;
+
+    bool  pio_powered;
 
     /* Tab 1: 配置页组件（预留扩展） */
+    ui_dropdown_t pin_swdio;
+    ui_dropdown_t pin_swclk;
+    ui_btn_t btn_apply;
 
     /* Tab 2: 终端页组件（预留扩展） */
 } dap_data_t;
@@ -56,6 +89,36 @@ static inline ui_rect_t rect_union_box(ui_rect_t a, ui_rect_t b)
 /* ============================================================================
  * Tab 0: 状态页 (Status)
  * ============================================================================ */
+static const char *dap_get_core_name(uint32_t cpuid,dap_core_type_t *type)
+{
+    uint32_t ip = (cpuid >>24)&0xFF;
+    uint32_t port = (cpuid>>4)&0x0FFF;
+    if(ip !=0x41){
+        if(type) type=DAP_CORE_UNKNOWN;
+        return "CORE UNKNOWN" ;
+    }
+    switch(port){
+        case 0xc20:
+        if(type) *type=DAP_CORE_ARM_CORTEX_M0;
+        return "Cortex-M0" ;
+        case 0xc60:
+        if(type) *type=DAP_CORE_ARM_CORTEX_M0PLUS;
+        return "Cortex-M0+" ;
+        case 0xc23:
+        if(type) *type=DAP_CORE_ARM_CORTEX_M3;
+        return "Cortex-M3" ;
+        case 0xc24:
+        if(type) *type=DAP_CORE_ARM_CORTEX_M4;
+        return "Cortex-M4" ;
+        case 0xc37:
+        if(type) *type=DAP_CORE_ARM_CORTEX_M7;
+        return "Cortex-M7" ;
+        default:
+        if(type) *type=DAP_CORE_UNKNOWN;
+        return "ARM Cortex-M" ;
+    }
+}
+
 
 static void on_probe_click(ui_btn_t *btn, void *user_data)
 {
@@ -63,8 +126,50 @@ static void on_probe_click(ui_btn_t *btn, void *user_data)
     dap_data_t *data = (dap_data_t *)user_data;
     if (!data) return;
 
-    data->target_detected = true;
-    g_dap_enabled =!g_dap_enabled;
+    data->target_detected = false;
+    data->pio_powered=false;
+    data->dp_id=0;
+    data->cpu_id=0;
+    data->dbg_id=0;
+    data->flash_size=0;
+    data->pio_ack=0;
+    data->pio_ctrl_ack=0;
+    data->pio_ctrl_stat=0;
+    data->probe_status = DAP_PROBE_IDLE;
+    const fun_swd_config_t *cfg=fun_swd_config_get();
+    if(!cfg){
+        data->probe_status = DAP_PROBE_OPEN_FAILED;
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->status_card);
+        return;
+    }
+    bool opened;
+    if(data->pio_swd.opened){
+        opened = fun_pio_swd_recover(&data->pio_swd);
+    }else{
+        opened= fun_pio_swd_open_auto(&data->pio_swd,pio_manager_get_default(),cfg->swclk_gpio,cfg->swdio_gpio,cfg->clock_hz);
+    }
+    if(!opened){
+        data->probe_status = DAP_PROBE_OPEN_FAILED;
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->status_card);
+        return;
+    }
+    data->target_detected=fun_pio_swd_read_dp_idcode(&data->pio_swd,&data->dp_id,&data->pio_ack);
+    if(!data->target_detected){
+        data->probe_status = DAP_PROBE_DP_FAILED;
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->status_card);
+        return;
+    }
+    data->pio_powered=fun_pio_swd_power_up(&data->pio_swd);
+    fun_pio_swd_read_dp_register(&data->pio_swd,0x04u,&data->pio_ctrl_stat,&data->pio_ctrl_ack);
+    if(!data->pio_powered){
+        data->probe_status = DAP_PROBE_POWER_FAILED;
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->status_card);
+        return;
+    }
+    fun_pio_swd_read_memory32(&data->pio_swd,0xE000ED00u,&data->cpu_id);
+    fun_pio_swd_read_memory32(&data->pio_swd,0xE0042000u,&data->dbg_id);
+    data->probe_status = DAP_PROBE_SUCCESS;
+    data->swd=*cfg;
     data->dirty_rect = rect_union_box(data->dirty_rect, data->status_card);
     data->dirty_rect = rect_union_box(data->dirty_rect, ui_btn_get_dirty_rect(&data->pio_probe));
 }
@@ -77,9 +182,9 @@ static void dap_status_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
 
     int16_t x = viewport->x + 16;
     int16_t y = viewport->y + 8 - scroll_y;
-    char text[16];
-    data->swd = *fun_swd_config_get();
-
+    char text[32];
+    const fun_swd_config_t *cfg = fun_swd_config_get();
+    if (cfg) data->swd = *cfg;
     const uint16_t color_title = 0x3186;
     const uint16_t color_text = 0x632C;
     const uint16_t color_muted = 0x8410;
@@ -92,6 +197,26 @@ static void dap_status_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
     ui_draw_string(tile, x+80, y, "开启", FONT_20,0x07e0, 0xFFFF);
     else
     ui_draw_string(tile, x+80, y, "关闭", FONT_20,0x8410, 0xFFFF);
+    const char *sub_text = "未探测";
+    switch(data->probe_status){
+        case DAP_PROBE_OPEN_FAILED:
+        sub_text="PIO初始化失败";
+            break;
+        case DAP_PROBE_DP_FAILED:
+        sub_text = "目标无响应";
+            break;
+        case DAP_PROBE_POWER_FAILED:
+        sub_text = "调试电源失败";
+            break;
+        case DAP_PROBE_SUCCESS:
+        sub_text = "探测成功";
+            break;
+        case DAP_PROBE_IDLE:
+        default:
+            break;
+    }
+    ui_draw_string(tile,x+190,y,sub_text,FONT_20,color_title,0xFFFF);
+
 
     ui_draw_fill_rect(tile, &data->status_card, color_card);
     ui_draw_rect(tile, &data->status_card, color_border);
@@ -102,12 +227,26 @@ static void dap_status_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
     ui_draw_string(tile,data->status_card.x+160,data->status_card.y+16,"SWCLK:",FONT_20,color_title,0xFFFF);
     snprintf(text,sizeof(text),"GPIO-%d",data->swd.swclk_gpio);
     ui_draw_string(tile,data->status_card.x+16*4+160,data->status_card.y+16,text,FONT_20,color_title,0xFFFF);
+    ui_draw_string(tile,data->status_card.x+16,data->status_card.y+16*2,"CLOCK:",FONT_20,color_text,0xFFFF);
+    if(data->swd.clock_hz/1000000)
+    snprintf(text,sizeof(text),"%dMHZ",data->swd.clock_hz/1000000);
+    else snprintf(text,sizeof(text),"%dKHZ",data->swd.clock_hz/1000);
+    ui_draw_string(tile,data->status_card.x+16*5,data->status_card.y+16*2,text,FONT_24,color_title,0xFFFF);
     if(!data->target_detected)
-    ui_draw_string(tile,data->status_card.x+16,data->status_card.y+16*2+8,"点击探测开始探测芯片信息...",FONT_20,color_text,0xFFFF);
+    ui_draw_string(tile,data->status_card.x+16,data->status_card.y+16*3+8,"点击探测开始探测芯片信息...",FONT_20,color_text,0xFFFF);
     else{
-    ui_draw_string(tile,data->status_card.x+16,data->status_card.y+16*2+8,"ID:",FONT_20,color_text,0xFFFF);
-    ui_draw_string(tile,data->status_card.x+16,data->status_card.y+16*3+8,"CPU ID:",FONT_20,color_text,0xFFFF);
-    ui_draw_string(tile,data->status_card.x+16,data->status_card.y+16*4+8,"FLASH SIZE:",FONT_20,color_text,0xFFFF);
+    ui_draw_string(tile,data->status_card.x+16,data->status_card.y+16*3+8,"ID:",FONT_20,color_text,0xFFFF);
+    snprintf(text, sizeof(text),"0x%08lX",(unsigned long)data->dp_id);
+    ui_draw_string(tile,data->status_card.x+16+32,data->status_card.y+16*3+8,text,FONT_20,color_text,0xFFFF);
+    ui_draw_string(tile,data->status_card.x+16,data->status_card.y+16*4+8,"CPU ID:",FONT_20,color_text,0xFFFF);
+    snprintf(text, sizeof(text),"0x%08lX",(unsigned long)data->cpu_id);
+    ui_draw_string(tile,data->status_card.x+24+16*4,data->status_card.y+16*4+8,text,FONT_20,color_text,0xFFFF);
+     ui_draw_string(tile,data->status_card.x+16,data->status_card.y+16*5+8,"DBG ID:",FONT_20,color_text,0xFFFF);
+    snprintf(text, sizeof(text),"0x%08lX",(unsigned long)data->dbg_id);
+    ui_draw_string(tile,data->status_card.x+24+16*4,data->status_card.y+16*5+8,text,FONT_24,color_text,0xFFFF);
+    // ui_draw_string(tile,data->status_card.x+16,data->status_card.y+16*6+8,"FLASH SIZE:",FONT_20,color_text,0xFFFF);
+    sub_text=dap_get_core_name(data->cpu_id,NULL);
+    ui_draw_string(tile,data->status_card.x+16,data->status_card.y+16*6+10,sub_text,FONT_24,color_text,0xFFFF);
     }
     /* 探测按钮 */
     ui_btn_draw(tile, &data->pio_probe);
@@ -137,9 +276,7 @@ static void dap_config_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
     (void)user_data;
     int16_t x = viewport->x + 16;
     int16_t y = viewport->y + 16 - scroll_y;
-
-    ui_draw_string(tile, x, y, "DAP 时序与引脚配置", FONT_20, 0x4208, 0xFFFF);
-    ui_draw_string(tile, x, y + 40, "配置项加载中...", FONT_16, 0x632C, 0xFFFF);
+    ui_draw_string(tile, x, y, "DAP引脚配置", FONT_24, 0x4208, 0xFFFF);
 }
 
 static bool dap_config_process_touch(dap_data_t *data, bool touching,
@@ -240,10 +377,28 @@ static void dap_enter(app_t *self)
     data->pio_probe.font_size = FONT_20;
     ui_btn_set_color(&data->pio_probe, 0xE71C, 0xCE79, 0x3186);
     data->target_detected = false;
+    fun_pio_swd_init(&data->pio_swd);
+    data->pio_powered=false;
+    data->probe_status = DAP_PROBE_IDLE;
+    data->dp_id=0;
+    data->cpu_id=0;
+    data->dbg_id=0;
+    data->flash_size=0;
+
+    data->pio_ack=0;
+    data->pio_ctrl_ack=0;
+    data->pio_ctrl_stat=0;
+    //tab1配置界面
+
 }
 
 static void dap_exit(app_t *self)
 {
+    dap_data_t *data = (dap_data_t *)self->user_data;
+
+    if (data && data->pio_swd.opened) {
+        fun_pio_swd_close(&data->pio_swd);
+    }
     self->user_data = NULL;
 }
 
