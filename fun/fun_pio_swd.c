@@ -705,3 +705,118 @@ bool fun_pio_swd_write_memory_block32(fun_pio_swd_t *swd, uint32_t address,
     *value = raw_value;
     return response == 1u && received_parity == parity32(raw_value);
 #endif
+
+
+bool fun_pio_swd_is_halted(fun_pio_swd_t *swd,bool *halted)
+{
+    if(!swd||!swd->opened||!halted) return false;
+    uint32_t dhcsr = 0;
+    if(!fun_pio_swd_read_memory32(swd,SWD_DHCSR,&dhcsr)) return false;
+    *halted = (dhcsr & DHCSR_S_HALT) !=0;
+    return true;
+}
+bool fun_pio_swd_halt_target(fun_pio_swd_t *swd,uint32_t timeout_ms)
+{
+    if(!swd||!swd->opened) return false;
+    uint32_t cmd = DHCSR_DBGKEY|DHCSR_C_DEBUGEN|DHCSR_C_HALT;
+    if(!fun_pio_swd_write_memory32(swd,SWD_DHCSR,cmd)) return false;
+    while(timeout_ms-- >0){
+        bool halted =0;
+        if(fun_pio_swd_is_halted(swd,&halted)&&halted) return true;
+        sleep_ms(1);
+    }
+    return false;
+}
+
+bool fun_pio_swd_run_target(fun_pio_swd_t *swd)
+{
+    if(!swd||!swd->opened) return false;
+    uint32_t cmd= DHCSR_DBGKEY|DHCSR_C_DEBUGEN;
+    return fun_pio_swd_write_memory32(swd,SWD_DHCSR,cmd);
+}
+bool fun_pio_swd_step_target(fun_pio_swd_t *swd,uint32_t timeout_ms)
+{
+    if(!swd || !swd->opened) return false;
+    uint32_t cmd = DHCSR_DBGKEY|DHCSR_C_DEBUGEN | DHCSR_C_STEP;
+    if(!fun_pio_swd_write_memory32(swd,SWD_DHCSR,cmd)) return false;
+    sleep_us(10); //测试看看是否保留
+    while(timeout_ms-- >0){
+        bool halted =0;
+        if(fun_pio_swd_is_halted(swd,&halted)&&halted){
+            fun_pio_swd_write_memory32(swd, SWD_DHCSR, DHCSR_DBGKEY | DHCSR_C_DEBUGEN | DHCSR_C_HALT);
+            return true;
+        }
+        sleep_ms(1);
+    }
+    return false;
+}
+
+bool fun_pio_swd_reset_target(fun_pio_swd_t *swd)
+{
+    if(!swd || !swd->opened) return false;
+    fun_pio_swd_write_memory32(swd, SWD_DHCSR, DHCSR_DBGKEY | DHCSR_C_DEBUGEN);
+    if (!fun_pio_swd_write_memory32(swd, SWD_AIRCR, 0x05FA0004u)) {
+        return false;
+    }
+    return true;
+}
+
+static bool wait_dcrdr_ready(fun_pio_swd_t *swd, uint32_t timeout_us)
+{
+    while (timeout_us-- > 0) {
+        uint32_t dhcsr = 0;
+        if (!fun_pio_swd_read_memory32(swd, SWD_DHCSR, &dhcsr)) return false;
+        if (dhcsr & DHCSR_S_REGRDY) return true;
+        sleep_us(1);
+    }
+    return false;
+}
+
+bool fun_pio_swd_read_core_reg(fun_pio_swd_t *swd, uint8_t reg_id, uint32_t *value)
+{
+    if (!swd || !swd->opened || !value) return false;
+    if (!fun_pio_swd_write_memory32(swd, SWD_DCRSR, reg_id & 0x1Fu)) return false;
+    if (!wait_dcrdr_ready(swd, 2000)) return false;
+    return fun_pio_swd_read_memory32(swd, SWD_DCRDR, value);
+}
+
+bool fun_pio_swd_write_core_reg(fun_pio_swd_t *swd, uint8_t reg_id, uint32_t value)
+{
+    if (!swd || !swd->opened) return false;
+    if (!fun_pio_swd_write_memory32(swd, SWD_DCRDR, value)) return false;
+    if (!fun_pio_swd_write_memory32(swd, SWD_DCRSR, (reg_id & 0x1Fu) | (1u << 16))) return false;
+    return wait_dcrdr_ready(swd, 2000);
+}
+
+bool fun_pio_swd_read_memory_block32(fun_pio_swd_t *swd, uint32_t address,
+                                     uint32_t *data, uint32_t word_count)
+{
+    if (!swd || !swd->opened || !data || word_count == 0 || (address & 3u)) return false;
+
+    uint8_t ack = 0;
+    if (!swd->mem_select_valid) {
+        if (!pio_write_register(swd, false, 0x08u, 0u, &ack)) return false;
+        swd->mem_select_valid = true;
+    }
+    const uint32_t csw = 0x23000012u;
+    if (!swd->mem_csw_valid || swd->mem_csw != csw) {
+        if (!pio_write_register(swd, true, 0x00u, csw, &ack)) return false;
+        swd->mem_csw = csw;
+        swd->mem_csw_valid = true;
+    }
+    if (!pio_write_register(swd, true, 0x04u, address, &ack)) return false;
+    uint32_t dummy = 0;
+    if (!pio_read_register(swd, true, 0x0Cu, &dummy, &ack)) return false;
+    for (uint32_t i = 0; i < word_count - 1; i++) {
+        uint32_t cur_addr = address + (i * 4);
+        if (i > 0 && (cur_addr & 0x3FFu) == 0u) {
+            if (!pio_write_register(swd, true, 0x04u, cur_addr, &ack)) return false;
+            if (!pio_read_register(swd, true, 0x0Cu, &dummy, &ack)) return false;
+        }
+        if (!pio_read_register(swd, true, 0x0Cu, &data[i], &ack)) return false;
+    }
+    if (!pio_read_register(swd, false, 0x0Cu, &data[word_count - 1], &ack)) return false;
+
+    swd->mem_tar_valid = false;
+    return true;
+}

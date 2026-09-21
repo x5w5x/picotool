@@ -5,6 +5,27 @@
 #include <stdint.h>
 #include "pio_manager.h"
 
+#define SWD_DHCSR   0xE000EDF0u
+#define SWD_DCRSR   0xE000EDF4u
+#define SWD_DCRDR   0xE000EDF8u
+#define SWD_DEMCR   0xE000EDFCu
+#define SWD_AIRCR   0xE000ED0Cu
+//DHCSR控制位
+#define DHCSR_DBGKEY       0xA05F0000u
+
+#define DHCSR_C_DEBUGEN    (1u << 0)
+#define DHCSR_C_HALT       (1u << 1)
+#define DHCSR_C_STEP       (1u << 2)
+#define DHCSR_C_MASKINTS   (1u << 3)
+
+#define DHCSR_S_REGRDY     (1u << 16)
+#define DHCSR_S_HALT       (1u << 17)
+#define DHCSR_S_SLEEP      (1u << 18)
+#define DHCSR_S_LOCKUP     (1u << 19)
+#define DHCSR_S_RETIRE_ST  (1u << 24)
+#define DHCSR_S_RESET_ST   (1u << 25)
+
+
 typedef struct {
     bool opened;
     pio_manager_t *manager;
@@ -41,29 +62,24 @@ bool fun_pio_swd_recover(fun_pio_swd_t *swd);
 void fun_pio_swd_close(fun_pio_swd_t *swd);
 /* 运行时调整 SWCLK 频率；返回 false 表示句柄无效或频率为 0。 */
 bool fun_pio_swd_set_clock(fun_pio_swd_t *swd, uint32_t clock_hz);
-uint8_t fun_pio_swd_transfer(fun_pio_swd_t *swd, uint8_t request,
-                             uint32_t *data);
-bool fun_pio_swd_read_dp_idcode(fun_pio_swd_t *swd, uint32_t *idcode,
-                                uint8_t *ack);
-/* 读取 DP 读寄存器（地址必须为 0/4/8/C）。 */
-bool fun_pio_swd_read_dp_register(fun_pio_swd_t *swd, uint8_t address,
-                                  uint32_t *value, uint8_t *ack);
-bool fun_pio_swd_read_register(fun_pio_swd_t *swd, bool ap, uint8_t address,
-                               uint32_t *value, uint8_t *ack);
-bool fun_pio_swd_write_dp_register(fun_pio_swd_t *swd, uint8_t address,
-                                   uint32_t value, uint8_t *ack);
-bool fun_pio_swd_write_register(fun_pio_swd_t *swd, bool ap, uint8_t address,
-                                uint32_t value, uint8_t *ack);
+uint8_t fun_pio_swd_transfer(fun_pio_swd_t *swd, uint8_t request,uint32_t *data);
+bool fun_pio_swd_read_dp_idcode(fun_pio_swd_t *swd, uint32_t *idcode,uint8_t *ack);
+bool fun_pio_swd_read_dp_register(fun_pio_swd_t *swd, uint8_t address,uint32_t *value, uint8_t *ack);
+bool fun_pio_swd_read_register(fun_pio_swd_t *swd, bool ap, uint8_t address,uint32_t *value, uint8_t *ack);
+bool fun_pio_swd_write_dp_register(fun_pio_swd_t *swd, uint8_t address,uint32_t value, uint8_t *ack);
+bool fun_pio_swd_write_register(fun_pio_swd_t *swd, bool ap, uint8_t address,uint32_t value, uint8_t *ack);
 bool fun_pio_swd_power_up(fun_pio_swd_t *swd);
-bool fun_pio_swd_read_memory32(fun_pio_swd_t *swd, uint32_t address,
-                               uint32_t *value);
-bool fun_pio_swd_write_memory32(fun_pio_swd_t *swd, uint32_t address,
-                                uint32_t value);
-bool fun_pio_swd_write_memory16(fun_pio_swd_t *swd, uint32_t address,
-                                uint16_t value);
-/* Write an arbitrary byte buffer through MEM-AP. The transfer uses 32-bit
- * address auto-increment and restarts TAR at every 1 KiB MEM-AP boundary. */
-bool fun_pio_swd_write_memory_block32(fun_pio_swd_t *swd, uint32_t address,
-                                      const uint8_t *data, uint32_t length);
-
+bool fun_pio_swd_read_memory32(fun_pio_swd_t *swd, uint32_t address,uint32_t *value);
+bool fun_pio_swd_write_memory32(fun_pio_swd_t *swd, uint32_t address,uint32_t value);
+bool fun_pio_swd_write_memory16(fun_pio_swd_t *swd, uint32_t address,uint16_t value);
+bool fun_pio_swd_write_memory_block32(fun_pio_swd_t *swd, uint32_t address,const uint8_t *data, uint32_t length);
+//调试器
+bool fun_pio_swd_is_halted(fun_pio_swd_t *swd, bool *halted);
+bool fun_pio_swd_halt_target(fun_pio_swd_t *swd, uint32_t timeout_ms);
+bool fun_pio_swd_run_target(fun_pio_swd_t *swd);
+bool fun_pio_swd_step_target(fun_pio_swd_t *swd, uint32_t timeout_ms);
+bool fun_pio_swd_reset_target(fun_pio_swd_t *swd);
+bool fun_pio_swd_read_core_reg(fun_pio_swd_t *swd, uint8_t reg_id, uint32_t *value);
+bool fun_pio_swd_write_core_reg(fun_pio_swd_t *swd, uint8_t reg_id, uint32_t value);
+bool fun_pio_swd_read_memory_block32(fun_pio_swd_t *swd, uint32_t address,uint32_t *data, uint32_t word_count);
 #endif

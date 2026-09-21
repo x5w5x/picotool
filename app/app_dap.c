@@ -76,8 +76,17 @@ typedef struct {
     ui_btn_t btn_apply;
     ui_toast_t toast;
     ui_switch_t dap_switch;
-
     /* Tab 2: 终端页组件（预留扩展） */
+    ui_btn_t run;
+    ui_btn_t halt;
+    ui_btn_t step;
+    ui_btn_t reset;
+
+    uint32_t core_regs[17];
+    bool regs_valid;
+    bool is_halted;
+    ui_rect_t reg_card;
+
 } dap_data_t;
 
 static inline ui_rect_t rect_union_box(ui_rect_t a, ui_rect_t b)
@@ -123,7 +132,15 @@ static const char *dap_get_core_name(uint32_t cpuid,dap_core_type_t *type)
         return "ARM Cortex-M" ;
     }
 }
-
+static void dap_read_all_regs(dap_data_t *data)
+{
+    if(!data|| !data->pio_swd.opened) return;
+    for(uint8_t i=0;i<=16;i++){
+        if(!fun_pio_swd_read_core_reg(&data->pio_swd,i,&data->core_regs[i]))
+            data->core_regs[i] = 0x0000000000;
+    }
+    data->regs_valid=true;
+}
 static void on_dap_pin_config_changed(ui_pin_config_t *config,uint8_t gpio,void *user_data)
 {
     dap_data_t *data = (dap_data_t *)user_data;
@@ -227,7 +244,75 @@ static void on_probe_click(ui_btn_t *btn, void *user_data)
     fun_pio_swd_close(&data->pio_swd);
     data->dirty_rect = rect_union_box(data->dirty_rect, data->status_scroll.view_rect);
 }
+static bool swd_open(dap_data_t *data)
+{
+    if(!data) return false;
+    if (data->pio_swd.opened) return true;
+    const fun_swd_config_t *cfg = fun_swd_config_get();
+    if(!cfg) return false;
+    if(!fun_pio_swd_open_auto(&data->pio_swd,pio_manager_get_default(),cfg->swclk_gpio,cfg->swdio_gpio,cfg->clock_hz))
+        return false;
+    uint32_t id = 0;
+    uint8_t ack=0;
+    if(!fun_pio_swd_read_dp_idcode(&data->pio_swd,&id,&ack)||ack!=1){
+        fun_pio_swd_close(&data->pio_swd);
+        return false;
+    } 
+    if(!fun_pio_swd_power_up(&data->pio_swd)){
+        fun_pio_swd_close(&data->pio_swd);
+        return false;
+    }
+    return true;
 
+}
+static void on_run_click(ui_btn_t *btn,void *user_data)
+{
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data) return;
+    if (!swd_open(data)) return;
+    data->is_halted=false;
+    fun_pio_swd_run_target(&data->pio_swd);
+    data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
+}
+
+static void on_halt_click(ui_btn_t *btn,void *user_data)
+{
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data) return;
+    if (!swd_open(data)) return;
+    fun_pio_swd_halt_target(&data->pio_swd,100);
+    data->is_halted =true;
+    dap_read_all_regs(data);
+    data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
+}
+static void on_step_click(ui_btn_t *btn,void *user_data)
+{
+     dap_data_t *data = (dap_data_t *)user_data;
+    if (!data) return;
+    if (!swd_open(data)) return;
+    bool halted = false;
+    fun_pio_swd_is_halted(&data->pio_swd,&halted);
+    if(!halted)
+        fun_pio_swd_halt_target(&data->pio_swd,100);
+    if(fun_pio_swd_step_target(&data->pio_swd,100))
+    {
+        data->is_halted=true;
+        dap_read_all_regs(data);
+    }
+    data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
+}
+static void on_reset_click(ui_btn_t *btn,void *user_data)
+{
+     dap_data_t *data = (dap_data_t *)user_data;
+    if (!data) return;
+    if (!swd_open(data)) return;
+    fun_pio_swd_reset_target(&data->pio_swd);
+    data->is_halted=false;
+    data->pio_swd.mem_select_valid=false;
+    data->pio_swd.mem_csw_valid=false;
+    data->pio_swd.mem_tar_valid=false;
+    data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
+}
 static void dap_status_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
                                     int16_t scroll_y, void *user_data)
 {
@@ -414,18 +499,86 @@ static bool dap_config_process_touch(dap_data_t *data, bool touching,int16_t x, 
 static void dap_term_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
                                   int16_t scroll_y, void *user_data)
 {
-    (void)user_data;
+    dap_data_t *data =(dap_data_t *)user_data;
+    if (!data) 
+        return;
     int16_t x = viewport->x + 16;
     int16_t y = viewport->y + 16 - scroll_y;
+    ui_btn_t run =data->run;
+    run.rect=ui_scrollview_content_rect_to_screen(&data->term_scroll,data->run.rect);
+    ui_btn_draw(tile,&run);
+    ui_btn_t halt =data->halt;
+    halt.rect=ui_scrollview_content_rect_to_screen(&data->term_scroll,data->halt.rect);
+    ui_btn_draw(tile,&halt);
+    ui_btn_t step =data->step;
+    step.rect=ui_scrollview_content_rect_to_screen(&data->term_scroll,data->step.rect);
+    ui_btn_draw(tile,&step);
+    ui_btn_t reset =data->reset;
+    reset.rect=ui_scrollview_content_rect_to_screen(&data->term_scroll,data->reset.rect);
+    ui_btn_draw(tile,&reset);
+    ui_rect_t card = ui_scrollview_content_rect_to_screen(&data->term_scroll,data->reg_card);
+    ui_rect_t overlap;
+    if(ui_rect_intersect(&tile->rect, &card, &overlap))
+    {
+        ui_draw_fill_rect(tile,&overlap,0xEF7D);
+        ui_draw_rect(tile, &card, 0xCE59);
+    }
+    static const char *reg_names[17] = {
+        "R0 ", "R1 ", "R2 ", "R3 ", "R4 ", "R5 ", "R6 ", "R7 ",
+        "R8 ", "R9 ", "R10", "R11", "R12", "SP ", "LR ", "PC ", "PSR"
+    };
+    char str[32];
+    int16_t card_x =card.x+8;
+    int16_t card_y =card.y+8;
+    for(int i=0;i<17;i++){
+    int col =i/6;
+    int row =i%6;
+    int16_t rx=card_x+col*106;
+    int16_t ry=card_y+row*30;
+    if(data->regs_valid)
+        snprintf(str,sizeof(str),"%s:%08lX",reg_names[i],(unsigned long)data->core_regs[i]);
+    else
+        snprintf(str,sizeof(str),"%s:--------",reg_names[i]);
+    uint16_t text_color = 0x1A7B;
+    if(!data->regs_valid) text_color =0x8410;
+    else if(i==15) text_color = 0xF800;
+    else if(i==14) text_color = 0x0275;
+    else if(i==13) text_color =0x03E0;
+    ui_draw_string(tile,rx,ry,str,FONT_16,text_color,0xEF7D);
+    }
+    int16_t state_x =card_x+2*106;
+    int16_t state_y = card_y+5*30;
+    if(data->is_halted)
+        ui_draw_string(tile,state_x,state_y,"状态:[HALT]",FONT_16,0xF800, 0xEF7D);
+    else
+        ui_draw_string(tile,state_x,state_y,"状态:[RUN ]",FONT_16,0xF800, 0xEF7D);
 
-    ui_draw_string(tile, x, y, "DAP 交互控制台", FONT_20, 0x4208, 0xFFFF);
-    ui_draw_string(tile, x, y + 40, "日志输出就绪", FONT_16, 0x632C, 0xFFFF);
+
 }
 
 static bool dap_term_process_touch(dap_data_t *data, bool touching,
                                    int16_t x, int16_t y, uint32_t tick)
 {
+    int16_t content_x = (int16_t)(x - data->term_scroll.view_rect.x);
+    int16_t content_y = (int16_t)(y - data->term_scroll.view_rect.y +
+                                   data->term_scroll.scroll_y);
     if (ui_scrollview_process_touch(&data->term_scroll, touching, x, y, tick)) {
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
+        return true;
+    }
+     if (ui_btn_process_touch(&data->run,touching,content_x,content_y,tick)) {
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
+        return true;
+    }
+    if (ui_btn_process_touch(&data->halt,touching,content_x,content_y,tick)) {
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
+        return true;
+    }
+        if (ui_btn_process_touch(&data->step,touching,content_x,content_y,tick)) {
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
+        return true;
+    }
+        if (ui_btn_process_touch(&data->reset,touching,content_x,content_y,tick)) {
         data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
         return true;
     }
@@ -528,6 +681,23 @@ static void dap_enter(app_t *self)
     ui_switch_init(&data->dap_switch,120,160,64,32,g_dap_enabled,on_dap_switch_change);
     data->dap_switch.user_data = data;
     ui_switch_set_color(&data->dap_switch,0x7BEF,0x5DCC,0xFFFF); 
+    //tab3
+    ui_btn_init(&data->run,8,16,80,44,"运行",on_run_click);
+    data->run.user_data=data;
+    ui_btn_set_color(&data->run,0xEF7D,0xA514,0x4208);
+    ui_btn_init(&data->halt,8+82,16,80,44,"停止",on_halt_click);
+    data->halt.user_data=data;
+    ui_btn_set_color(&data->halt,0xEF7D,0xA514,0x4208);
+    ui_btn_init(&data->step,8+82*2,16,80,44,"单步",on_step_click);
+    data->step.user_data=data;
+    ui_btn_set_color(&data->step,0xEF7D,0xA514,0x4208);
+    ui_btn_init(&data->reset,8+82*3,16,80,44,"复位",on_reset_click);
+    data->reset.user_data=data;
+    ui_btn_set_color(&data->reset,0xEF7D,0xA514,0x4208);
+    // ui_btn_set_color(&data->run,0xD69A,0xBDF,0x4208);
+    data->reg_card=ui_rect_make(8,64,322,194);
+    data->regs_valid=false;
+    data->is_halted=false;
 }
 
 static void dap_exit(app_t *self)
