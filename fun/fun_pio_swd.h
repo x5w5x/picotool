@@ -13,6 +13,12 @@
 //DHCSR控制位
 #define DHCSR_DBGKEY       0xA05F0000u
 
+#define FP_CTRL            0xE0002000u  
+#define FP_REMAP           0xE0002004u  
+#define FP_COMP0           0xE0002008u  
+#define FP_CTRL_KEY        (1u << 1)     
+#define FP_CTRL_ENABLE     (1u << 0)    
+
 #define DHCSR_C_DEBUGEN    (1u << 0)
 #define DHCSR_C_HALT       (1u << 1)
 #define DHCSR_C_STEP       (1u << 2)
@@ -82,4 +88,11 @@ bool fun_pio_swd_reset_target(fun_pio_swd_t *swd);
 bool fun_pio_swd_read_core_reg(fun_pio_swd_t *swd, uint8_t reg_id, uint32_t *value);
 bool fun_pio_swd_write_core_reg(fun_pio_swd_t *swd, uint8_t reg_id, uint32_t value);
 bool fun_pio_swd_read_memory_block32(fun_pio_swd_t *swd, uint32_t address,uint32_t *data, uint32_t word_count);
+
+bool fun_pio_swd_fpb_init(fun_pio_swd_t *swd);
+bool fun_pio_swd_set_breakpoint(fun_pio_swd_t *swd, uint32_t flash_addr);
+bool fun_pio_swd_clear_breakpoint(fun_pio_swd_t *swd);
+
+bool fun_pio_swd_step_over(fun_pio_swd_t *swd, uint32_t timeout_ms);
+bool fun_pio_swd_step_out(fun_pio_swd_t *swd, uint32_t timeout_ms);
 #endif

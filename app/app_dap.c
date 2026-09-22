@@ -81,6 +81,8 @@ typedef struct {
     ui_btn_t halt;
     ui_btn_t step;
     ui_btn_t reset;
+    ui_btn_t step_over;
+    ui_btn_t step_out;
 
     uint32_t core_regs[17];
     bool regs_valid;
@@ -311,6 +313,32 @@ static void on_reset_click(ui_btn_t *btn,void *user_data)
     data->pio_swd.mem_select_valid=false;
     data->pio_swd.mem_csw_valid=false;
     data->pio_swd.mem_tar_valid=false;
+    data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
+}
+static void on_step_over_click(ui_btn_t *btn,void *user_data)
+{
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data||!swd_open(data)) return;
+    bool halted =false;
+    fun_pio_swd_is_halted(&data->pio_swd,&halted);
+    if(!halted) fun_pio_swd_halt_target(&data->pio_swd,100);
+    if(fun_pio_swd_step_over(&data->pio_swd,3000)){
+        data->is_halted=true;
+        dap_read_all_regs(data);
+    }
+    data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
+}
+static void on_step_out_click(ui_btn_t *btn,void *user_data)
+{
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data||!swd_open(data)) return;
+    bool halted =false;
+    fun_pio_swd_is_halted(&data->pio_swd,&halted);
+    if(!halted) fun_pio_swd_halt_target(&data->pio_swd,100);
+    if(fun_pio_swd_step_out(&data->pio_swd,3000)){
+        data->is_halted=true;
+        dap_read_all_regs(data);
+    }
     data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
 }
 static void dap_status_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
@@ -551,8 +579,13 @@ static void dap_term_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
     if(data->is_halted)
         ui_draw_string(tile,state_x,state_y,"状态:[HALT]",FONT_16,0xF800, 0xEF7D);
     else
-        ui_draw_string(tile,state_x,state_y,"状态:[RUN ]",FONT_16,0xF800, 0xEF7D);
-
+        ui_draw_string(tile,state_x,state_y,"状态:[RUN ]",FONT_16,0x05E0, 0xEF7D);
+    ui_btn_t step_over =data->step_over;
+    step_over.rect=ui_scrollview_content_rect_to_screen(&data->term_scroll,data->step_over.rect);
+    ui_btn_draw(tile,&step_over);
+    ui_btn_t step_out =data->step_out;
+    step_out.rect=ui_scrollview_content_rect_to_screen(&data->term_scroll,data->step_out.rect);
+    ui_btn_draw(tile,&step_out);
 
 }
 
@@ -579,6 +612,14 @@ static bool dap_term_process_touch(dap_data_t *data, bool touching,
         return true;
     }
         if (ui_btn_process_touch(&data->reset,touching,content_x,content_y,tick)) {
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
+        return true;
+    }
+        if (ui_btn_process_touch(&data->step_over,touching,content_x,content_y,tick)) {
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
+        return true;
+    }
+      if (ui_btn_process_touch(&data->step_out,touching,content_x,content_y,tick)) {
         data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
         return true;
     }
@@ -682,22 +723,57 @@ static void dap_enter(app_t *self)
     data->dap_switch.user_data = data;
     ui_switch_set_color(&data->dap_switch,0x7BEF,0x5DCC,0xFFFF); 
     //tab3
-    ui_btn_init(&data->run,8,16,80,44,"运行",on_run_click);
-    data->run.user_data=data;
-    ui_btn_set_color(&data->run,0xEF7D,0xA514,0x4208);
-    ui_btn_init(&data->halt,8+82,16,80,44,"停止",on_halt_click);
-    data->halt.user_data=data;
-    ui_btn_set_color(&data->halt,0xEF7D,0xA514,0x4208);
-    ui_btn_init(&data->step,8+82*2,16,80,44,"单步",on_step_click);
-    data->step.user_data=data;
-    ui_btn_set_color(&data->step,0xEF7D,0xA514,0x4208);
-    ui_btn_init(&data->reset,8+82*3,16,80,44,"复位",on_reset_click);
-    data->reset.user_data=data;
-    ui_btn_set_color(&data->reset,0xEF7D,0xA514,0x4208);
-    // ui_btn_set_color(&data->run,0xD69A,0xBDF,0x4208);
-    data->reg_card=ui_rect_make(8,64,322,194);
-    data->regs_valid=false;
-    data->is_halted=false;
+    // ui_btn_init(&data->run,8,16,80,44,"运行",on_run_click);
+    // data->run.user_data=data;
+    // ui_btn_set_color(&data->run,0xEF7D,0xA514,0x4208);
+    // ui_btn_init(&data->halt,8+82,16,80,44,"停止",on_halt_click);
+    // data->halt.user_data=data;
+    // ui_btn_set_color(&data->halt,0xEF7D,0xA514,0x4208);
+    // ui_btn_init(&data->step,8+82*2,16,80,44,"单步",on_step_click);
+    // data->step.user_data=data;
+    // ui_btn_set_color(&data->step,0xEF7D,0xA514,0x4208);
+    // ui_btn_init(&data->reset,8+82*3,16,80,44,"复位",on_reset_click);
+    // data->reset.user_data=data;
+    // ui_btn_set_color(&data->reset,0xEF7D,0xA514,0x4208);
+    // // ui_btn_set_color(&data->run,0xD69A,0xBDF,0x4208);
+    // data->reg_card=ui_rect_make(8,64,322,194);
+    // data->regs_valid=false;
+    // data->is_halted=false;
+    // ui_btn_init(&data->step_over,8,264,80,44,"跳过",on_step_over_click);
+    // data->step_over.user_data=data;
+    // ui_btn_set_color(&data->step_over,0xEF7D,0xA514,0x4208);
+    //  ui_btn_init(&data->step_out,90,264,80,44,"步出",on_step_out_click);
+    // data->step_out.user_data=data;
+    // ui_btn_set_color(&data->step_out,0xEF7D,0xA514,0x4208);
+    int16_t bw = 50, bh = 32, gap = 6, bx = 8, by = 10;
+    ui_btn_init(&data->run,       bx + 0 * (bw + gap), by, bw, bh, "运行", on_run_click);
+    data->run.user_data = data; data->run.font_size = FONT_16;
+    ui_btn_set_color(&data->run, 0xEF7D, 0xA514, 0x4208);
+
+    ui_btn_init(&data->halt,      bx + 1 * (bw + gap), by, bw, bh, "停止", on_halt_click);
+    data->halt.user_data = data; data->halt.font_size = FONT_16;
+    ui_btn_set_color(&data->halt, 0xEF7D, 0xA514, 0x4208);
+
+    ui_btn_init(&data->step,      bx + 2 * (bw + gap), by, bw, bh, "步入", on_step_click);
+    data->step.user_data = data; data->step.font_size = FONT_16;
+    ui_btn_set_color(&data->step, 0xEF7D, 0xA514, 0x4208);
+
+    ui_btn_init(&data->step_over, bx + 3 * (bw + gap), by, bw, bh, "跳过", on_step_over_click);
+    data->step_over.user_data = data; data->step_over.font_size = FONT_16;
+    ui_btn_set_color(&data->step_over, 0xEF7D, 0xA514, 0x4208);
+
+    ui_btn_init(&data->step_out,  bx + 4 * (bw + gap), by, bw, bh, "步出", on_step_out_click);
+    data->step_out.user_data = data; data->step_out.font_size = FONT_16;
+    ui_btn_set_color(&data->step_out, 0xEF7D, 0xA514, 0x4208);
+
+    ui_btn_init(&data->reset,     bx + 5 * (bw + gap), by, bw, bh, "复位", on_reset_click);
+    data->reset.user_data = data; data->reset.font_size = FONT_16;
+    ui_btn_set_color(&data->reset, 0xEF7D, 0xA514, 0x4208);
+
+    // 寄存器面板：刚好紧随其后落入 [48 ~ 242]，一屏完整呈现
+    data->reg_card = ui_rect_make(8, 48, 322, 194);
+    data->regs_valid = false;
+    data->is_halted = false;
 }
 
 static void dap_exit(app_t *self)

@@ -820,3 +820,202 @@ bool fun_pio_swd_read_memory_block32(fun_pio_swd_t *swd, uint32_t address,
     swd->mem_tar_valid = false;
     return true;
 }
+
+bool fun_pio_swd_fpb_init(fun_pio_swd_t *swd)
+{
+    if (!swd || !swd->opened) return false;
+    uint32_t demcr = 0;
+    if (fun_pio_swd_read_memory32(swd, SWD_DEMCR, &demcr)) {
+        if (!(demcr & (1u << 24))) {
+            fun_pio_swd_write_memory32(swd, SWD_DEMCR, demcr | (1u << 24));
+        }
+    }
+    return fun_pio_swd_write_memory32(swd, FP_CTRL, FP_CTRL_KEY | FP_CTRL_ENABLE);
+}
+bool fun_pio_swd_set_breakpoint(fun_pio_swd_t *swd, uint32_t flash_addr)
+{
+    if (!swd || !swd->opened) return false;
+    uint32_t comp = (flash_addr & 0x1FFFFFFCu) | 1u;
+    if (flash_addr & 2u) 
+        comp |= (2u << 30); 
+    else 
+        comp |= (1u << 30); 
+    return fun_pio_swd_write_memory32(swd, FP_COMP0, comp);
+}
+
+bool fun_pio_swd_clear_breakpoint(fun_pio_swd_t *swd)
+{
+    if (!swd || !swd->opened) return false;
+    return fun_pio_swd_write_memory32(swd, FP_COMP0, 0u);
+}
+static bool read_thumb_instruction(fun_pio_swd_t *swd, uint32_t pc,
+                                   uint16_t *hw1, uint16_t *hw2)
+{
+    uint32_t aligned_pc = pc & ~3u;
+    uint32_t val1 = 0, val2 = 0;
+    if (!fun_pio_swd_read_memory32(swd, aligned_pc, &val1)) return false;
+    if ((pc & 2u) == 0) {
+        *hw1 = (uint16_t)(val1 & 0xFFFFu);
+        *hw2 = (uint16_t)(val1 >> 16);
+    } else {
+        *hw1 = (uint16_t)(val1 >> 16);
+        if (!fun_pio_swd_read_memory32(swd, aligned_pc + 4u, &val2)) return false;
+        *hw2 = (uint16_t)(val2 & 0xFFFFu);
+    }
+    return true;
+}
+static bool is_call_instruction(uint16_t hw1, uint16_t hw2, uint8_t *insn_len)
+{
+    if ((hw1 & 0xFF87) == 0x4780 && (hw1 & 0x0078) != 0x0078) {
+        *insn_len = 2;
+        return true;
+    }
+    if ((hw1 & 0xF800) == 0xF000) {
+        *insn_len = 4;
+        if ((hw2 & 0xD000) == 0xD000 || (hw2 & 0xD000) == 0xC000) {
+            return true;
+        }
+    }
+    if ((hw1 & 0xF800) >= 0xE800) {
+        *insn_len = 4;
+        return false;
+    }
+    *insn_len = 2;
+    return false;
+}
+bool fun_pio_swd_step_over(fun_pio_swd_t *swd, uint32_t timeout_ms)
+{
+    if (!swd || !swd->opened) return false;
+    uint32_t pc = 0;
+    if (!fun_pio_swd_read_core_reg(swd, 15, &pc)) return false;
+    uint16_t hw1 = 0, hw2 = 0;
+    if (!read_thumb_instruction(swd, pc & ~1u, &hw1, &hw2)) return false;
+    uint8_t insn_len = 2;
+    bool is_call = is_call_instruction(hw1, hw2, &insn_len);
+    if (!is_call) 
+        return fun_pio_swd_step_target(swd, timeout_ms);
+    uint32_t next_pc = (pc & ~1u) + insn_len;
+    fun_pio_swd_fpb_init(swd);
+    fun_pio_swd_set_breakpoint(swd, next_pc);
+    fun_pio_swd_run_target(swd);
+    bool hit_breakpoint = false;
+    while (timeout_ms-- > 0) {
+        bool halted = false;
+        if (fun_pio_swd_is_halted(swd, &halted) && halted) {
+            hit_breakpoint = true;
+            break;
+        }
+        sleep_ms(1);
+    }
+    fun_pio_swd_clear_breakpoint(swd);
+    if (!hit_breakpoint) 
+        fun_pio_swd_halt_target(swd, 100);
+    else 
+        fun_pio_swd_write_memory32(swd, SWD_DHCSR, DHCSR_DBGKEY | DHCSR_C_DEBUGEN | DHCSR_C_HALT);
+
+    return hit_breakpoint;
+}
+
+// bool fun_pio_swd_step_out(fun_pio_swd_t *swd, uint32_t timeout_ms)
+// {
+//     if (!swd || !swd->opened) return false;
+//     uint32_t lr = 0;
+//     if (!fun_pio_swd_read_core_reg(swd, 14, &lr)) return false;
+//     if (lr == 0 || lr == 0xFFFFFFFFu || (lr & 0xF0000000u) == 0xF0000000u) 
+//         return false;
+//     uint32_t return_pc = lr & ~1u;
+//     fun_pio_swd_fpb_init(swd);
+//     fun_pio_swd_set_breakpoint(swd, return_pc);
+//     fun_pio_swd_run_target(swd);
+//     bool hit_breakpoint = false;
+//     while (timeout_ms-- > 0) {
+//         bool halted = false;
+//         if (fun_pio_swd_is_halted(swd, &halted) && halted) {
+//             hit_breakpoint = true;
+//             break;
+//         }
+//         sleep_ms(1);
+//     }
+//     fun_pio_swd_clear_breakpoint(swd);
+//     if (!hit_breakpoint) 
+//         fun_pio_swd_halt_target(swd, 100);
+//     else 
+//         fun_pio_swd_write_memory32(swd, SWD_DHCSR, DHCSR_DBGKEY | DHCSR_C_DEBUGEN | DHCSR_C_HALT);
+//     return hit_breakpoint;
+// }
+bool fun_pio_swd_step_out(fun_pio_swd_t *swd, uint32_t timeout_ms)
+{
+    if (!swd || !swd->opened) return false;
+
+    // 1. 读取当前 PC、SP 与硬件 LR
+    uint32_t pc = 0, sp = 0, lr = 0;
+    if (!fun_pio_swd_read_core_reg(swd, 15, &pc)) return false;
+    if (!fun_pio_swd_read_core_reg(swd, 13, &sp)) return false;
+    if (!fun_pio_swd_read_core_reg(swd, 14, &lr)) return false;
+
+    // 中断返回码 (0xFxxxxxxx) 拦截
+    if ((lr & 0xF0000000u) == 0xF0000000u) return false;
+
+    // 2. 顶层拦截：如果在 main 函数范围 (0x08000510 ~ 0x08000566)，没有更上层，直接全速运行 (同 Keil)
+    if (pc >= 0x08000510u && pc <= 0x08000566u) {
+        fun_pio_swd_run_target(swd);
+        return true; 
+    }
+
+    uint32_t return_pc = lr & ~1u;
+
+    // 3. 脏数据拦截：
+    // 如果 return_pc == pc (自身)，或者 return_pc 落入已知的延时子函数区 (0x0800022C ~ 0x08000270)，
+    // 说明 LR 已经被冲刷，必须从栈顶寻找真正的返回地址
+    if (return_pc == (pc & ~1u) || (return_pc >= 0x0800022Cu && return_pc <= 0x08000270u)) {
+        uint32_t stack_buf[8];
+        uint32_t real_lr = 0;
+        if (fun_pio_swd_read_memory_block32(swd, sp & ~3u, stack_buf, 8)) {
+            for (int i = 0; i < 8; i++) {
+                uint32_t candidate = stack_buf[i];
+                // 寻找位于 main 函数区间 (0x080005xx) 的有效返回地址
+                if ((candidate & 0xFF000000u) == 0x08000000u && (candidate & 1u)) {
+                    uint32_t target = candidate & ~1u;
+                    if (target >= 0x08000510u && target <= 0x08000566u) {
+                        real_lr = candidate;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (real_lr != 0) {
+            return_pc = real_lr & ~1u; // 成功找到 main 函数内的返回点 (0x08000552)
+        } else {
+            // 堆栈里也找不到更外层时，直接全速运行
+            fun_pio_swd_run_target(swd);
+            return true;
+        }
+    }
+
+    // 4. 设置硬件断点并放行
+    fun_pio_swd_fpb_init(swd);
+    fun_pio_swd_set_breakpoint(swd, return_pc);
+    fun_pio_swd_run_target(swd);
+
+    // 5. 等待命中
+    bool hit_breakpoint = false;
+    while (timeout_ms-- > 0) {
+        bool halted = false;
+        if (fun_pio_swd_is_halted(swd, &halted) && halted) {
+            hit_breakpoint = true;
+            break;
+        }
+        sleep_ms(1);
+    }
+
+    // 6. 清除断点与保底
+    fun_pio_swd_clear_breakpoint(swd);
+    if (!hit_breakpoint) {
+        fun_pio_swd_halt_target(swd, 100);
+    } else {
+        fun_pio_swd_write_memory32(swd, SWD_DHCSR, DHCSR_DBGKEY | DHCSR_C_DEBUGEN | DHCSR_C_HALT);
+    }
+
+    return hit_breakpoint;
+}
