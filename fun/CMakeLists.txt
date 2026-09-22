@@ -7,6 +7,8 @@ add_library(fun STATIC
     fun_swd.c
     fun_swd_config.c
     fun_pio_swd.c
+    thumb_disasm.c
+    debug_symbols.c
 )
 
 target_include_directories(fun PUBLIC

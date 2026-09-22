@@ -185,7 +185,6 @@ void app_ui_custom_init(void)
 }
 
 /* ================= 4. 全局场景切片光栅化合成 ================= */
- 
 static void ui_update_fps_ema(void)
 {
     uint64_t now_us = time_us_64();

@@ -17,7 +17,8 @@
 #include "fun_swd_config.h"
 #include "pin_manager.h"
 #include "pico/time.h"
-
+#include "debug_symbols.h"
+#include "thumb_disasm.h"
 static const char *s_dap_tabs[] = { "状态", "配置", "终端" };
 #define DAP_TAB_COUNT          ((uint8_t)(sizeof(s_dap_tabs) / sizeof(s_dap_tabs[0])))
 
@@ -88,6 +89,8 @@ typedef struct {
     bool regs_valid;
     bool is_halted;
     ui_rect_t reg_card;
+    ui_btn_t view_toggle;
+    bool show_disasm;
 
 } dap_data_t;
 
@@ -341,6 +344,16 @@ static void on_step_out_click(ui_btn_t *btn,void *user_data)
     }
     data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
 }
+static void on_view_toggle_click(ui_btn_t *btn, void *user_data)
+{
+
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data) return;
+
+    data->show_disasm = !data->show_disasm;
+    btn->text = data->show_disasm ? "寄存器" : "汇编";
+    data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
+}
 static void dap_status_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
                                     int16_t scroll_y, void *user_data)
 {
@@ -551,6 +564,17 @@ static void dap_term_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
         ui_draw_fill_rect(tile,&overlap,0xEF7D);
         ui_draw_rect(tile, &card, 0xCE59);
     }
+    ui_btn_t step_over =data->step_over;
+    step_over.rect=ui_scrollview_content_rect_to_screen(&data->term_scroll,data->step_over.rect);
+    ui_btn_draw(tile,&step_over);
+    ui_btn_t step_out =data->step_out;
+    step_out.rect=ui_scrollview_content_rect_to_screen(&data->term_scroll,data->step_out.rect);
+    ui_btn_draw(tile,&step_out);
+    ui_btn_t view =data->view_toggle;
+    view.rect=ui_scrollview_content_rect_to_screen(&data->term_scroll,data->view_toggle.rect);
+    ui_btn_draw(tile,&view);
+
+    if(!data->show_disasm){
     static const char *reg_names[17] = {
         "R0 ", "R1 ", "R2 ", "R3 ", "R4 ", "R5 ", "R6 ", "R7 ",
         "R8 ", "R9 ", "R10", "R11", "R12", "SP ", "LR ", "PC ", "PSR"
@@ -580,13 +604,75 @@ static void dap_term_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
         ui_draw_string(tile,state_x,state_y,"状态:[HALT]",FONT_16,0xF800, 0xEF7D);
     else
         ui_draw_string(tile,state_x,state_y,"状态:[RUN ]",FONT_16,0x05E0, 0xEF7D);
-    ui_btn_t step_over =data->step_over;
-    step_over.rect=ui_scrollview_content_rect_to_screen(&data->term_scroll,data->step_over.rect);
-    ui_btn_draw(tile,&step_over);
-    ui_btn_t step_out =data->step_out;
-    step_out.rect=ui_scrollview_content_rect_to_screen(&data->term_scroll,data->step_out.rect);
-    ui_btn_draw(tile,&step_out);
+    }else{
+        uint32_t pc = data->core_regs[15] & ~1u;
+        uint32_t offset = 0;
+        const char *fn_name = debug_symbol_find(pc, &offset);
+        char sym_title[48];
+        if (fn_name) {
+            snprintf(sym_title, sizeof(sym_title), " <%s + 0x%lX>", fn_name, (unsigned long)offset);
+        } else {
+            snprintf(sym_title, sizeof(sym_title), " <未知函数 [0x%08lX]>", (unsigned long)pc);
+        }
+        ui_draw_string(tile, card.x + 6, card.y + 3, sym_title, FONT_16, 0x8410, 0xEF7D);
+        uint32_t start_pc = pc;
+        if (fn_name && offset > 0 && offset <= 120) {
+            uint32_t fn_base = pc - offset;
+            uint32_t trace_buf[32];
+            uint32_t words_to_read = (offset + 8) / 4;
+            if (words_to_read > 32) words_to_read = 32;
+            if (fun_pio_swd_read_memory_block32(&data->pio_swd, fn_base & ~3u, trace_buf, words_to_read)) {
+                const uint16_t *t_stream = (const uint16_t *)trace_buf;
+                uint32_t cur = fn_base;
+                uint32_t prev_history[4] = {0};
+                int hist_count = 0;
+                while (cur < pc) {
+                    prev_history[0] = prev_history[1];
+                    prev_history[1] = prev_history[2];
+                    prev_history[2] = cur;
+                    if (hist_count < 3) hist_count++;
+                    int s_idx = (cur - (fn_base & ~3u)) / 2;
+                    disasm_line_t tmp;
+                    uint8_t len = thumb_disasm_single(cur, t_stream[s_idx], t_stream[s_idx + 1], &tmp);
+                    cur += len;
+                }
+                if (cur == pc) {
+                    if (hist_count >= 2) {
+                        start_pc = prev_history[1]; 
+                    } else if (hist_count == 1) {
+                        start_pc = prev_history[2]; 
+                    }
+                }
+            }
+        }
+        uint32_t code_buf[12];
+        if (data->pio_swd.opened && fun_pio_swd_read_memory_block32(&data->pio_swd, start_pc & ~3u, code_buf, 12)) {
+            const uint16_t *stream = (const uint16_t *)code_buf;
+            int stream_idx = (start_pc & 2u) ? 1 : 0;
+            uint32_t cur_addr = start_pc;
+            for (int line = 0; line < 6; line++) {
+                disasm_line_t insn;
+                uint16_t hw1 = stream[stream_idx];
+                uint16_t hw2 = stream[stream_idx + 1];
+                uint8_t len = thumb_disasm_single(cur_addr, hw1, hw2, &insn);
+                char dis_str[64];
+                int16_t line_y = card.y + 28 + line * 26;
+                if (cur_addr == pc) {
+                    ui_rect_t hl_bar = ui_rect_make(card.x + 2, line_y - 2, card.w - 4, 22);
+                    ui_draw_fill_rect(tile, &hl_bar, 0xD69A);
 
+                    snprintf(dis_str, sizeof(dis_str), "-> %08lX  %-18s", (unsigned long)cur_addr, insn.text);
+                    ui_draw_string(tile, card.x + 6, line_y, dis_str, FONT_16, 0xF800, 0xD69A); 
+                } else {
+                    snprintf(dis_str, sizeof(dis_str), "   %08lX  %-18s", (unsigned long)cur_addr, insn.text);
+                    ui_draw_string(tile, card.x + 6, line_y, dis_str, FONT_16, 0x1A7B, 0xEF7D); 
+                }
+                stream_idx += (len / 2);
+                cur_addr += len;
+                if (stream_idx >= 22) break;
+            }
+        }
+    }
 }
 
 static bool dap_term_process_touch(dap_data_t *data, bool touching,
@@ -620,6 +706,10 @@ static bool dap_term_process_touch(dap_data_t *data, bool touching,
         return true;
     }
       if (ui_btn_process_touch(&data->step_out,touching,content_x,content_y,tick)) {
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
+        return true;
+    }
+    if (ui_btn_process_touch(&data->view_toggle,touching,content_x,content_y,tick)) {
         data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
         return true;
     }
@@ -774,6 +864,11 @@ static void dap_enter(app_t *self)
     data->reg_card = ui_rect_make(8, 48, 322, 194);
     data->regs_valid = false;
     data->is_halted = false;
+    data->show_disasm =false;
+    ui_btn_init(&data->view_toggle,8,250,50,32,"汇编",on_view_toggle_click);
+    data->view_toggle.user_data=data;
+    ui_btn_set_color(&data->view_toggle, 0xEF7D, 0xA514, 0x4208);
+
 }
 
 static void dap_exit(app_t *self)
