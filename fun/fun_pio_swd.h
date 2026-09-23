@@ -31,7 +31,7 @@
 #define DHCSR_S_RETIRE_ST  (1u << 24)
 #define DHCSR_S_RESET_ST   (1u << 25)
 
-
+#define FP_COMP_BASE  0xE0002008u
 typedef struct {
     bool opened;
     pio_manager_t *manager;
@@ -95,4 +95,7 @@ bool fun_pio_swd_clear_breakpoint(fun_pio_swd_t *swd);
 
 bool fun_pio_swd_step_over(fun_pio_swd_t *swd, uint32_t timeout_ms);
 bool fun_pio_swd_step_out(fun_pio_swd_t *swd, uint32_t timeout_ms);
+
+bool fun_pio_swd_set_breakpoint_ch(fun_pio_swd_t *swd, uint8_t comp_idx, uint32_t flash_addr);
+bool fun_pio_swd_clear_breakpoint_ch(fun_pio_swd_t *swd, uint8_t comp_idx);
 #endif

@@ -1,3 +1,9 @@
+/*
+ * @Author: 轩
+ * @Date: 2026-09-17 13:33:22
+ * @LastEditTime: 2026-09-23 16:29:41
+ * @FilePath: \pico\fun\fun_pio_swd.c
+ */
 #include "fun_pio_swd.h"
 #include "swd.pio.h"
 #include "pico/stdlib.h"
@@ -1018,4 +1024,23 @@ bool fun_pio_swd_step_out(fun_pio_swd_t *swd, uint32_t timeout_ms)
     }
 
     return hit_breakpoint;
+}
+
+bool fun_pio_swd_set_breakpoint_ch(fun_pio_swd_t *swd, uint8_t comp_idx, uint32_t flash_addr)
+{
+    if (!swd || !swd->opened || comp_idx >= 6) return false;
+    uint32_t comp = (flash_addr & 0x1FFFFFFCu) | 1u;
+    if (flash_addr & 2u) 
+        comp |= (2u << 30); 
+    else 
+        comp |= (1u << 30); 
+    uint32_t reg_addr = FP_COMP_BASE + (comp_idx * 4u);
+    return fun_pio_swd_write_memory32(swd, reg_addr, comp);
+}
+
+bool fun_pio_swd_clear_breakpoint_ch(fun_pio_swd_t *swd, uint8_t comp_idx)
+{
+    if (!swd || !swd->opened || comp_idx >= 6) return false;
+    uint32_t reg_addr = FP_COMP_BASE + (comp_idx * 4u);
+    return fun_pio_swd_write_memory32(swd, reg_addr, 0u);
 }

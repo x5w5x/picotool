@@ -1,3 +1,9 @@
+/*
+ * @Author: 轩
+ * @Date: 2026-09-01 20:35:11
+ * @LastEditTime: 2026-09-23 19:29:54
+ * @FilePath: \pico\app\tusb_config.h
+ */
 /* =============================================================
  * @file   app/tusb_config.h
  * @brief  TinyUSB 编译配置:HID + CDC + MSC 三类接口全开
@@ -49,7 +55,7 @@ extern "C" {
 #define CFG_TUD_HID              1
 #define CFG_TUD_CDC              1
 #define CFG_TUD_MSC              1
-#define CFG_TUD_MSC_EP_BUFSIZE  512
+#define CFG_TUD_MSC_EP_BUFSIZE  1024*4
 // HID 报表缓冲区大小 (标准 64 字节包)
 #define CFG_TUD_HID_EP_BUFSIZE   64
 

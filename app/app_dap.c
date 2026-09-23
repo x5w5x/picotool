@@ -114,6 +114,12 @@ typedef struct {
     uint32_t auto_step_last_tick;
     uint32_t auto_step_ms;
 
+    uint32_t bp_addr;
+    bool bp_active;
+    ui_btn_t bp;
+    ui_modal_t bp_modal;
+    uint32_t last_halt_check;
+
 } dap_data_t;
 
 static inline ui_rect_t rect_union_box(ui_rect_t a, ui_rect_t b)
@@ -167,6 +173,183 @@ static void dap_read_all_regs(dap_data_t *data)
             data->core_regs[i] = 0x0000000000;
     }
     data->regs_valid=true;
+}
+static bool swd_open(dap_data_t *data)
+{
+    if(!data) return false;
+    if (data->pio_swd.opened) return true;
+    const fun_swd_config_t *cfg = fun_swd_config_get();
+    if(!cfg) return false;
+    if(!fun_pio_swd_open_auto(&data->pio_swd,pio_manager_get_default(),cfg->swclk_gpio,cfg->swdio_gpio,cfg->clock_hz))
+        return false;
+    uint32_t id = 0;
+    uint8_t ack=0;
+    if(!fun_pio_swd_read_dp_idcode(&data->pio_swd,&id,&ack)||ack!=1){
+        fun_pio_swd_close(&data->pio_swd);
+        return false;
+    } 
+    if(!fun_pio_swd_power_up(&data->pio_swd)){
+        fun_pio_swd_close(&data->pio_swd);
+        return false;
+    }
+    return true;
+
+}
+static void dap_hardware_bp(dap_data_t *data)
+{
+    if(!data || !swd_open(data)) return;
+    fun_pio_swd_fpb_init(&data->pio_swd);
+    if(data->bp_active&&data->bp_addr!=0)
+    fun_pio_swd_set_breakpoint_ch(&data->pio_swd,1,data->bp_addr);
+    else fun_pio_swd_clear_breakpoint_ch(&data->pio_swd,1);
+
+}
+static void bp_step_out(dap_data_t *data)
+{
+    if(!data || !data->bp_active||data->bp_addr==0) return ;
+    uint32_t pc =data->core_regs[15] & ~1u;
+    if(pc==data->bp_addr){
+        fun_pio_swd_clear_breakpoint_ch(&data->pio_swd,1);
+        fun_pio_swd_step_target(&data->pio_swd,100);
+        fun_pio_swd_set_breakpoint_ch(&data->pio_swd,1,data->bp_addr);
+    }
+}
+/* ============================================================================
+ * 断点函数选择弹窗回调
+ * ============================================================================ */
+
+static void on_bp_modal_draw_content(ui_tile_t *tile, const ui_rect_t *viewport, int16_t scroll_y, void *user_data)
+{
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data) return;
+
+    uint16_t total = sym_loader_get_func_count();
+    int16_t item_h = 34;
+
+    for (uint16_t i = 0; i < total; i++) {
+        int16_t item_y = viewport->y + i * item_h - scroll_y;
+        if (item_y + item_h < tile->rect.y || item_y > tile->rect.y + tile->rect.h) {
+            continue; // 粗裁剪
+        }
+
+        const sym_func_entry_t *fn = sym_loader_get_func(i);
+        if (!fn) continue;
+
+        bool is_current_bp = (data->bp_active && data->bp_addr == fn->addr);
+
+        ui_rect_t item_rect = ui_rect_make(viewport->x + 4, item_y + 2, viewport->w - 8, item_h - 4);
+        ui_rect_t overlap;
+        if (ui_rect_intersect(&tile->rect, &item_rect, &overlap)) {
+            // 当前断点项使用淡红底，其余使用纯白底
+            ui_draw_fill_rect(tile, &overlap, is_current_bp ? 0xFDEE : 0xFFFF);
+            ui_draw_rect(tile, &item_rect, is_current_bp ? 0xF800 : 0xCE59);
+        }
+
+        const char *name = sym_loader_get_func_name(fn);
+
+        // 如果是已设断点的函数，左侧绘制醒目的红点标识
+        if (is_current_bp) {
+            ui_draw_string(tile, item_rect.x + 8, item_rect.y + 7, "[BP] ", FONT_16, 0xF800, 0xFDEE);
+            ui_draw_string(tile, item_rect.x + 46, item_rect.y + 7, name, FONT_16, 0xF800, 0xFDEE);
+        } else {
+            ui_draw_string(tile, item_rect.x + 8, item_rect.y + 7, name, FONT_16, 0x1A7B, 0xFFFF);
+        }
+
+        char addr_str[16];
+        snprintf(addr_str, sizeof(addr_str), "%08lX", (unsigned long)fn->addr);
+        uint16_t bg_col = is_current_bp ? 0xFDEE : 0xFFFF;
+        ui_draw_string(tile, item_rect.x + item_rect.w - 76, item_rect.y + 7, addr_str, FONT_16, 0x8410, bg_col);
+    }
+}
+static bool on_bp_modal_touch_content(ui_modal_t *modal, bool is_touching, int16_t tx, int16_t ty, uint32_t now_tick, void *user_data)
+{
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data || !modal) return false;
+
+    ui_rect_t vr = modal->sv_body.view_rect;
+    bool in_viewport = (tx >= vr.x && tx < (vr.x + vr.w) && ty >= vr.y && ty < (vr.y + vr.h));
+
+    static bool    s_was_touching = false;
+    static int16_t s_down_idx = -1;
+    static int16_t s_down_y = 0;
+    static int16_t s_down_scroll_y = 0;
+
+    int16_t rel_y = ty - vr.y + modal->sv_body.scroll_y;
+    int idx = (in_viewport && rel_y >= 0) ? (rel_y / 34) : -1;
+
+    // 1. 手指刚按下一瞬间：记录初始 Y 坐标和初始滚动位置
+    if (is_touching && !s_was_touching) {
+        s_was_touching = true;
+        s_down_idx = idx;
+        s_down_y = ty;
+        s_down_scroll_y = modal->sv_body.scroll_y;
+        return false;
+    }
+
+    // 2. 手指松开一瞬间
+    if (!is_touching && s_was_touching) {
+        s_was_touching = false;
+
+        // ⚡ 核心修复：手指移动超过 6 像素，或者视口发生了任何位移，一律判定为滑动拖拽，丢弃点击！
+        int16_t dy = ty - s_down_y;
+        int16_t dscroll = modal->sv_body.scroll_y - s_down_scroll_y;
+        if (dy < -6 || dy > 6 || dscroll != 0 || modal->sv_body.is_dragged) {
+            s_down_idx = -1;
+            return false;
+        }
+
+        uint16_t total = sym_loader_get_func_count();
+        if (s_down_idx >= 0 && s_down_idx == idx && s_down_idx < total) {
+            const sym_func_entry_t *fn = sym_loader_get_func(s_down_idx);
+            s_down_idx = -1;
+            if (fn) {
+                if (data->bp_active && data->bp_addr == fn->addr) {
+                    data->bp_active = false;
+                    data->bp_addr = 0;
+                    dap_hardware_bp(data);
+                    ui_toast_show(&data->toast, "断点已清除", UI_TOAST_INFO, now_tick);
+                } else {
+                    data->bp_addr = fn->addr;
+                    data->bp_active = true;
+                    dap_hardware_bp(data);
+
+                    char msg[48];
+                    snprintf(msg, sizeof(msg), "断点 -> %s", sym_loader_get_func_name(fn));
+                    ui_toast_show(&data->toast, msg, UI_TOAST_SUCCESS, now_tick);
+                }
+
+                if (data->bp_active) {
+                    ui_btn_set_color(&data->bp, 0xF800, 0x8000, 0xFFFF);
+                } else {
+                    ui_btn_set_color(&data->bp, 0xEF7D, 0xA514, 0x4208);
+                }
+
+                ui_modal_hide(modal);
+            }
+            return true;
+        }
+        s_down_idx = -1;
+    }
+    return false;
+}
+
+// 终端页底栏 [断点] 按钮点击回调
+static void on_bp_click(ui_btn_t *btn, void *user_data)
+{
+    (void)btn;
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data) return;
+
+    uint16_t cnt = sym_loader_get_func_count();
+    if (cnt == 0) {
+        ui_toast_show(&data->toast, "请先在配置页加载符号表!", UI_TOAST_WARN, to_ms_since_boot(get_absolute_time()));
+        return;
+    }
+
+    // 动态撑开弹窗内容高度并打开弹窗
+    data->bp_modal.sv_body.content_h = cnt * 34 + 8;
+    ui_modal_show(&data->bp_modal, "设置函数断点", data);
+    data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
 }
 static void on_dap_pin_config_changed(ui_pin_config_t *config,uint8_t gpio,void *user_data)
 {
@@ -292,23 +475,35 @@ static bool on_sym_modal_touch_content(ui_modal_t *modal, bool is_touching, int1
 {
     dap_data_t *data = (dap_data_t *)user_data;
     if (!data || !modal) return false;
+
     ui_rect_t vr = modal->sv_body.view_rect;
-    bool in_viewport = (tx >= vr.x && tx < (vr.x + vr.w) &&ty >= vr.y && ty < (vr.y + vr.h));
+    bool in_viewport = (tx >= vr.x && tx < (vr.x + vr.w) && ty >= vr.y && ty < (vr.y + vr.h));
+
     static bool    s_was_touching = false;
     static int16_t s_down_idx = -1;
+    static int16_t s_down_y = 0;
+    static int16_t s_down_scroll_y = 0;
+
     int16_t rel_y = ty - vr.y + modal->sv_body.scroll_y;
     int idx = (in_viewport && rel_y >= 0) ? (rel_y / 34) : -1;
+
     if (is_touching && !s_was_touching) {
         s_was_touching = true;
         s_down_idx = idx;
+        s_down_y = ty;
+        s_down_scroll_y = modal->sv_body.scroll_y;
         return false;
     }
+
     if (!is_touching && s_was_touching) {
         s_was_touching = false;
-        if (modal->sv_body.is_dragged) {
+        int16_t dy = ty - s_down_y;
+        int16_t dscroll = modal->sv_body.scroll_y - s_down_scroll_y;
+        if (dy < -6 || dy > 6 || dscroll != 0 || modal->sv_body.is_dragged) {
             s_down_idx = -1;
             return false;
         }
+
         if (s_down_idx >= 0 && s_down_idx == idx && s_down_idx < data->sym_item_count) {
             sym_file_item_t *it = &data->sym_items[s_down_idx];
             s_down_idx = -1;
@@ -419,27 +614,7 @@ static void on_probe_click(ui_btn_t *btn, void *user_data)
     fun_pio_swd_close(&data->pio_swd);
     data->dirty_rect = rect_union_box(data->dirty_rect, data->status_scroll.view_rect);
 }
-static bool swd_open(dap_data_t *data)
-{
-    if(!data) return false;
-    if (data->pio_swd.opened) return true;
-    const fun_swd_config_t *cfg = fun_swd_config_get();
-    if(!cfg) return false;
-    if(!fun_pio_swd_open_auto(&data->pio_swd,pio_manager_get_default(),cfg->swclk_gpio,cfg->swdio_gpio,cfg->clock_hz))
-        return false;
-    uint32_t id = 0;
-    uint8_t ack=0;
-    if(!fun_pio_swd_read_dp_idcode(&data->pio_swd,&id,&ack)||ack!=1){
-        fun_pio_swd_close(&data->pio_swd);
-        return false;
-    } 
-    if(!fun_pio_swd_power_up(&data->pio_swd)){
-        fun_pio_swd_close(&data->pio_swd);
-        return false;
-    }
-    return true;
 
-}
 static void auto_default(dap_data_t *data)
 {
     data->auto_step_enablde = false;
@@ -451,6 +626,7 @@ static void on_run_click(ui_btn_t *btn,void *user_data)
     dap_data_t *data = (dap_data_t *)user_data;
     if (!data) return;
     if (!swd_open(data)) return;
+    bp_step_out(data);
     data->is_halted=false;
     auto_default(data);
     fun_pio_swd_run_target(&data->pio_swd);
@@ -477,11 +653,17 @@ static void on_step_click(ui_btn_t *btn,void *user_data)
     fun_pio_swd_is_halted(&data->pio_swd,&halted);
     if(!halted)
         fun_pio_swd_halt_target(&data->pio_swd,100);
+    uint32_t pc=data->core_regs[15] &~1u;
+    bool is_at_bp =(data->bp_active&&pc==data->bp_addr);
+    if(is_at_bp)
+    fun_pio_swd_clear_breakpoint_ch(&data->pio_swd,1);
     if(fun_pio_swd_step_target(&data->pio_swd,100))
     {
         data->is_halted=true;
         dap_read_all_regs(data);
     }
+    if(is_at_bp)
+    fun_pio_swd_set_breakpoint_ch(&data->pio_swd,1,data->bp_addr);
     auto_default(data);
     data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
 }
@@ -490,12 +672,20 @@ static void on_reset_click(ui_btn_t *btn,void *user_data)
      dap_data_t *data = (dap_data_t *)user_data;
     if (!data) return;
     if (!swd_open(data)) return;
+    uint32_t demcr = 0;
+    fun_pio_swd_read_memory32(&data->pio_swd, 0xE000EDFCu, &demcr);
+    fun_pio_swd_write_memory32(&data->pio_swd, 0xE000EDFCu, demcr | 1u);
     fun_pio_swd_reset_target(&data->pio_swd);
-    data->is_halted=false;
+    fun_pio_swd_halt_target(&data->pio_swd,100); //复位暂停
+    // fun_pio_swd_write_memory32(&data->pio_swd, 0xE000EDFCu, demcr & ~1u);
+    data->is_halted=true;
     data->pio_swd.mem_select_valid=false;
     data->pio_swd.mem_csw_valid=false;
     data->pio_swd.mem_tar_valid=false;
+    dap_hardware_bp(data);
+    dap_read_all_regs(data);
     auto_default(data);
+    ui_toast_show(&data->toast, "已复位至入口", UI_TOAST_INFO, to_ms_since_boot(get_absolute_time()));
     data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
 }
 static void on_step_over_click(ui_btn_t *btn,void *user_data)
@@ -505,10 +695,16 @@ static void on_step_over_click(ui_btn_t *btn,void *user_data)
     bool halted =false;
     fun_pio_swd_is_halted(&data->pio_swd,&halted);
     if(!halted) fun_pio_swd_halt_target(&data->pio_swd,100);
+     uint32_t pc=data->core_regs[15] &~1u;
+    bool is_at_bp =(data->bp_active&&pc==data->bp_addr);
+    if(is_at_bp)
+    fun_pio_swd_clear_breakpoint_ch(&data->pio_swd,1);
     if(fun_pio_swd_step_over(&data->pio_swd,3000)){
         data->is_halted=true;
         dap_read_all_regs(data);
     }
+    if(is_at_bp)
+    fun_pio_swd_set_breakpoint_ch(&data->pio_swd,1,data->bp_addr);
     auto_default(data);
     data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
 }
@@ -519,10 +715,16 @@ static void on_step_out_click(ui_btn_t *btn,void *user_data)
     bool halted =false;
     fun_pio_swd_is_halted(&data->pio_swd,&halted);
     if(!halted) fun_pio_swd_halt_target(&data->pio_swd,100);
+     uint32_t pc=data->core_regs[15] &~1u;
+    bool is_at_bp =(data->bp_active&&pc==data->bp_addr);
+    if(is_at_bp)
+    fun_pio_swd_clear_breakpoint_ch(&data->pio_swd,1);
     if(fun_pio_swd_step_out(&data->pio_swd,3000)){
         data->is_halted=true;
         dap_read_all_regs(data);
     }
+    if(is_at_bp)
+    fun_pio_swd_set_breakpoint_ch(&data->pio_swd,1,data->bp_addr);
     auto_default(data);
     data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
 }
@@ -854,6 +1056,9 @@ static void dap_term_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
     ui_btn_t auto_b = data->auto_step;
     auto_b.rect = ui_scrollview_content_rect_to_screen(&data->term_scroll, data->auto_step.rect);
     ui_btn_draw(tile,&auto_b);
+    ui_btn_t bp = data->bp;
+    bp.rect = ui_scrollview_content_rect_to_screen(&data->term_scroll, data->bp.rect);
+    ui_btn_draw(tile, &bp);
     if(!data->show_disasm){
     static const char *reg_names[17] = {
         "R0 ", "R1 ", "R2 ", "R3 ", "R4 ", "R5 ", "R6 ", "R7 ",
@@ -994,6 +1199,10 @@ static bool dap_term_process_touch(dap_data_t *data, bool touching,
         return true;
     }
     if (ui_btn_process_touch(&data->auto_step,touching,content_x,content_y,tick)) {
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
+        return true;
+    }
+     if (ui_btn_process_touch(&data->bp,touching,content_x,content_y,tick)) {
         data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
         return true;
     }
@@ -1160,6 +1369,18 @@ static void dap_enter(app_t *self)
     data->auto_step.user_data=data;
     ui_btn_set_color(&data->auto_step, 0xEF7D, 0xA514, 0x4208);
 
+    ui_btn_init(&data->bp, 8 + 54 * 2, 250, 50, 32, "断点", on_bp_click);
+    data->bp.user_data = data;
+    data->bp.font_size = FONT_16;
+    ui_btn_set_color(&data->bp, 0xEF7D, 0xA514, 0x4208);
+    data->bp_addr = 0;
+    data->bp_active = false;
+    data->last_halt_check = 0;
+    ui_modal_init(&data->bp_modal, LCD_WIDTH, LCD_HEIGHT, 380, 240, 200,
+                  "设置函数断点", UI_MODAL_BTN_NONE,
+                  on_bp_modal_draw_content, on_bp_modal_touch_content, NULL);
+    data->bp_modal.user_data = data;
+
 
     strcpy(data->sym_file_path, "0:/app.sym");
     strcpy(data->modal_cur_path, "0:/");
@@ -1188,6 +1409,12 @@ static void dap_exit(app_t *self)
     dap_data_t *data = (dap_data_t *)self->user_data;
 
     if (data && data->pio_swd.opened) {
+        
+        uint32_t demcr = 0;
+        if (fun_pio_swd_read_memory32(&data->pio_swd, 0xE000EDFCu, &demcr)) {
+            fun_pio_swd_write_memory32(&data->pio_swd, 0xE000EDFCu, demcr & ~1u);
+        }
+        fun_pio_swd_run_target(&data->pio_swd);
         fun_pio_swd_close(&data->pio_swd);
     }
     self->user_data = NULL;
@@ -1222,6 +1449,21 @@ static void dap_update(app_t *self, uint32_t now_tick)
             data->dirty_rect=rect_union_box(data->dirty_rect,data->term_scroll.view_rect);
         }
     }
+    if(!data->is_halted&&data->pio_swd.opened){
+        if(now_tick-data->last_halt_check >=50)
+        {
+            data->last_halt_check=now_tick;
+            bool is_halted=false;
+            if(fun_pio_swd_is_halted(&data->pio_swd,&is_halted)&&is_halted){
+                data->is_halted=true;
+                dap_read_all_regs(data);
+                uint32_t pc=data->core_regs[15] &~1u;
+                // if(data->bp_active&&pc==data->bp_addr)
+                // ui_toast_show(&data->toast,"命中断点",UI_TOAST_SUCCESS,now_tick);
+            }
+            data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
+        }
+    }
 }
 static bool dap_process_touch(app_t *self, bool touching, int16_t x,
                               int16_t y, uint32_t tick)
@@ -1231,10 +1473,14 @@ static bool dap_process_touch(app_t *self, bool touching, int16_t x,
 
   if (data->sym_modal.is_open) {
         bool need_refresh = ui_modal_process_touch(&data->sym_modal, touching, x, y, tick);
-        if (need_refresh) {
+        if (need_refresh) 
             data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
-        }
-        return true; // 无论弹窗内发生什么，直接就地截杀，底层代码碰都别想碰到！
+        return true; 
+    }
+    if (data->bp_modal.is_open) {
+        bool need_refresh = ui_modal_process_touch(&data->bp_modal, touching, x, y, tick);
+        if (need_refresh) data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
+        return true;
     }
 
     if (ui_tabview_process_touch(&data->tabview, touching, x, y, tick)) {
@@ -1304,6 +1550,7 @@ static void dap_draw(app_t *self, ui_tile_t *tile)
     /* Toast 是全局覆盖层，即使切片不在 Tab 内容区域也必须绘制。 */
     ui_toast_draw(tile, &data->toast);
     ui_modal_draw(tile, &data->sym_modal);
+    ui_modal_draw(tile, &data->bp_modal);
 }
 
 app_t *app_dap_get_instance(void)

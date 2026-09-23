@@ -1,7 +1,7 @@
 /*
  * @Author: 轩
  * @Date: 2026-09-23 14:54:39
- * @LastEditTime: 2026-09-23 14:55:07
+ * @LastEditTime: 2026-09-23 16:15:53
  * @FilePath: \pico\fun\sym_loader.h
  */
 #ifndef SYM_LOADER_H
@@ -47,5 +47,14 @@ const char *sym_loader_find_func(uint32_t pc, uint32_t *offset);
 
 // (预留) 根据 SRAM 地址查找变量名
 const char *sym_loader_find_var(uint32_t addr);
+
+// 获取已载入的函数总数
+uint16_t sym_loader_get_func_count(void);
+
+// 按索引获取函数表项
+const sym_func_entry_t *sym_loader_get_func(uint16_t index);
+
+// 获取函数名字符串
+const char *sym_loader_get_func_name(const sym_func_entry_t *func);
 
 #endif // SYM_LOADER_H

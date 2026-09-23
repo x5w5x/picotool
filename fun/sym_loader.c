@@ -1,7 +1,7 @@
 /*
  * @Author: 轩
  * @Date: 2026-09-23 14:54:47
- * @LastEditTime: 2026-09-23 15:50:17
+ * @LastEditTime: 2026-09-23 16:20:33
  * @FilePath: \pico\fun\sym_loader.c
  */
 #include "sym_loader.h"
@@ -99,4 +99,19 @@ const char *sym_loader_find_func(uint32_t pc, uint32_t *offset)
         }
     }
     return NULL;
+}
+
+uint16_t sym_loader_get_func_count()
+{
+    return s_header ? s_header->func_count:0;
+}
+const sym_func_entry_t *sym_loader_get_func(uint16_t index)
+{
+    if(!s_funcs||!s_header||index >= s_header->func_count) return NULL;
+    return &s_funcs[index];
+}
+const char *sym_loader_get_func_name(const sym_func_entry_t *func)
+{
+    if(!func || !s_str_pool) return "";
+    return s_str_pool + func->str_offset;
 }

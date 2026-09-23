@@ -1,3 +1,9 @@
+/*
+ * @Author: 轩
+ * @Date: 2026-09-01 20:35:36
+ * @LastEditTime: 2026-09-23 19:30:21
+ * @FilePath: \pico\Drivers\spi_bus.h
+ */
 #ifndef SPI_BUS_H
 #define SPI_BUS_H
 
@@ -15,7 +21,7 @@ extern "C" {
  * 20   MHz = SD 卡 SPI 模式下的安全上限,初始化时更应降到 < 400 kHz。
  */
 #define SPI_BUS_BAUD_HIGH  (62500 * 1000)   /* LCD + Flash 默认 */
-#define SPI_BUS_BAUD_TF    (20000 * 1000)   /* TF 卡运行时 */
+#define SPI_BUS_BAUD_TF    (25000 * 1000)   /* TF 卡运行时 */
 
 /* ===================== API ===================== */
 
