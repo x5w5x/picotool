@@ -19,7 +19,7 @@
 #include "fun_swd_config.h"
 #include "pin_manager.h"
 #include "pico/time.h"
-#include "debug_symbols.h"
+#include "sym_loader.h"
 #include "thumb_disasm.h"
 static const char *s_dap_tabs[] = { "状态", "配置", "终端" };
 #define DAP_TAB_COUNT          ((uint8_t)(sizeof(s_dap_tabs) / sizeof(s_dap_tabs[0])))
@@ -27,6 +27,7 @@ static const char *s_dap_tabs[] = { "状态", "配置", "终端" };
 #define DAP_STATUS_CONTENT_H   260
 #define DAP_CONFIG_CONTENT_H   360   //260
 #define DAP_TERM_CONTENT_H     360
+#define MAX_SYM_ITEMS 16
 typedef enum
 {
     DAP_CORE_UNKNOWN = 0,
@@ -84,6 +85,15 @@ typedef struct {
     ui_btn_t btn_apply;
     ui_toast_t toast;
     ui_switch_t dap_switch;
+
+    ui_modal_t sym_modal;
+    ui_btn_t  choose_sym;
+    char sym_file_path[128];         // 当前选中的路径 (默认 "0:/app.sym")
+    char modal_cur_path[128];        // 弹窗当前浏览的目录 (如 "0:/")
+    sym_file_item_t sym_items[MAX_SYM_ITEMS];
+    uint8_t sym_item_count;
+    FATFS fs;
+    bool fs_mounted;
     /* Tab 2: 终端页组件（预留扩展） */
     ui_btn_t run;
     ui_btn_t halt;
@@ -207,6 +217,154 @@ static void on_dap_switch_change(ui_switch_t *sw,bool state,void *user_data)
     g_dap_enabled=state;
     data->dirty_rect = rect_union_box(data->dirty_rect, data->config_scroll.view_rect);
 
+}
+static void dap_scan_sym_files(dap_data_t *data, const char *path)
+{
+    if (!data) return;
+    data->sym_item_count = 0;
+    if (!data->fs_mounted) {
+        if (f_mount(&data->fs, "0:", 1) != FR_OK) return;
+        data->fs_mounted = true;
+    }
+    DIR dir;
+    FILINFO fno;
+    if (f_opendir(&dir, path) != FR_OK) return;
+    if (strcmp(path, "0:") != 0 && strcmp(path, "0:/") != 0) {
+        snprintf(data->sym_items[0].name, sizeof(data->sym_items[0].name), "..");
+        data->sym_items[0].is_dir = true;
+        data->sym_items[0].size = 0;
+        data->sym_item_count = 1;
+    }
+    while (f_readdir(&dir, &fno) == FR_OK && fno.fname[0] != 0) {
+        if (data->sym_item_count >= MAX_SYM_ITEMS) break;
+        bool is_dir = (fno.fattrib & AM_DIR) ? true : false;
+
+        if (is_dir) {
+            if (fno.fname[0] == '.') continue;
+            sym_file_item_t *it = &data->sym_items[data->sym_item_count++];
+            snprintf(it->name, sizeof(it->name), "%s", fno.fname);
+            it->is_dir = true;
+            it->size = 0;
+        } else if (strstr(fno.fname, ".sym") || strstr(fno.fname, ".SYM")) {
+            sym_file_item_t *it = &data->sym_items[data->sym_item_count++];
+            snprintf(it->name, sizeof(it->name), "%s", fno.fname);
+            it->is_dir = false;
+            it->size = (uint32_t)fno.fsize;
+        }
+    }
+    f_closedir(&dir);
+
+    data->sym_modal.sv_body.content_h = data->sym_item_count * 34 + 8;
+}
+static void on_sym_modal_draw_content(ui_tile_t *tile, const ui_rect_t *viewport, int16_t scroll_y, void *user_data)
+{
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data) return;
+
+    int16_t item_h = 34; 
+    for (uint8_t i = 0; i < data->sym_item_count; i++) {
+        int16_t item_y = viewport->y + i * item_h - scroll_y;
+        if (item_y + item_h < tile->rect.y || item_y > tile->rect.y + tile->rect.h) {
+            continue; 
+        }
+        ui_rect_t item_rect = ui_rect_make(viewport->x + 4, item_y + 2, viewport->w - 8, item_h - 4);
+        ui_rect_t overlap;
+        if (ui_rect_intersect(&tile->rect, &item_rect, &overlap)) {
+            ui_draw_fill_rect(tile, &overlap, 0xFFFF); 
+            ui_draw_rect(tile, &item_rect, 0xCE59);   
+        }
+        sym_file_item_t *it = &data->sym_items[i];
+        if (it->is_dir) {
+            char dir_str[64];
+            snprintf(dir_str, sizeof(dir_str), "[目录] %s", it->name);
+            ui_draw_string(tile, item_rect.x + 8, item_rect.y + 7, dir_str, FONT_16, 0x03DF, 0xFFFF);
+        } else {
+            char file_str[64];
+            snprintf(file_str, sizeof(file_str), "  %s", it->name);
+            ui_draw_string(tile, item_rect.x + 8, item_rect.y + 7, file_str, FONT_16, 0x1A7B, 0xFFFF);
+            char size_str[24];
+            snprintf(size_str, sizeof(size_str), "%lu B", (unsigned long)it->size);
+            ui_draw_string(tile, item_rect.x + item_rect.w - 70, item_rect.y + 7, size_str, FONT_16, 0x8410, 0xFFFF);
+        }
+    }
+}
+static bool on_sym_modal_touch_content(ui_modal_t *modal, bool is_touching, int16_t tx, int16_t ty, uint32_t now_tick, void *user_data)
+{
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data || !modal) return false;
+    ui_rect_t vr = modal->sv_body.view_rect;
+    bool in_viewport = (tx >= vr.x && tx < (vr.x + vr.w) &&ty >= vr.y && ty < (vr.y + vr.h));
+    static bool    s_was_touching = false;
+    static int16_t s_down_idx = -1;
+    int16_t rel_y = ty - vr.y + modal->sv_body.scroll_y;
+    int idx = (in_viewport && rel_y >= 0) ? (rel_y / 34) : -1;
+    if (is_touching && !s_was_touching) {
+        s_was_touching = true;
+        s_down_idx = idx;
+        return false;
+    }
+    if (!is_touching && s_was_touching) {
+        s_was_touching = false;
+        if (modal->sv_body.is_dragged) {
+            s_down_idx = -1;
+            return false;
+        }
+        if (s_down_idx >= 0 && s_down_idx == idx && s_down_idx < data->sym_item_count) {
+            sym_file_item_t *it = &data->sym_items[s_down_idx];
+            s_down_idx = -1;
+            if (it->is_dir) {
+                if (strcmp(it->name, "..") == 0) {
+                    char *last_slash = strrchr(data->modal_cur_path, '/');
+                    if (last_slash && last_slash != data->modal_cur_path + 2) {
+                        *last_slash = '\0';
+                    } else {
+                        strcpy(data->modal_cur_path, "0:/");
+                    }
+                } else {
+                    char next_path[sizeof(data->modal_cur_path)];
+                    size_t cur_len = strlen(data->modal_cur_path);
+                    bool has_slash = (cur_len > 0 && data->modal_cur_path[cur_len - 1] == '/');
+
+                    snprintf(next_path, sizeof(next_path), "%s%s%s",
+                             data->modal_cur_path,
+                             has_slash ? "" : "/",
+                             it->name);
+                    snprintf(data->modal_cur_path, sizeof(data->modal_cur_path), "%s", next_path);
+                }
+                dap_scan_sym_files(data, data->modal_cur_path);
+            } else {
+                if (strcmp(data->modal_cur_path, "0:/") == 0) {
+                    snprintf(data->sym_file_path, sizeof(data->sym_file_path), "0:/%s", it->name);
+                } else {
+                    snprintf(data->sym_file_path, sizeof(data->sym_file_path), "%s/%s", data->modal_cur_path, it->name);
+                }
+                bool ok = sym_loader_load_from_sd(data->sym_file_path);
+                
+                ui_modal_hide(modal);
+                if (ok) {
+                    ui_toast_show(&data->toast, "符号表加载成功!", UI_TOAST_SUCCESS, now_tick);
+                } else {
+                    ui_toast_show(&data->toast, "符号文件加载失败", UI_TOAST_ERROR, now_tick);
+                }
+            }
+            return true;
+        }
+        s_down_idx = -1;
+    }
+    return false;
+}
+static void on_choose_sym_click(ui_btn_t *btn, void *user_data)
+{
+    (void)btn;
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data) return;
+
+    if (data->modal_cur_path[0] == '\0') {
+        strcpy(data->modal_cur_path, "0:/");
+    }
+    dap_scan_sym_files(data, data->modal_cur_path);
+    ui_modal_show(&data->sym_modal, "选择符号文件 (.sym)", data);
+    data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
 }
 static void on_probe_click(ui_btn_t *btn, void *user_data)
 {
@@ -521,40 +679,110 @@ static void dap_config_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
     dap.rect=ui_scrollview_content_rect_to_screen(&data->config_scroll,data->dap_switch.rect);
     ui_switch_draw(tile,&dap);
     ui_draw_string(tile,x,y+150,"DAP开关",FONT_24,0x4208,0xFFFF);
+    //
+    int16_t sym_y = y + 250;
+    ui_draw_string(tile, x, sym_y, "符号映射配置", FONT_24, 0x4208, 0xFFFF);
+
+    char path_buf[64];
+    snprintf(path_buf, sizeof(path_buf), "当前: %s", data->sym_file_path[0] ? data->sym_file_path : "未设置");
+    ui_draw_string(tile, x, sym_y + 32, path_buf, FONT_16, 0x1A7B, 0xFFFF);
+
+    ui_btn_t sym_btn = data->choose_sym;
+    sym_btn.rect = ui_scrollview_content_rect_to_screen(&data->config_scroll, data->choose_sym.rect);
+    ui_btn_draw(tile, &sym_btn);
+
+
+
 
 }
 
-static bool dap_config_process_touch(dap_data_t *data, bool touching,int16_t x, int16_t y, uint32_t tick)
-{
-    if (!data) {
-        return false;
-    }
+// static bool dap_config_process_touch(dap_data_t *data, bool touching,int16_t x, int16_t y, uint32_t tick)
+// {
+//     if (!data) {
+//         return false;
+//     }
 
-    /* 弹窗打开时优先交给弹窗，避免外层页面抢走滑动手势。 */
+//     /* 弹窗打开时优先交给弹窗，避免外层页面抢走滑动手势。 */
+//     if (data->pin_swdio_cf.modal.is_open) {
+//         bool handled = ui_pin_config_process_modal_touch(
+//             &data->pin_swdio_cf, touching, x, y, tick);
+//         if (handled) {
+//             data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
+//         }
+//         return handled;
+//     }
+
+//     if (data->pin_swclk_cf.modal.is_open) {
+//         bool handled = ui_pin_config_process_modal_touch(
+//             &data->pin_swclk_cf, touching, x, y, tick);
+//         if (handled) {
+//             data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
+//         }
+//         return handled;
+//     }
+
+//     /* Tab1 是固定布局，不调用 config_scroll 的触摸处理。 */
+//     /* 普通控件使用 ScrollView 内容坐标；当前配置页不滚动，
+//      * 但仍需减去视口原点，保证绘制区域和触摸区域一致。 */
+//     int16_t content_x = (int16_t)(x - data->config_scroll.view_rect.x);
+//     int16_t content_y = (int16_t)(y - data->config_scroll.view_rect.y +
+//                                    data->config_scroll.scroll_y);
+
+//     if (ui_pin_config_process_touch(&data->pin_swdio_cf, touching, content_x, content_y, tick)) {
+//         data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
+//         return true;
+//     }
+
+//     if (ui_pin_config_process_touch(&data->pin_swclk_cf, touching, content_x, content_y, tick)) {
+//         data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
+//         return true;
+//     }
+//     if (ui_btn_process_touch(&data->btn_apply,touching,content_x,content_y,tick)) {
+//     data->dirty_rect = rect_union_box(data->dirty_rect, data->config_scroll.view_rect);
+//     return true;
+//     }
+//     if (ui_switch_process_touch(&data->dap_switch, touching,content_x, content_y, tick)) {
+//         data->dirty_rect = rect_union_box(data->dirty_rect, data->config_scroll.view_rect);
+//         return true;
+//     }
+//     if (ui_btn_process_touch(&data->choose_sym, touching, content_x, content_y, tick)) {
+//         data->dirty_rect = rect_union_box(data->dirty_rect, data->config_scroll.view_rect);
+//         return true;
+//     }
+
+//     return false;
+// }
+static bool dap_config_process_touch(dap_data_t *data, bool touching, int16_t x, int16_t y, uint32_t tick)
+{
+    if (!data) return false;
+
+    /* 弹窗打开时优先交给弹窗 */
     if (data->pin_swdio_cf.modal.is_open) {
-        bool handled = ui_pin_config_process_modal_touch(
-            &data->pin_swdio_cf, touching, x, y, tick);
-        if (handled) {
-            data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
-        }
+        bool handled = ui_pin_config_process_modal_touch(&data->pin_swdio_cf, touching, x, y, tick);
+        if (handled) data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
         return handled;
     }
 
     if (data->pin_swclk_cf.modal.is_open) {
-        bool handled = ui_pin_config_process_modal_touch(
-            &data->pin_swclk_cf, touching, x, y, tick);
-        if (handled) {
-            data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
-        }
+        bool handled = ui_pin_config_process_modal_touch(&data->pin_swclk_cf, touching, x, y, tick);
+        if (handled) data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
         return handled;
     }
 
-    /* Tab1 是固定布局，不调用 config_scroll 的触摸处理。 */
-    /* 普通控件使用 ScrollView 内容坐标；当前配置页不滚动，
-     * 但仍需减去视口原点，保证绘制区域和触摸区域一致。 */
+    /* ⚡ 1. 优先调用滚动视口处理手势 (解决配置页不滑动的根本原因) */
+    bool scroll_handled = ui_scrollview_process_touch(&data->config_scroll, touching, x, y, tick);
+    if (scroll_handled) {
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->config_scroll.view_rect);
+    }
+
+    /* ⚡ 2. 核心保护：若用户正在上下滑动视口，绝不触发下方按钮与开关 */
+    if (data->config_scroll.is_dragged) {
+        return true;
+    }
+
+    /* 3. 子控件使用包含滚动偏移的内容坐标 */
     int16_t content_x = (int16_t)(x - data->config_scroll.view_rect.x);
-    int16_t content_y = (int16_t)(y - data->config_scroll.view_rect.y +
-                                   data->config_scroll.scroll_y);
+    int16_t content_y = (int16_t)(y - data->config_scroll.view_rect.y + data->config_scroll.scroll_y);
 
     if (ui_pin_config_process_touch(&data->pin_swdio_cf, touching, content_x, content_y, tick)) {
         data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
@@ -565,18 +793,24 @@ static bool dap_config_process_touch(dap_data_t *data, bool touching,int16_t x, 
         data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
         return true;
     }
-    if (ui_btn_process_touch(&data->btn_apply,touching,content_x,content_y,tick)) {
-    data->dirty_rect = rect_union_box(data->dirty_rect, data->config_scroll.view_rect);
-    return true;
-    }
-    if (ui_switch_process_touch(&data->dap_switch, touching,content_x, content_y, tick)) {
+
+    if (ui_btn_process_touch(&data->btn_apply, touching, content_x, content_y, tick)) {
         data->dirty_rect = rect_union_box(data->dirty_rect, data->config_scroll.view_rect);
         return true;
     }
 
-    return false;
-}
+    if (ui_switch_process_touch(&data->dap_switch, touching, content_x, content_y, tick)) {
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->config_scroll.view_rect);
+        return true;
+    }
 
+    if (ui_btn_process_touch(&data->choose_sym, touching, content_x, content_y, tick)) {
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->config_scroll.view_rect);
+        return true;
+    }
+
+    return scroll_handled;
+}
 /* ============================================================================
  * Tab 2: 终端页 (Terminal)
  * ============================================================================ */
@@ -653,7 +887,7 @@ static void dap_term_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
     }else{
         uint32_t pc = data->core_regs[15] & ~1u;
         uint32_t offset = 0;
-        const char *fn_name = debug_symbol_find(pc, &offset);
+        const char *fn_name = sym_loader_find_func(pc, &offset);
         char sym_title[48];
         if (fn_name) {
             snprintf(sym_title, sizeof(sym_title), " <%s + 0x%lX>", fn_name, (unsigned long)offset);
@@ -814,7 +1048,7 @@ static void dap_enter(app_t *self)
     data->config_scroll.user_data = data;
     data->config_scroll.color_bg = 0xFFFF;
     data->config_scroll.color_scrollbar = 0xA514;
-    data->config_scroll.show_scrollbar = false;
+    data->config_scroll.show_scrollbar = true;
 
     ui_scrollview_init(&data->term_scroll, 120, 40, 350, 260,
                        DAP_TERM_CONTENT_H, dap_term_draw_content);
@@ -925,6 +1159,28 @@ static void dap_enter(app_t *self)
     ui_btn_init(&data->auto_step,8+54,250,50,32,"自动",on_auto_step_click);
     data->auto_step.user_data=data;
     ui_btn_set_color(&data->auto_step, 0xEF7D, 0xA514, 0x4208);
+
+
+    strcpy(data->sym_file_path, "0:/app.sym");
+    strcpy(data->modal_cur_path, "0:/");
+    data->fs_mounted = false;
+    sym_loader_init();
+    if (f_mount(&data->fs, "0:", 1) == FR_OK) {
+        data->fs_mounted = true;
+        sym_loader_load_from_sd(data->sym_file_path);
+    }
+
+    ui_btn_init(&data->choose_sym, 36+24*6, 268, 120, 38, "选择文件", on_choose_sym_click);
+    data->choose_sym.user_data = data;
+    data->choose_sym.font_size = FONT_16;
+    data->choose_sym.style = UI_BTN_STYLE_ROUND;
+    ui_btn_set_color(&data->choose_sym, 0x03DF, 0x0275, 0xFFFF);
+
+    // 模态弹窗窗口大小 380x240，内容高度初始预设 200，无确定/取消按键 (点击文件即生效)
+    ui_modal_init(&data->sym_modal, LCD_WIDTH, LCD_HEIGHT, 380, 240, 200,
+                  "选择符号映射文件 (.sym)", UI_MODAL_BTN_NONE,
+                  on_sym_modal_draw_content, on_sym_modal_touch_content, NULL);
+    data->sym_modal.user_data = data;
 }
 
 static void dap_exit(app_t *self)
@@ -972,6 +1228,14 @@ static bool dap_process_touch(app_t *self, bool touching, int16_t x,
 {
     dap_data_t *data = (dap_data_t *)self->user_data;
     if (!data) return false;
+
+  if (data->sym_modal.is_open) {
+        bool need_refresh = ui_modal_process_touch(&data->sym_modal, touching, x, y, tick);
+        if (need_refresh) {
+            data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
+        }
+        return true; // 无论弹窗内发生什么，直接就地截杀，底层代码碰都别想碰到！
+    }
 
     if (ui_tabview_process_touch(&data->tabview, touching, x, y, tick)) {
         if (data->tabview.active_tab_idx != data->last_tab_idx) {
@@ -1039,6 +1303,7 @@ static void dap_draw(app_t *self, ui_tile_t *tile)
 
     /* Toast 是全局覆盖层，即使切片不在 Tab 内容区域也必须绘制。 */
     ui_toast_draw(tile, &data->toast);
+    ui_modal_draw(tile, &data->sym_modal);
 }
 
 app_t *app_dap_get_instance(void)

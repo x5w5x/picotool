@@ -91,6 +91,7 @@ target_compile_options(appmgr PRIVATE
     -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable
     -finput-charset=UTF-8
     -fexec-charset=GBK
+    -Wno-format-truncation
 )
 
 # 接入方式(在主工程的 CMakeLists.txt):

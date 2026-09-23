@@ -8,11 +8,20 @@ add_library(fun STATIC
     fun_swd_config.c
     fun_pio_swd.c
     thumb_disasm.c
-    debug_symbols.c
+    sym_loader.c
+    
 )
 
 target_include_directories(fun PUBLIC
+    ${CMAKE_CURRENT_LIST_DIR}/../app
+    ${CMAKE_CURRENT_LIST_DIR}/../ui
+    ${CMAKE_CURRENT_LIST_DIR}/../Drivers
     ${CMAKE_CURRENT_LIST_DIR}
+    ${CMAKE_CURRENT_LIST_DIR}/../fatfs
+    ${CMAKE_CURRENT_LIST_DIR}/../fatfs/ff15/source
+    ${CMAKE_CURRENT_LIST_DIR}/../fatfs/include
+    ${CMAKE_CURRENT_LIST_DIR}/../fatfs/src
+    
 )
 
 target_link_libraries(fun PUBLIC

@@ -116,7 +116,7 @@
 //     return 2;
 // }
 #include "thumb_disasm.h"
-#include "debug_symbols.h"
+#include "sym_loader.h"
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -171,7 +171,7 @@ uint8_t thumb_disasm_single(uint32_t addr, uint16_t hw1, uint16_t hw2, disasm_li
             if (s) offset |= 0xFE000000;
             uint32_t target = addr + 4 + offset;
             uint32_t sym_offset = 0;
-            const char *fn_name = debug_symbol_find(target, &sym_offset);
+            const char *fn_name = sym_loader_find_func(target, &sym_offset);
 
             if (fn_name && sym_offset == 0) {
                 // snprintf(out->text, sizeof(out->text), "bl %s(0x%08lX)", fn_name, (unsigned long)target);

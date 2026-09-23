@@ -497,7 +497,13 @@ static void loader_app_draw(app_t *self, ui_tile_t *tile) {
         s_active_plugin->draw(tile);
     }
 }
+uint8_t *app_loader_get_ram_pool(void) {
+    return s_app_ram_pool;
+}
 
+uint32_t app_loader_get_ram_pool_size(void) {
+    return APP_RAM_SIZE; // 48KB
+}
 app_t *app_loader_get_instance(void) {
     s_app_loader_inst.id            = APP_ID_CUSTOM_0 + 8;
     s_app_loader_inst.name          = "动态扩展";

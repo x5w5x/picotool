@@ -42,52 +42,59 @@ void ui_modal_init(ui_modal_t *modal, int16_t screen_w, int16_t screen_h,
     modal->on_action     = on_action;
     modal->user_data     = NULL;
 
-    modal->color_bg      = 0x10A2; // 深蓝黑实体底色
-    modal->color_border  = 0x07FF; // 青蓝外框
-    modal->color_title   = 0xFFE0; // 金黄标题
+    // ✨ 1. App 同款浅色系：与状态卡片、寄存器面板色调 100% 一致
+    modal->color_bg      = 0xEF7D; // 暖白底板 (与你终端/烧录卡片完全一致)
+    modal->color_border  = 0xC618; // 细腻温润的质感中灰边框
+    modal->color_title   = 0x1A7B; // 深沉藏青色文字 (主视觉标题色)
 
-    int16_t title_bar_h  = 38;
-    int16_t bottom_bar_h = (btn_mode != UI_MODAL_BTN_NONE) ? 46 : 6;
+    int16_t title_bar_h  = 42;     // 顶部留出 42px，开阔舒适
+    int16_t bottom_bar_h = (btn_mode != UI_MODAL_BTN_NONE) ? 48 : 8;
     int16_t body_y       = modal->rect.y + title_bar_h;
     int16_t body_h       = modal->rect.h - title_bar_h - bottom_bar_h;
 
-    // 滚动视口初始化
+    // 内部滚动视口初始化
     ui_scrollview_init(&modal->sv_body, modal->rect.x + 4, body_y, w - 8, body_h, content_h, forward_scroll_draw);
     modal->sv_body.user_data       = modal;
     modal->sv_body.color_bg        = modal->color_bg;
-    modal->sv_body.color_scrollbar = 0x07FF;
+    modal->sv_body.color_scrollbar = 0x3186; // 藏青细滚动条
 
-    // 右上角关闭按钮
-    ui_btn_init(&modal->btn_close, modal->rect.x + w - 28, modal->rect.y + 6, 22, 22, "X", on_modal_close_btn_click);
-    modal->btn_close.style        = UI_BTN_STYLE_RECT;
-    modal->btn_close.color_bg     = 0x3186;
-    modal->btn_close.color_active = 0xF800;
-    modal->btn_close.color_text   = 0xFFFF;
+    // ✨ 2. 右上角“X”大号圆角胶囊：长 44px、高 28px，大拇指随手一戳就能中！
+    int16_t close_w = 44;
+    int16_t close_h = 28;
+    ui_btn_init(&modal->btn_close, modal->rect.x + w - close_w - 8, modal->rect.y + 7, close_w, close_h, "关闭", on_modal_close_btn_click);
+    modal->btn_close.style        = UI_BTN_STYLE_ROUND; // 圆角胶囊
+    modal->btn_close.font_size    = FONT_16;
+    modal->btn_close.color_bg     = 0xCE79;             // 平时浅冷灰底
+    modal->btn_close.color_active = 0xF800;             // 按下变亮红
+    modal->btn_close.color_text   = 0x1A7B;             // 深藏青字
     modal->btn_close.user_data    = modal;
 
-    // 底部按钮布局
-    int16_t bot_y = modal->rect.y + modal->rect.h - 38;
+    // ✨ 3. 底部确定/取消按钮 (App 风格圆角按键)
+    int16_t bot_y = modal->rect.y + modal->rect.h - 40;
     if (btn_mode == UI_MODAL_BTN_OK) {
         int16_t bw = 120;
-        ui_btn_init(&modal->btn_confirm, modal->rect.x + (w - bw) / 2, bot_y, bw, 30, "确定", on_modal_confirm_btn_click);
-        modal->btn_confirm.style        = UI_BTN_STYLE_RECT;
-        modal->btn_confirm.color_bg     = 0x03E0;
-        modal->btn_confirm.color_active = 0x07E0;
+        ui_btn_init(&modal->btn_confirm, modal->rect.x + (w - bw) / 2, bot_y, bw, 32, "确定", on_modal_confirm_btn_click);
+        modal->btn_confirm.style        = UI_BTN_STYLE_ROUND;
+        modal->btn_confirm.font_size    = FONT_16;
+        modal->btn_confirm.color_bg     = 0x05E0; // 翡翠翠绿
+        modal->btn_confirm.color_active = 0x03E0;
         modal->btn_confirm.color_text   = 0xFFFF;
         modal->btn_confirm.user_data    = modal;
     } else if (btn_mode == UI_MODAL_BTN_OK_CANCEL) {
         int16_t bw = (w - 36) / 2;
-        ui_btn_init(&modal->btn_cancel, modal->rect.x + 12, bot_y, bw, 30, "取消", on_modal_close_btn_click);
-        modal->btn_cancel.style        = UI_BTN_STYLE_RECT;
-        modal->btn_cancel.color_bg     = 0x4208;
-        modal->btn_cancel.color_active = 0xF800;
-        modal->btn_cancel.color_text   = 0xFFFF;
+        ui_btn_init(&modal->btn_cancel, modal->rect.x + 12, bot_y, bw, 32, "取消", on_modal_close_btn_click);
+        modal->btn_cancel.style        = UI_BTN_STYLE_ROUND;
+        modal->btn_cancel.font_size    = FONT_16;
+        modal->btn_cancel.color_bg     = 0xCE79; // 沉稳冷灰
+        modal->btn_cancel.color_active = 0xA514;
+        modal->btn_cancel.color_text   = 0x1A7B;
         modal->btn_cancel.user_data    = modal;
 
-        ui_btn_init(&modal->btn_confirm, modal->rect.x + w - bw - 12, bot_y, bw, 30, "应用生效", on_modal_confirm_btn_click);
-        modal->btn_confirm.style        = UI_BTN_STYLE_RECT;
-        modal->btn_confirm.color_bg     = 0x03E0;
-        modal->btn_confirm.color_active = 0x07E0;
+        ui_btn_init(&modal->btn_confirm, modal->rect.x + w - bw - 12, bot_y, bw, 32, "确定", on_modal_confirm_btn_click);
+        modal->btn_confirm.style        = UI_BTN_STYLE_ROUND;
+        modal->btn_confirm.font_size    = FONT_16;
+        modal->btn_confirm.color_bg     = 0x05E0; // 翠绿
+        modal->btn_confirm.color_active = 0x03E0;
         modal->btn_confirm.color_text   = 0xFFFF;
         modal->btn_confirm.user_data    = modal;
     }
@@ -105,19 +112,39 @@ void ui_modal_hide(ui_modal_t *modal) {
     if (modal) modal->is_open = false;
 }
 
-/* ================= 3. 模态触控调度 (防误触 + 滑动锁死) ================= */
+/* ================= 3. 模态触控调度 (含 8px 触控外扩热区) ================= */
 
 bool ui_modal_process_touch(ui_modal_t *modal, bool is_touching, int16_t tx, int16_t ty, uint32_t now_tick) {
     if (!modal || !modal->is_open) return false;
 
     bool need_refresh = false;
 
-    // 1. 优先将触摸事件分发给内部滚动视口 (内部已自带 8px 防抖与全局捕获锁)
+    // 1. 优先滚动视口防抖处理
     need_refresh |= ui_scrollview_process_touch(&modal->sv_body, is_touching, tx, ty, now_tick);
 
-    // 2. ⚡ 核心保护：若用户正处于拖拽滑动状态，绝不触发固定按钮或子控件
+    // 2. ⚡ 非拖动状态下响应点击
     if (!modal->sv_body.is_dragged) {
-        need_refresh |= ui_btn_process_touch(&modal->btn_close, is_touching, tx, ty, now_tick);
+        // ✨ 关闭按钮自带 8 像素向外扩散触控热区，大拇指按在按键外沿也能精准触发
+        int16_t close_pad = 8;
+        ui_rect_t close_hitbox = ui_rect_make(
+            modal->btn_close.rect.x - close_pad,
+            modal->btn_close.rect.y - close_pad,
+            modal->btn_close.rect.w + close_pad * 2,
+            modal->btn_close.rect.h + close_pad * 2
+        );
+
+        bool in_close = (tx >= close_hitbox.x && tx < (close_hitbox.x + close_hitbox.w) &&
+                         ty >= close_hitbox.y && ty < (close_hitbox.y + close_hitbox.h));
+
+        if (in_close) {
+            need_refresh |= ui_btn_process_touch(&modal->btn_close, is_touching, modal->btn_close.rect.x + 4, modal->btn_close.rect.y + 4, now_tick);
+        } else {
+            if (!is_touching) {
+                ui_btn_process_touch(&modal->btn_close, false, tx, ty, now_tick);
+            }
+        }
+
+        // 底部按键
         if (modal->btn_mode == UI_MODAL_BTN_OK) {
             need_refresh |= ui_btn_process_touch(&modal->btn_confirm, is_touching, tx, ty, now_tick);
         } else if (modal->btn_mode == UI_MODAL_BTN_OK_CANCEL) {
@@ -125,7 +152,7 @@ bool ui_modal_process_touch(ui_modal_t *modal, bool is_touching, int16_t tx, int
             need_refresh |= ui_btn_process_touch(&modal->btn_confirm, is_touching, tx, ty, now_tick);
         }
 
-        // 分发给内容区自定义交互组件
+        // 内容区自定义条目交互
         if (modal->touch_content) {
             need_refresh |= modal->touch_content(modal, is_touching, tx, ty, now_tick, modal->user_data);
         }
@@ -133,43 +160,46 @@ bool ui_modal_process_touch(ui_modal_t *modal, bool is_touching, int16_t tx, int
 
     return need_refresh;
 }
-
-/* ================= 4. 切片光栅化渲染 (层级分明，零无用计算) ================= */
-
 void ui_modal_draw(ui_tile_t *tile, ui_modal_t *modal) {
     if (!tile || !modal || !modal->is_open) return;
 
     ui_rect_t overlap;
-    // 切片相交快速裁剪：完全不相交的切片直接 0 开销退出
+    // 切片相交快速裁剪：完全不相交的切片直接 0 开销跳过
     if (!ui_rect_intersect(&tile->rect, &modal->rect, &overlap)) {
         return;
     }
 
-    // 图层 1: 擦除弹窗底板背景
+    // 图层 1: 暖白底板
     ui_draw_fill_rect(tile, &overlap, modal->color_bg);
 
-    // 图层 2: 视口区域内容光栅化 (受 ui_draw_set_clip 保护)
+    // 图层 2: 内容滚动视口
     ui_scrollview_draw(tile, &modal->sv_body);
 
-    // 图层 3: 顶层标题栏遮罩 (强行遮盖向上滑出视口的内容残像)
-    ui_rect_t header_rect = ui_rect_make(modal->rect.x + 1, modal->rect.y + 1, (int16_t)(modal->rect.w - 2), 37);
+    // 图层 3: 顶栏遮罩与标题修饰
+    ui_rect_t header_rect = ui_rect_make(modal->rect.x + 1, modal->rect.y + 1, modal->rect.w - 2, 40);
     ui_rect_t hdr_ov;
     if (ui_rect_intersect(&tile->rect, &header_rect, &hdr_ov)) {
         ui_draw_fill_rect(tile, &hdr_ov, modal->color_bg);
+
+        // 视觉锚点：左侧 3px 极客蓝竖向装饰条
+        ui_rect_t tag_bar = ui_rect_make(modal->rect.x + 12, modal->rect.y + 12, 3, 18);
+        ui_draw_fill_rect(tile, &tag_bar, 0x03DF);
+
         if (modal->title) {
-            ui_draw_string(tile, modal->rect.x + 12, modal->rect.y + 11, modal->title, FONT_16, modal->color_title, modal->color_bg);
+            ui_draw_string(tile, modal->rect.x + 22, modal->rect.y + 13, modal->title, FONT_16, modal->color_title, modal->color_bg);
         }
-        ui_draw_fast_hline(tile, modal->rect.x + 4, modal->rect.y + 37, modal->rect.w - 8, 0x4208);
+        // 软灰细分隔线
+        ui_draw_fast_hline(tile, modal->rect.x + 8, modal->rect.y + 40, modal->rect.w - 16, 0xCE59);
         ui_btn_draw(tile, &modal->btn_close);
     }
 
-    // 图层 4: 顶层底部操作栏遮罩 (强行遮盖向下滑出视口的内容残像)
+    // 图层 4: 底栏遮罩
     if (modal->btn_mode != UI_MODAL_BTN_NONE) {
-        ui_rect_t footer_rect = ui_rect_make(modal->rect.x + 1, (int16_t)(modal->rect.y + modal->rect.h - 45), (int16_t)(modal->rect.w - 2), 44);
+        ui_rect_t footer_rect = ui_rect_make(modal->rect.x + 1, modal->rect.y + modal->rect.h - 46, modal->rect.w - 2, 45);
         ui_rect_t ftr_ov;
         if (ui_rect_intersect(&tile->rect, &footer_rect, &ftr_ov)) {
             ui_draw_fill_rect(tile, &ftr_ov, modal->color_bg);
-            ui_draw_fast_hline(tile, modal->rect.x + 4, footer_rect.y, modal->rect.w - 8, 0x4208);
+            ui_draw_fast_hline(tile, modal->rect.x + 8, footer_rect.y, modal->rect.w - 16, 0xCE59);
             if (modal->btn_mode == UI_MODAL_BTN_OK) {
                 ui_btn_draw(tile, &modal->btn_confirm);
             } else {
@@ -179,6 +209,6 @@ void ui_modal_draw(ui_tile_t *tile, ui_modal_t *modal) {
         }
     }
 
-    // 图层 5: 弹窗最外层高亮发光边框
+    // 图层 5: 弹窗外框 (质感温润灰框)
     ui_draw_rect(tile, &modal->rect, modal->color_border);
 }
