@@ -7,6 +7,8 @@
 #include "ui_pin_config.h"
 #include "ui_toast.h"
 #include "ui_switch.h"
+#include "ui_modal.h"
+#include "ff.h"
 #include "lcd.h"
 #include <stdbool.h>
 #include "stdio.h"
@@ -23,7 +25,7 @@ static const char *s_dap_tabs[] = { "状态", "配置", "终端" };
 #define DAP_TAB_COUNT          ((uint8_t)(sizeof(s_dap_tabs) / sizeof(s_dap_tabs[0])))
 
 #define DAP_STATUS_CONTENT_H   260
-#define DAP_CONFIG_CONTENT_H   260
+#define DAP_CONFIG_CONTENT_H   360   //260
 #define DAP_TERM_CONTENT_H     360
 typedef enum
 {
@@ -43,6 +45,11 @@ typedef enum
     DAP_PROBE_POWER_FAILED,
     DAP_PROBE_SUCCESS
 } dap_probe_status_t;
+typedef struct {
+    char name[48];
+    uint32_t size;
+    bool is_dir;
+}sym_file_item_t;
 typedef struct {
     /* 必须放在首字段供 app_manager 读取脏矩形 */
     ui_rect_t dirty_rect;
@@ -91,6 +98,11 @@ typedef struct {
     ui_rect_t reg_card;
     ui_btn_t view_toggle;
     bool show_disasm;
+
+    ui_btn_t auto_step;
+    bool auto_step_enablde;
+    uint32_t auto_step_last_tick;
+    uint32_t auto_step_ms;
 
 } dap_data_t;
 
@@ -270,12 +282,19 @@ static bool swd_open(dap_data_t *data)
     return true;
 
 }
+static void auto_default(dap_data_t *data)
+{
+    data->auto_step_enablde = false;
+    data->auto_step.text = "自动";
+    ui_btn_set_color(&data->auto_step, 0xEF7D, 0xA514, 0x4208);
+}
 static void on_run_click(ui_btn_t *btn,void *user_data)
 {
     dap_data_t *data = (dap_data_t *)user_data;
     if (!data) return;
     if (!swd_open(data)) return;
     data->is_halted=false;
+    auto_default(data);
     fun_pio_swd_run_target(&data->pio_swd);
     data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
 }
@@ -288,6 +307,7 @@ static void on_halt_click(ui_btn_t *btn,void *user_data)
     fun_pio_swd_halt_target(&data->pio_swd,100);
     data->is_halted =true;
     dap_read_all_regs(data);
+    auto_default(data);
     data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
 }
 static void on_step_click(ui_btn_t *btn,void *user_data)
@@ -304,6 +324,7 @@ static void on_step_click(ui_btn_t *btn,void *user_data)
         data->is_halted=true;
         dap_read_all_regs(data);
     }
+    auto_default(data);
     data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
 }
 static void on_reset_click(ui_btn_t *btn,void *user_data)
@@ -316,6 +337,7 @@ static void on_reset_click(ui_btn_t *btn,void *user_data)
     data->pio_swd.mem_select_valid=false;
     data->pio_swd.mem_csw_valid=false;
     data->pio_swd.mem_tar_valid=false;
+    auto_default(data);
     data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
 }
 static void on_step_over_click(ui_btn_t *btn,void *user_data)
@@ -329,6 +351,7 @@ static void on_step_over_click(ui_btn_t *btn,void *user_data)
         data->is_halted=true;
         dap_read_all_regs(data);
     }
+    auto_default(data);
     data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
 }
 static void on_step_out_click(ui_btn_t *btn,void *user_data)
@@ -342,6 +365,7 @@ static void on_step_out_click(ui_btn_t *btn,void *user_data)
         data->is_halted=true;
         dap_read_all_regs(data);
     }
+    auto_default(data);
     data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
 }
 static void on_view_toggle_click(ui_btn_t *btn, void *user_data)
@@ -352,6 +376,26 @@ static void on_view_toggle_click(ui_btn_t *btn, void *user_data)
 
     data->show_disasm = !data->show_disasm;
     btn->text = data->show_disasm ? "寄存器" : "汇编";
+    data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
+}
+static void on_auto_step_click(ui_btn_t *btn, void *user_data)
+{
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data|| !swd_open(data)) return;
+    if(!data->is_halted){
+        fun_pio_swd_halt_target(&data->pio_swd,100);
+        data->is_halted=true;
+        dap_read_all_regs(data);
+    }
+    data->auto_step_enablde= !data->auto_step_enablde;
+    data->auto_step_last_tick=to_ms_since_boot(get_absolute_time());
+    if(data->auto_step_enablde){
+        btn->text = "暂停";
+        ui_btn_set_color(btn, 0xF800, 0x8000, 0xFFFF);
+    }else{
+        btn->text = "自动";
+        ui_btn_set_color(btn, 0xEF7D, 0xA514, 0x4208);
+    }
     data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
 }
 static void dap_status_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
@@ -573,7 +617,9 @@ static void dap_term_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
     ui_btn_t view =data->view_toggle;
     view.rect=ui_scrollview_content_rect_to_screen(&data->term_scroll,data->view_toggle.rect);
     ui_btn_draw(tile,&view);
-
+    ui_btn_t auto_b = data->auto_step;
+    auto_b.rect = ui_scrollview_content_rect_to_screen(&data->term_scroll, data->auto_step.rect);
+    ui_btn_draw(tile,&auto_b);
     if(!data->show_disasm){
     static const char *reg_names[17] = {
         "R0 ", "R1 ", "R2 ", "R3 ", "R4 ", "R5 ", "R6 ", "R7 ",
@@ -713,6 +759,10 @@ static bool dap_term_process_touch(dap_data_t *data, bool touching,
         data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
         return true;
     }
+    if (ui_btn_process_touch(&data->auto_step,touching,content_x,content_y,tick)) {
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
+        return true;
+    }
     return false;
 }
 
@@ -726,6 +776,7 @@ static void on_tab_changed(ui_tabview_t *tv, uint8_t old_tab,
     (void)old_tab; (void)new_tab;
     dap_data_t *data = (dap_data_t *)user_data;
     if (data) {
+        auto_default(data);
         data->dirty_rect = tv->content_rect;
     }
 }
@@ -868,7 +919,12 @@ static void dap_enter(app_t *self)
     ui_btn_init(&data->view_toggle,8,250,50,32,"汇编",on_view_toggle_click);
     data->view_toggle.user_data=data;
     ui_btn_set_color(&data->view_toggle, 0xEF7D, 0xA514, 0x4208);
-
+    data->auto_step_enablde=false;
+    data->auto_step_ms=1000;
+    data->auto_step_last_tick=0;
+    ui_btn_init(&data->auto_step,8+54,250,50,32,"自动",on_auto_step_click);
+    data->auto_step.user_data=data;
+    ui_btn_set_color(&data->auto_step, 0xEF7D, 0xA514, 0x4208);
 }
 
 static void dap_exit(app_t *self)
@@ -897,6 +953,18 @@ static void dap_update(app_t *self, uint32_t now_tick)
         data->swd=*cfg;
         if(data->tabview.active_tab_idx==0)
         data->dirty_rect =rect_union_box(data->dirty_rect,data->status_card);
+    }
+    if(data->tabview.active_tab_idx == 2&&data->auto_step_enablde&&data->is_halted&&data->pio_swd.opened){
+        if(now_tick-data->auto_step_last_tick >= data->auto_step_ms){
+            data->auto_step_last_tick=now_tick;
+            if(fun_pio_swd_step_over(&data->pio_swd,1000))
+            {
+                data->is_halted=true;
+                dap_read_all_regs(data);
+            }else
+            auto_default(data);
+            data->dirty_rect=rect_union_box(data->dirty_rect,data->term_scroll.view_rect);
+        }
     }
 }
 static bool dap_process_touch(app_t *self, bool touching, int16_t x,

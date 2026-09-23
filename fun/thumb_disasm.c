@@ -157,14 +157,8 @@ uint8_t thumb_disasm_single(uint32_t addr, uint16_t hw1, uint16_t hw2, disasm_li
     out->addr = addr;
     out->opcode16 = hw1;
     out->is_32bit = false;
-
-    // ========================================================================
-    // 1. 32 位 Thumb-2 指令判断 (高 5 位为 11101, 11110, 11111)
-    // ========================================================================
     if ((hw1 & 0xF800) == 0xF000 || (hw1 & 0xF800) == 0xF800 || (hw1 & 0xE800) == 0xE800) {
         out->is_32bit = true;
-
-        // --- 1.1 32 位函数调用: BL / BLX <label> ---
         if ((hw1 & 0xF800) == 0xF000 && ((hw2 & 0xD000) == 0xD000 || (hw2 & 0xD000) == 0xC000)) {
             int32_t s = (hw1 >> 10) & 1;
             int32_t j1 = (hw2 >> 13) & 1;
@@ -175,15 +169,13 @@ uint8_t thumb_disasm_single(uint32_t addr, uint16_t hw1, uint16_t hw2, disasm_li
             int32_t i2 = !(j2 ^ s);
             int32_t offset = (s << 24) | (i1 << 23) | (i2 << 22) | (imm10 << 12) | (imm11 << 1);
             if (s) offset |= 0xFE000000;
-
             uint32_t target = addr + 4 + offset;
-
-            // 联动符号表查询函数名
             uint32_t sym_offset = 0;
             const char *fn_name = debug_symbol_find(target, &sym_offset);
 
             if (fn_name && sym_offset == 0) {
-                snprintf(out->text, sizeof(out->text), "bl %s(0x%08lX)", fn_name, (unsigned long)target);
+                // snprintf(out->text, sizeof(out->text), "bl %s(0x%08lX)", fn_name, (unsigned long)target);
+                snprintf(out->text, sizeof(out->text), "bl %s", fn_name, (unsigned long)target);
             } else if (fn_name && sym_offset > 0) {
                 snprintf(out->text, sizeof(out->text), "bl %s+0x%lX(0x%08lX)", fn_name, (unsigned long)sym_offset, (unsigned long)target);
             } else {
@@ -191,8 +183,6 @@ uint8_t thumb_disasm_single(uint32_t addr, uint16_t hw1, uint16_t hw2, disasm_li
             }
             return 4;
         }
-
-        // --- 1.2 32 位常数加载: MOV.W Rd, #<const> (0xF04F 开头) ---
         if ((hw1 & 0xFBFF) == 0xF04F && (hw2 & 0x8000) == 0) {
             uint8_t rd = (hw2 >> 8) & 0x0F;
             uint8_t i = (hw1 >> 10) & 1;
@@ -207,8 +197,6 @@ uint8_t thumb_disasm_single(uint32_t addr, uint16_t hw1, uint16_t hw2, disasm_li
             }
             return 4;
         }
-
-        // 32 位未匹配指令兜底显示机器码
         snprintf(out->text, sizeof(out->text), ".word 0x%04X%04X", hw1, hw2);
         return 4;
     }
