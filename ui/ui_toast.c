@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define TOAST_ANIM_MS 150 // 入场与出场动画耗时 150ms
+#define TOAST_ANIM_MS 350 // 入场与出场动画耗时 150ms
 
 void ui_toast_init(ui_toast_t *toast) {
     if (!toast) return;
@@ -11,7 +11,7 @@ void ui_toast_init(ui_toast_t *toast) {
     toast->message[0]  = '\0';
     toast->type        = UI_TOAST_INFO;
     toast->start_tick  = 0;
-    toast->duration_ms = 2000; // 150ms滑入 + 1700ms驻留 + 150ms滑出
+    toast->duration_ms = 1500; // 150ms滑入 + 1700ms驻留 + 150ms滑出
 
     toast->w = 240;
     toast->h = 34;

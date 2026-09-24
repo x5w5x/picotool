@@ -117,6 +117,7 @@ typedef struct {
     uint32_t bp_addr;
     bool bp_active;
     ui_btn_t bp;
+    ui_btn_t clear_bp;
     ui_modal_t bp_modal;
     uint32_t last_halt_check;
 
@@ -350,6 +351,34 @@ static void on_bp_click(ui_btn_t *btn, void *user_data)
     data->bp_modal.sv_body.content_h = cnt * 34 + 8;
     ui_modal_show(&data->bp_modal, "设置函数断点", data);
     data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
+}
+static void  on_clear_bp_click(ui_btn_t *btn, void *user_data)
+{
+    (void)btn;
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data) return;
+    uint32_t now_tick = to_ms_since_boot(get_absolute_time());
+
+    // 1. 检查当前是否设置了断点，没有就提示一下直接返回
+    if (!data->bp_active && data->bp_addr == 0) {
+        ui_toast_show(&data->toast, "当前未设置断点", UI_TOAST_WARN, now_tick);
+        return;
+    }
+
+    // 2. 清除断点标志位与记录的地址
+    data->bp_active = false;
+    data->bp_addr = 0;
+
+    // 3. ⚡ 核心：下发 SWD 指令，关闭 Cortex-M 的 FPB 通道 1 硬件比较器
+    dap_hardware_bp(data);
+
+    // 4. 恢复终端页底部 [断点] 按钮为默认浅灰色
+    ui_btn_set_color(&data->bp, 0xEF7D, 0xA514, 0x4208);
+
+    // 5. 提示用户并标记终端视口脏矩形重绘
+    ui_toast_show(&data->toast, "断点已清除", UI_TOAST_INFO, now_tick);
+    data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
+
 }
 static void on_dap_pin_config_changed(ui_pin_config_t *config,uint8_t gpio,void *user_data)
 {
@@ -1059,6 +1088,9 @@ static void dap_term_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
     ui_btn_t bp = data->bp;
     bp.rect = ui_scrollview_content_rect_to_screen(&data->term_scroll, data->bp.rect);
     ui_btn_draw(tile, &bp);
+    ui_btn_t clear_bp = data->clear_bp;
+    clear_bp.rect = ui_scrollview_content_rect_to_screen(&data->term_scroll, data->clear_bp.rect);
+    ui_btn_draw(tile, &clear_bp);
     if(!data->show_disasm){
     static const char *reg_names[17] = {
         "R0 ", "R1 ", "R2 ", "R3 ", "R4 ", "R5 ", "R6 ", "R7 ",
@@ -1203,6 +1235,10 @@ static bool dap_term_process_touch(dap_data_t *data, bool touching,
         return true;
     }
      if (ui_btn_process_touch(&data->bp,touching,content_x,content_y,tick)) {
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
+        return true;
+    }
+         if (ui_btn_process_touch(&data->clear_bp,touching,content_x,content_y,tick)) {
         data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
         return true;
     }
@@ -1373,6 +1409,10 @@ static void dap_enter(app_t *self)
     data->bp.user_data = data;
     data->bp.font_size = FONT_16;
     ui_btn_set_color(&data->bp, 0xEF7D, 0xA514, 0x4208);
+    ui_btn_init(&data->clear_bp, 8 + 54 * 3, 250, 100, 32, "清空断点", on_clear_bp_click);
+    data->clear_bp.user_data = data;
+    data->clear_bp.font_size = FONT_16;
+    ui_btn_set_color(&data->clear_bp, 0xEF7D, 0xA514, 0x4208);
     data->bp_addr = 0;
     data->bp_active = false;
     data->last_halt_check = 0;
@@ -1431,6 +1471,7 @@ static void dap_update(app_t *self, uint32_t now_tick)
             data->dirty_rect,
             ui_toast_get_dirty_union(&data->toast));
     }
+    
     const fun_swd_config_t *cfg=fun_swd_config_get();
     if(cfg&&cfg->clock_hz!=data->swd.clock_hz){
         data->swd=*cfg;
