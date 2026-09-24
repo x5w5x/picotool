@@ -21,13 +21,29 @@
 #include "pico/time.h"
 #include "sym_loader.h"
 #include "thumb_disasm.h"
-static const char *s_dap_tabs[] = { "状态", "配置", "终端" };
+#include "stdlib.h"
+#include "ui_input.h"
+#include "ui_keyboard.h"
+static const char *s_dap_tabs[] = { "状态", "配置", "终端","监控" };
 #define DAP_TAB_COUNT          ((uint8_t)(sizeof(s_dap_tabs) / sizeof(s_dap_tabs[0])))
 
 #define DAP_STATUS_CONTENT_H   260
 #define DAP_CONFIG_CONTENT_H   360   //260
 #define DAP_TERM_CONTENT_H     360
+#define DAP_WATCH_CONTENT_H    360
+#define MAX_WATCH_ITEMS 6
 #define MAX_SYM_ITEMS 16
+
+typedef struct {
+    uint32_t addr;
+    char name[32];
+    uint8_t size;
+    uint32_t val;
+    uint32_t last_val;
+    uint32_t change_tick;
+    bool valid;
+
+}dap_watch_item_t;
 typedef enum
 {
     DAP_CORE_UNKNOWN = 0,
@@ -120,6 +136,18 @@ typedef struct {
     ui_btn_t clear_bp;
     ui_modal_t bp_modal;
     uint32_t last_halt_check;
+    //tab3
+    ui_scrollview_t watch_scroll;
+    dap_watch_item_t watch_items[MAX_WATCH_ITEMS];
+    uint8_t watch_count;
+    ui_btn_t add_watch;
+    ui_btn_t clear_watch;
+    ui_modal_t var_modal;
+    uint32_t last_watch_tick;
+
+    ui_keyboard_t kb;
+    ui_input_t input;
+    int8_t watch_idx;
 
 } dap_data_t;
 
@@ -1244,7 +1272,107 @@ static bool dap_term_process_touch(dap_data_t *data, bool touching,
     }
     return false;
 }
+static void dap_watch_draw_content(ui_tile_t *tile, const ui_rect_t *viewport, int16_t scroll_y, void *user_data)
+{
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data) return;
 
+    int16_t x = viewport->x + 8;
+    int16_t y = viewport->y + 8 - scroll_y;
+    int16_t w = viewport->w - 16;
+
+    ui_draw_string(tile, x + 4, y + 4, "变量监控", FONT_20, 0x1A7B, 0xFFFF);
+
+    ui_btn_t add = data->add_watch;
+    add.rect = ui_scrollview_content_rect_to_screen(&data->watch_scroll, data->add_watch.rect);
+    ui_btn_draw(tile, &add);
+
+    ui_btn_t clr = data->clear_watch;
+    clr.rect = ui_scrollview_content_rect_to_screen(&data->watch_scroll, data->clear_watch.rect);
+    ui_btn_draw(tile, &clr);
+
+    int16_t card_start_y = y + 38;
+    int16_t card_h = 50;
+
+    if (data->watch_count == 0) {
+        ui_rect_t empty_box = ui_rect_make(x, card_start_y, w, 100);
+        ui_rect_t overlap;
+        if (ui_rect_intersect(&tile->rect, &empty_box, &overlap)) {
+            ui_draw_fill_rect(tile, &overlap, 0xF7BE);
+            ui_draw_rect(tile, &empty_box, 0xCE59);
+            ui_draw_string(tile, empty_box.x + (w - 120) / 2, empty_box.y + 30, "暂无监控变量", FONT_20, 0x8410, 0xF7BE);
+            ui_draw_string(tile, empty_box.x + (w - 200) / 2, empty_box.y + 60, "点击 [添加变量] 开启观测", FONT_16, 0x8410, 0xF7BE);
+        }
+        return;
+    }
+    for (uint8_t i = 0; i < data->watch_count; i++) {
+        dap_watch_item_t *item = &data->watch_items[i];
+        if (!item->valid) continue;
+
+        int16_t cy = card_start_y + i * (card_h + 6);
+        ui_rect_t c_rect = ui_rect_make(x, cy, w, card_h);
+        ui_rect_t overlap;
+
+        if (!ui_rect_intersect(&tile->rect, &c_rect, &overlap)) continue;
+
+        bool changed = (item->val != item->last_val);
+
+        uint16_t bg_col     = 0xFFFF;
+        uint16_t border_col = changed ? 0xF800 : 0xCE59;
+
+        ui_draw_fill_rect(tile, &overlap, bg_col);
+        ui_draw_rect(tile, &c_rect, border_col);
+        ui_rect_t bar = ui_rect_make(c_rect.x, c_rect.y, 4, c_rect.h);
+        ui_rect_t bar_ov;
+        if (ui_rect_intersect(&tile->rect, &bar, &bar_ov)) {
+            ui_draw_fill_rect(tile, &bar_ov, changed ? 0xF800 : 0x03DF);
+        }
+        ui_draw_string(tile, c_rect.x + 12, c_rect.y + 5, item->name, FONT_16, 0x1A7B, bg_col);
+        char sub_info[48];
+        snprintf(sub_info, sizeof(sub_info), "0x%08lX (%uB)", (unsigned long)item->addr, item->size);
+        ui_draw_string(tile, c_rect.x + 12, c_rect.y + 26, sub_info, FONT_16, 0x8410, bg_col);
+        char hex_str[24];
+        if (item->size == 1) snprintf(hex_str, sizeof(hex_str), "0x%02X", (uint8_t)item->val);
+        else if (item->size == 2) snprintf(hex_str, sizeof(hex_str), "0x%04X", (uint16_t)item->val);
+        else snprintf(hex_str, sizeof(hex_str), "0x%08lX", (unsigned long)item->val);
+
+        int16_t badge_w = (int16_t)strlen(hex_str) * 8 + 12;
+        ui_rect_t badge = ui_rect_make(c_rect.x + c_rect.w - badge_w - 8, c_rect.y + 4, badge_w, 20);
+        ui_rect_t badge_ov;
+        ui_draw_string(tile, badge.x + 6, badge.y + 2, hex_str, FONT_16, 0x2104, 0xF7BE);
+        char dec_str[32];
+        if (item->size == 1) snprintf(dec_str, sizeof(dec_str), "DEC: %u", (uint8_t)item->val);
+        else if (item->size == 2) snprintf(dec_str, sizeof(dec_str), "DEC: %u", (uint16_t)item->val);
+        else snprintf(dec_str, sizeof(dec_str), "DEC: %ld", (long)item->val);
+
+        int16_t dec_w = (int16_t)strlen(dec_str) * 8;
+        uint16_t dec_col = changed ? 0xF800 : 0x03E0;
+        ui_draw_string(tile, c_rect.x + c_rect.w - dec_w - 8, c_rect.y + 26, dec_str, FONT_16, dec_col, bg_col);
+    }
+}
+
+static bool dap_watch_process_touch(dap_data_t *data, bool touching, int16_t x, int16_t y, uint32_t tick)
+{
+    if (!data) return false;
+
+    int16_t content_x = (int16_t)(x - data->watch_scroll.view_rect.x);
+    int16_t content_y = (int16_t)(y - data->watch_scroll.view_rect.y + data->watch_scroll.scroll_y);
+
+    if (ui_scrollview_process_touch(&data->watch_scroll, touching, x, y, tick)) {
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->watch_scroll.view_rect);
+        return true;
+    }
+    if (ui_btn_process_touch(&data->add_watch, touching, content_x, content_y, tick)) {
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->watch_scroll.view_rect);
+        return true;
+    }
+    if (ui_btn_process_touch(&data->clear_watch, touching, content_x, content_y, tick)) {
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->watch_scroll.view_rect);
+        return true;
+    }
+
+    return false;
+}
 /* ============================================================================
  * 全局生命周期与分发调度
  * ============================================================================ */
@@ -1442,6 +1570,27 @@ static void dap_enter(app_t *self)
                   "选择符号映射文件 (.sym)", UI_MODAL_BTN_NONE,
                   on_sym_modal_draw_content, on_sym_modal_touch_content, NULL);
     data->sym_modal.user_data = data;
+    //tab3
+    ui_scrollview_init(&data->watch_scroll, 120, 40, 350, 260,DAP_WATCH_CONTENT_H, dap_watch_draw_content);
+    data->watch_scroll.user_data = data;
+    data->watch_scroll.color_bg = 0xFFFF;
+    data->watch_scroll.color_scrollbar = 0xA514;
+    data->watch_scroll.show_scrollbar = true;
+
+    ui_btn_init(&data->add_watch, 10+120, 8, 96, 30, "添加变量", NULL);
+    data->add_watch.user_data = data;
+    data->add_watch.font_size = FONT_16;
+    data->add_watch.style = UI_BTN_STYLE_ROUND;
+    ui_btn_set_color(&data->add_watch, 0xEF7D, 0xA514, 0x4208);
+
+    ui_btn_init(&data->clear_watch, 114+120, 8, 60, 30, "清空", NULL);
+    data->clear_watch.user_data = data;
+    data->clear_watch.font_size = FONT_16;
+    data->clear_watch.style = UI_BTN_STYLE_ROUND;
+    ui_btn_set_color(&data->clear_watch, 0xEF7D, 0xA514, 0x4208);
+    data->watch_count = 0;
+    data->last_watch_tick=0;
+
 }
 
 static void dap_exit(app_t *self)
@@ -1545,6 +1694,9 @@ static bool dap_process_touch(app_t *self, bool touching, int16_t x,
     case 2:
         handled = dap_term_process_touch(data, touching, x, y, tick);
         break;
+    case 3:
+        handled =dap_watch_process_touch(data,touching,x,y,tick);
+        break;
     default:
         break;
     }
@@ -1576,6 +1728,9 @@ static void dap_draw(app_t *self, ui_tile_t *tile)
             break;
         case 2:
             ui_scrollview_draw(tile, &data->term_scroll);
+            break;
+        case 3:
+            ui_scrollview_draw(tile,&data->watch_scroll);
             break;
         default:
             break;
