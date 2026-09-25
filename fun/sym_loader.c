@@ -1,7 +1,7 @@
 /*
  * @Author: 轩
  * @Date: 2026-09-23 14:54:47
- * @LastEditTime: 2026-09-23 16:20:33
+ * @LastEditTime: 2026-09-24 21:35:55
  * @FilePath: \pico\fun\sym_loader.c
  */
 #include "sym_loader.h"
@@ -114,4 +114,21 @@ const char *sym_loader_get_func_name(const sym_func_entry_t *func)
 {
     if(!func || !s_str_pool) return "";
     return s_str_pool + func->str_offset;
+}
+
+uint16_t sym_loader_get_var_count(void)
+{
+    return s_header ? s_header->var_count : 0;
+}
+
+const sym_var_entry_t *sym_loader_get_var(uint16_t index)
+{
+    if (!s_vars || !s_header || index >= s_header->var_count) return NULL;
+    return &s_vars[index];
+}
+
+const char *sym_loader_get_var_name(const sym_var_entry_t *var)
+{
+    if (!var || !s_str_pool) return "";
+    return s_str_pool + var->str_offset;
 }

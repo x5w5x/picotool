@@ -56,5 +56,7 @@ const sym_func_entry_t *sym_loader_get_func(uint16_t index);
 
 // 获取函数名字符串
 const char *sym_loader_get_func_name(const sym_func_entry_t *func);
-
+uint16_t sym_loader_get_var_count(void);
+const sym_var_entry_t *sym_loader_get_var(uint16_t index);
+const char *sym_loader_get_var_name(const sym_var_entry_t *var);
 #endif // SYM_LOADER_H

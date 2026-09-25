@@ -950,67 +950,150 @@ static void dap_config_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
     sym_btn.rect = ui_scrollview_content_rect_to_screen(&data->config_scroll, data->choose_sym.rect);
     ui_btn_draw(tile, &sym_btn);
 
-
-
-
 }
 
-// static bool dap_config_process_touch(dap_data_t *data, bool touching,int16_t x, int16_t y, uint32_t tick)
-// {
-//     if (!data) {
-//         return false;
-//     }
+static void on_var_modal_draw_content(ui_tile_t *tile, const ui_rect_t *viewport, int16_t scroll_y, void *user_data)
+{
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data) return;
 
-//     /* 弹窗打开时优先交给弹窗，避免外层页面抢走滑动手势。 */
-//     if (data->pin_swdio_cf.modal.is_open) {
-//         bool handled = ui_pin_config_process_modal_touch(
-//             &data->pin_swdio_cf, touching, x, y, tick);
-//         if (handled) {
-//             data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
-//         }
-//         return handled;
-//     }
+    uint16_t total = sym_loader_get_var_count();
+    int16_t item_h = 36;
 
-//     if (data->pin_swclk_cf.modal.is_open) {
-//         bool handled = ui_pin_config_process_modal_touch(
-//             &data->pin_swclk_cf, touching, x, y, tick);
-//         if (handled) {
-//             data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
-//         }
-//         return handled;
-//     }
+    for (uint16_t i = 0; i < total; i++) {
+        int16_t item_y = viewport->y + i * item_h - scroll_y;
+        if (item_y + item_h < tile->rect.y || item_y > tile->rect.y + tile->rect.h) continue;
 
-//     /* Tab1 是固定布局，不调用 config_scroll 的触摸处理。 */
-//     /* 普通控件使用 ScrollView 内容坐标；当前配置页不滚动，
-//      * 但仍需减去视口原点，保证绘制区域和触摸区域一致。 */
-//     int16_t content_x = (int16_t)(x - data->config_scroll.view_rect.x);
-//     int16_t content_y = (int16_t)(y - data->config_scroll.view_rect.y +
-//                                    data->config_scroll.scroll_y);
+        const sym_var_entry_t *v = sym_loader_get_var(i);
+        if (!v) continue;
 
-//     if (ui_pin_config_process_touch(&data->pin_swdio_cf, touching, content_x, content_y, tick)) {
-//         data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
-//         return true;
-//     }
+        // 检查该变量是否已在监控列表中
+        bool is_added = false;
+        for (uint8_t w = 0; w < data->watch_count; w++) {
+            if (data->watch_items[w].valid && data->watch_items[w].addr == v->addr) {
+                is_added = true;
+                break;
+            }
+        }
 
-//     if (ui_pin_config_process_touch(&data->pin_swclk_cf, touching, content_x, content_y, tick)) {
-//         data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
-//         return true;
-//     }
-//     if (ui_btn_process_touch(&data->btn_apply,touching,content_x,content_y,tick)) {
-//     data->dirty_rect = rect_union_box(data->dirty_rect, data->config_scroll.view_rect);
-//     return true;
-//     }
-//     if (ui_switch_process_touch(&data->dap_switch, touching,content_x, content_y, tick)) {
-//         data->dirty_rect = rect_union_box(data->dirty_rect, data->config_scroll.view_rect);
-//         return true;
-//     }
-//     if (ui_btn_process_touch(&data->choose_sym, touching, content_x, content_y, tick)) {
-//         data->dirty_rect = rect_union_box(data->dirty_rect, data->config_scroll.view_rect);
-//         return true;
-//     }
+        ui_rect_t item_rect = ui_rect_make(viewport->x + 4, item_y + 2, viewport->w - 8, item_h - 4);
+        ui_rect_t overlap;
+        if (ui_rect_intersect(&tile->rect, &item_rect, &overlap)) {
+            // 已添加的条目使用柔和浅青色背景高亮
+            ui_draw_fill_rect(tile, &overlap, is_added ? 0xE79F : 0xFFFF);
+            ui_draw_rect(tile, &item_rect, is_added ? 0x03DF : 0xCE59);
+        }
 
-//     return false;
-// }
+        const char *name = sym_loader_get_var_name(v);
+        ui_draw_string(tile, item_rect.x + 8, item_rect.y + 8, name, FONT_16, is_added ? 0x0275 : 0x1A7B, is_added ? 0xE79F : 0xFFFF);
+
+        // 显示变量地址与大小
+        char info_str[32];
+        snprintf(info_str, sizeof(info_str), "0x%08lX (%uB)", (unsigned long)v->addr, v->size);
+        ui_draw_string(tile, item_rect.x + item_rect.w - 130, item_rect.y + 8, info_str, FONT_16, 0x8410, is_added ? 0xE79F : 0xFFFF);
+    }
+}
+
+// 2. 变量选择弹窗触摸判定 (点选即加入/移出)
+static bool on_var_modal_touch_content(ui_modal_t *modal, bool is_touching, int16_t tx, int16_t ty, uint32_t now_tick, void *user_data)
+{
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data || !modal) return false;
+
+    ui_rect_t vr = modal->sv_body.view_rect;
+    bool in_viewport = (tx >= vr.x && tx < (vr.x + vr.w) && ty >= vr.y && ty < (vr.y + vr.h));
+
+    static bool    s_was_touching = false;
+    static int16_t s_down_idx = -1;
+    static int16_t s_down_y = 0;
+    static int16_t s_down_scroll_y = 0;
+
+    int16_t rel_y = ty - vr.y + modal->sv_body.scroll_y;
+    int idx = (in_viewport && rel_y >= 0) ? (rel_y / 36) : -1;
+
+    if (is_touching && !s_was_touching) {
+        s_was_touching = true;
+        s_down_idx = idx;
+        s_down_y = ty;
+        s_down_scroll_y = modal->sv_body.scroll_y;
+        return false;
+    }
+
+    if (!is_touching && s_was_touching) {
+        s_was_touching = false;
+        int16_t dy = ty - s_down_y;
+        int16_t dscroll = modal->sv_body.scroll_y - s_down_scroll_y;
+        if (dy < -6 || dy > 6 || dscroll != 0 || modal->sv_body.is_dragged) {
+            s_down_idx = -1;
+            return false;
+        }
+
+        uint16_t total = sym_loader_get_var_count();
+        if (s_down_idx >= 0 && s_down_idx == idx && s_down_idx < total) {
+            const sym_var_entry_t *v = sym_loader_get_var(s_down_idx);
+            s_down_idx = -1;
+            if (v) {
+                // 判断是否已在列表中，已存在则移除
+                int found = -1;
+                for (uint8_t w = 0; w < data->watch_count; w++) {
+                    if (data->watch_items[w].valid && data->watch_items[w].addr == v->addr) {
+                        found = w;
+                        break;
+                    }
+                }
+
+                if (found >= 0) {
+                    for (uint8_t w = found; w < data->watch_count - 1; w++) {
+                        data->watch_items[w] = data->watch_items[w + 1];
+                    }
+                    data->watch_count--;
+                    ui_toast_show(&data->toast, "已移出监控", UI_TOAST_INFO, now_tick);
+                } else {
+                    if (data->watch_count < MAX_WATCH_ITEMS) {
+                        dap_watch_item_t *it = &data->watch_items[data->watch_count++];
+                        it->addr = v->addr;
+                        it->size = v->size ? v->size : 4;
+                        it->val = 0;
+                        it->last_val = 0;
+                        it->change_tick = 0;
+                        it->valid = true;
+                        snprintf(it->name, sizeof(it->name), "%s", sym_loader_get_var_name(v));
+                        ui_toast_show(&data->toast, "已加入监控", UI_TOAST_SUCCESS, now_tick);
+                    } else {
+                        ui_toast_show(&data->toast, "监控槽位已满(最多6个)", UI_TOAST_WARN, now_tick);
+                    }
+                }
+                ui_modal_hide(modal);
+                data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
+            }
+            return true;
+        }
+        s_down_idx = -1;
+    }
+    return false;
+}
+static void on_add_watch_click(ui_btn_t *btn,void *user_data)
+{
+    dap_data_t *data= (dap_data_t *) user_data;
+    if(!data) return;
+    uint16_t cnt = sym_loader_get_var_count();
+    if (cnt == 0) {
+        ui_toast_show(&data->toast, "未发现变量符号，请检查.sym!", UI_TOAST_WARN, to_ms_since_boot(get_absolute_time()));
+        return;
+    }
+
+    data->var_modal.sv_body.content_h = cnt * 36 + 8;
+    ui_modal_show(&data->var_modal, "添加监控变量", data);
+    data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
+}
+static void on_clear_watch_click(ui_btn_t *btn,void *user_data)
+{
+    dap_data_t *data= (dap_data_t *) user_data;
+    if(!data) return;
+    data->watch_count = 0;
+    ui_toast_show(&data->toast, "已清空监控列表", UI_TOAST_INFO, to_ms_since_boot(get_absolute_time()));
+    data->dirty_rect = rect_union_box(data->dirty_rect, data->watch_scroll.view_rect);
+}
 static bool dap_config_process_touch(dap_data_t *data, bool touching, int16_t x, int16_t y, uint32_t tick)
 {
     if (!data) return false;
@@ -1272,6 +1355,13 @@ static bool dap_term_process_touch(dap_data_t *data, bool touching,
     }
     return false;
 }
+static inline ui_rect_t dap_watch_get_card_screen_rect(dap_data_t *data, uint8_t idx)
+{
+    int16_t x = data->watch_scroll.view_rect.x + 8;
+    int16_t y = data->watch_scroll.view_rect.y + 8 + 38 + idx * (50 + 6) - data->watch_scroll.scroll_y;
+    int16_t w = data->watch_scroll.view_rect.w - 16;
+    return ui_rect_make(x, y, w, 50);
+}
 static void dap_watch_draw_content(ui_tile_t *tile, const ui_rect_t *viewport, int16_t scroll_y, void *user_data)
 {
     dap_data_t *data = (dap_data_t *)user_data;
@@ -1315,7 +1405,10 @@ static void dap_watch_draw_content(ui_tile_t *tile, const ui_rect_t *viewport, i
 
         if (!ui_rect_intersect(&tile->rect, &c_rect, &overlap)) continue;
 
-        bool changed = (item->val != item->last_val);
+        // bool changed = (item->val != item->last_val);
+        // ⚡ 数值跳变后保持 500ms 醒目红色警示，之后自动平滑恢复为科技蓝
+        uint32_t now = to_ms_since_boot(get_absolute_time());
+        bool changed = (item->change_tick > 0 && (now - item->change_tick < 500));
 
         uint16_t bg_col     = 0xFFFF;
         uint16_t border_col = changed ? 0xF800 : 0xCE59;
@@ -1577,17 +1670,19 @@ static void dap_enter(app_t *self)
     data->watch_scroll.color_scrollbar = 0xA514;
     data->watch_scroll.show_scrollbar = true;
 
-    ui_btn_init(&data->add_watch, 10+120, 8, 96, 30, "添加变量", NULL);
+    ui_btn_init(&data->add_watch, 10+120, 8, 96, 30, "添加变量", on_add_watch_click);
     data->add_watch.user_data = data;
     data->add_watch.font_size = FONT_16;
     data->add_watch.style = UI_BTN_STYLE_ROUND;
     ui_btn_set_color(&data->add_watch, 0xEF7D, 0xA514, 0x4208);
 
-    ui_btn_init(&data->clear_watch, 114+120, 8, 60, 30, "清空", NULL);
+    ui_btn_init(&data->clear_watch, 114+120, 8, 60, 30, "清空", on_clear_watch_click);
     data->clear_watch.user_data = data;
     data->clear_watch.font_size = FONT_16;
     data->clear_watch.style = UI_BTN_STYLE_ROUND;
     ui_btn_set_color(&data->clear_watch, 0xEF7D, 0xA514, 0x4208);
+    ui_modal_init(&data->var_modal, LCD_WIDTH, LCD_HEIGHT, 380, 240, 200,"添加监控变量", UI_MODAL_BTN_NONE,on_var_modal_draw_content, on_var_modal_touch_content, NULL);
+    data->var_modal.user_data = data;
     data->watch_count = 0;
     data->last_watch_tick=0;
 
@@ -1609,49 +1704,204 @@ static void dap_exit(app_t *self)
     self->user_data = NULL;
 }
 
+// static void dap_update(app_t *self, uint32_t now_tick)
+// {
+//     dap_data_t *data = (dap_data_t *)self->user_data;
+//     if (!data) return;
+
+//     data->dirty_rect = ui_rect_make(0, 0, 0, 0);
+//     if (ui_toast_update(&data->toast, now_tick)) {
+//         data->dirty_rect = rect_union_box(
+//             data->dirty_rect,
+//             ui_toast_get_dirty_union(&data->toast));
+//     }
+
+    
+//     const fun_swd_config_t *cfg=fun_swd_config_get();
+//     if(cfg&&cfg->clock_hz!=data->swd.clock_hz){
+//         data->swd=*cfg;
+//         if(data->tabview.active_tab_idx==0)
+//         data->dirty_rect =rect_union_box(data->dirty_rect,data->status_card);
+//     }
+//     if(data->tabview.active_tab_idx == 2&&data->auto_step_enablde&&data->is_halted&&data->pio_swd.opened){
+//         if(now_tick-data->auto_step_last_tick >= data->auto_step_ms){
+//             data->auto_step_last_tick=now_tick;
+//             if(fun_pio_swd_step_over(&data->pio_swd,1000))
+//             {
+//                 data->is_halted=true;
+//                 dap_read_all_regs(data);
+//             }else
+//             auto_default(data);
+//             data->dirty_rect=rect_union_box(data->dirty_rect,data->term_scroll.view_rect);
+//         }
+//     }
+//     if(!data->is_halted&&data->pio_swd.opened){
+//         if(now_tick-data->last_halt_check >=50)
+//         {
+//             data->last_halt_check=now_tick;
+//             bool is_halted=false;
+//             if(fun_pio_swd_is_halted(&data->pio_swd,&is_halted)&&is_halted){
+//                 data->is_halted=true;
+//                 dap_read_all_regs(data);
+//                 uint32_t pc=data->core_regs[15] &~1u;
+//                 // if(data->bp_active&&pc==data->bp_addr)
+//                 // ui_toast_show(&data->toast,"命中断点",UI_TOAST_SUCCESS,now_tick);
+//             }
+//             data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
+//         }
+//     }
+//     if(data->tabview.active_tab_idx==3&&data->watch_count>0&&data->pio_swd.opened&&now_tick-data->last_watch_tick>=25){
+//         if (data->pio_swd.opened && (now_tick - data->last_watch_tick >= 50)) {
+//             data->last_watch_tick = now_tick;
+
+//             for (uint8_t i = 0; i < data->watch_count; i++) {
+//                 dap_watch_item_t *it = &data->watch_items[i];
+//                 if (!it->valid) continue;
+
+//                 uint32_t al_addr = it->addr & ~3u;
+//                 uint32_t shift = (it->addr & 3u) * 8u;
+//                 uint32_t raw_word = 0;
+
+//                 if (fun_pio_swd_read_memory32(&data->pio_swd, al_addr, &raw_word)) {
+//                     uint32_t new_val = 0;
+//                     if (it->size == 1) {
+//                         new_val = (raw_word >> shift) & 0xFFu;
+//                     } else if (it->size == 2) {
+//                         new_val = (raw_word >> shift) & 0xFFFFu;
+//                     } else {
+//                         new_val = raw_word;
+//                     }
+
+//                     // 变量发生变动
+//                     if (new_val != it->val) {
+//                         it->last_val = it->val;
+//                         it->val = new_val;
+//                         it->change_tick = now_tick;
+
+//                         // ⚡ 核心提速：仅将当前这一张卡片标记为脏矩形，耗时从 30ms 暴降至 3ms！
+//                         ui_rect_t card_rect = dap_watch_get_card_screen_rect(data, i);
+//                         data->dirty_rect = rect_union_box(data->dirty_rect, card_rect);
+//                     }
+//                 }
+//             }
+//         }
+
+//         // 2. 500ms 变色恢复检测（单次精准触发并清零，杜绝空转刷屏）
+//         for (uint8_t i = 0; i < data->watch_count; i++) {
+//             dap_watch_item_t *it = &data->watch_items[i];
+//             if (it->valid && it->change_tick > 0) {
+//                 if (now_tick - it->change_tick >= 500) {
+//                     it->change_tick = 0; // 清除标记，保证只重绘一次！
+//                     ui_rect_t card_rect = dap_watch_get_card_screen_rect(data, i);
+//                     data->dirty_rect = rect_union_box(data->dirty_rect, card_rect);
+//                 }
+//             }
+//         }
+      
+//     }
+//     if (data->tabview.active_tab_idx == 3) {
+//         for (uint8_t i = 0; i < data->watch_count; i++) {
+//             if (data->watch_items[i].valid && data->watch_items[i].change_tick > 0) {
+//                 uint32_t elapsed = now_tick - data->watch_items[i].change_tick;
+//                 if (elapsed >= 500 && elapsed < 530) {
+//                     data->dirty_rect = rect_union_box(data->dirty_rect, data->watch_scroll.view_rect);
+//                 }
+//             }
+//         }
+//     }
+// }
 static void dap_update(app_t *self, uint32_t now_tick)
 {
     dap_data_t *data = (dap_data_t *)self->user_data;
     if (!data) return;
 
     data->dirty_rect = ui_rect_make(0, 0, 0, 0);
+
+    // 1. Toast 驱动
     if (ui_toast_update(&data->toast, now_tick)) {
         data->dirty_rect = rect_union_box(
             data->dirty_rect,
             ui_toast_get_dirty_union(&data->toast));
     }
-    
-    const fun_swd_config_t *cfg=fun_swd_config_get();
-    if(cfg&&cfg->clock_hz!=data->swd.clock_hz){
-        data->swd=*cfg;
-        if(data->tabview.active_tab_idx==0)
-        data->dirty_rect =rect_union_box(data->dirty_rect,data->status_card);
-    }
-    if(data->tabview.active_tab_idx == 2&&data->auto_step_enablde&&data->is_halted&&data->pio_swd.opened){
-        if(now_tick-data->auto_step_last_tick >= data->auto_step_ms){
-            data->auto_step_last_tick=now_tick;
-            if(fun_pio_swd_step_over(&data->pio_swd,1000))
-            {
-                data->is_halted=true;
-                dap_read_all_regs(data);
-            }else
-            auto_default(data);
-            data->dirty_rect=rect_union_box(data->dirty_rect,data->term_scroll.view_rect);
+    const fun_swd_config_t *cfg = fun_swd_config_get();
+    if (cfg && cfg->clock_hz != data->swd.clock_hz) {
+        data->swd = *cfg;
+        if (data->tabview.active_tab_idx == 0) {
+            data->dirty_rect = rect_union_box(data->dirty_rect, data->status_card);
         }
     }
-    if(!data->is_halted&&data->pio_swd.opened){
-        if(now_tick-data->last_halt_check >=50)
-        {
-            data->last_halt_check=now_tick;
-            bool is_halted=false;
-            if(fun_pio_swd_is_halted(&data->pio_swd,&is_halted)&&is_halted){
-                data->is_halted=true;
+
+    // 4. Tab 2: 终端页自动单步
+    if (data->tabview.active_tab_idx == 2 && data->auto_step_enablde && data->is_halted && data->pio_swd.opened) {
+        if (now_tick - data->auto_step_last_tick >= data->auto_step_ms) {
+            data->auto_step_last_tick = now_tick;
+            if (fun_pio_swd_step_over(&data->pio_swd, 1000)) {
+                data->is_halted = true;
                 dap_read_all_regs(data);
-                uint32_t pc=data->core_regs[15] &~1u;
-                // if(data->bp_active&&pc==data->bp_addr)
-                // ui_toast_show(&data->toast,"命中断点",UI_TOAST_SUCCESS,now_tick);
+            } else {
+                auto_default(data);
             }
             data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
+        }
+    }
+
+    // ⚡ 修复 1：目标停机检测（只有真正停机 且 处于终端页时才刷新，彻底斩断每秒20次全屏重绘！）
+    if (!data->is_halted && data->pio_swd.opened) {
+        if (now_tick - data->last_halt_check >= 50) {
+            data->last_halt_check = now_tick;
+            bool is_halted = false;
+            if (fun_pio_swd_is_halted(&data->pio_swd, &is_halted) && is_halted) {
+                data->is_halted = true;
+                dap_read_all_regs(data);
+                if (data->tabview.active_tab_idx == 2) {
+                    data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
+                }
+            }
+        }
+    }
+
+    // ⚡ 修复 2：Tab 3 监控页独立采样（50ms 黄金采样 + 仅刷变动的单张卡片）
+    if (data->tabview.active_tab_idx == 3 && data->watch_count > 0&&data->pio_swd.opened) {
+        if (data->pio_swd.opened && (now_tick - data->last_watch_tick >= 50)) {
+            data->last_watch_tick = now_tick;
+
+            for (uint8_t i = 0; i < data->watch_count; i++) {
+                dap_watch_item_t *it = &data->watch_items[i];
+                if (!it->valid) continue;
+
+                uint32_t al_addr = it->addr & ~3u;
+                uint32_t shift = (it->addr & 3u) * 8u;
+                uint32_t raw_word = 0;
+
+                if (fun_pio_swd_read_memory32(&data->pio_swd, al_addr, &raw_word)) {
+                    uint32_t new_val = 0;
+                    if (it->size == 1)      new_val = (raw_word >> shift) & 0xFFu;
+                    else if (it->size == 2) new_val = (raw_word >> shift) & 0xFFFFu;
+                    else                    new_val = raw_word;
+
+                    if (new_val != it->val) {
+                        it->last_val = it->val;
+                        it->val = new_val;
+                        it->change_tick = now_tick;
+
+                        // 仅重绘当前变动的这一行卡片 (仅 33KB，耗时 < 3ms)
+                        ui_rect_t card_rect = dap_watch_get_card_screen_rect(data, i);
+                        data->dirty_rect = rect_union_box(data->dirty_rect, card_rect);
+                    }
+                }
+            }
+        }
+
+        // 500ms 红色跳变恢复科技蓝 (单次精准触发并清零，杜绝重复刷屏)
+        for (uint8_t i = 0; i < data->watch_count; i++) {
+            dap_watch_item_t *it = &data->watch_items[i];
+            if (it->valid && it->change_tick > 0) {
+                if (now_tick - it->change_tick >= 500) {
+                    it->change_tick = 0;
+                    ui_rect_t card_rect = dap_watch_get_card_screen_rect(data, i);
+                    data->dirty_rect = rect_union_box(data->dirty_rect, card_rect);
+                }
+            }
         }
     }
 }
@@ -1669,6 +1919,11 @@ static bool dap_process_touch(app_t *self, bool touching, int16_t x,
     }
     if (data->bp_modal.is_open) {
         bool need_refresh = ui_modal_process_touch(&data->bp_modal, touching, x, y, tick);
+        if (need_refresh) data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
+        return true;
+    }
+    if (data->var_modal.is_open) {
+        bool need_refresh = ui_modal_process_touch(&data->var_modal, touching, x, y, tick);
         if (need_refresh) data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
         return true;
     }
@@ -1747,6 +2002,7 @@ static void dap_draw(app_t *self, ui_tile_t *tile)
     ui_toast_draw(tile, &data->toast);
     ui_modal_draw(tile, &data->sym_modal);
     ui_modal_draw(tile, &data->bp_modal);
+    ui_modal_draw(tile, &data->var_modal);
 }
 
 app_t *app_dap_get_instance(void)
