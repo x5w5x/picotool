@@ -7,7 +7,7 @@
 #include "hardware/structs/sio.h"
 #include <stdio.h>
 #include <string.h>
-
+#include "pico/time.h"
 static inline uint8_t dap_swclk_pin(void) { return fun_swd_config_get()->swclk_gpio; }
 static inline uint8_t dap_swdio_pin(void) { return fun_swd_config_get()->swdio_gpio; }
 
@@ -56,7 +56,14 @@ static uint32_t          s_match_mask    = 0xFFFFFFFF;
 static cmsis_dap_backend_t s_backend = CMSIS_DAP_BACKEND_PIO;
 static fun_pio_swd_t s_pio_swd;
 static uint8_t dap_backend_transfer_word(uint8_t req, uint32_t *data);
-
+extern void app_dap_force_close_swd(void);
+static volatile uint32_t s_dap_last_host_tick = 0;
+bool cmsis_dap_is_host_active(void)
+{
+    if (!g_dap_enabled || s_dap_last_host_tick == 0) return false;
+    uint32_t now = to_ms_since_boot(get_absolute_time());
+    return (now - s_dap_last_host_tick < 1500u);
+}
 void cmsis_dap_set_backend(cmsis_dap_backend_t backend)
 {
     if (s_pio_swd.opened) fun_pio_swd_close(&s_pio_swd);
@@ -300,6 +307,8 @@ uint32_t dap_process_command(const uint8_t *req, uint8_t *resp) {
     ++g_dap_command_count;
     g_dap_last_command = cmd;
     g_dap_command_busy = 1u;
+    s_dap_last_host_tick = to_ms_since_boot(get_absolute_time());
+    app_dap_force_close_swd();
     resp[0] = cmd;
     uint32_t resp_len = 1;
 
@@ -358,6 +367,7 @@ uint32_t dap_process_command(const uint8_t *req, uint8_t *resp) {
         }
 
         case ID_DAP_Connect: {
+            app_dap_force_close_swd();
             if (s_pio_swd.opened) fun_pio_swd_close(&s_pio_swd);
             s_backend = CMSIS_DAP_BACKEND_PIO;
             g_dap_pio_active = 0u;
@@ -392,6 +402,8 @@ uint32_t dap_process_command(const uint8_t *req, uint8_t *resp) {
         }
 
         case ID_DAP_SWJ_Pins: {
+            app_dap_force_close_swd();
+            //  if (s_pio_swd.opened) fun_pio_swd_close(&s_pio_swd);
             uint8_t pin_val = req[1];
             uint8_t pin_sel = req[2];
             uint32_t wait_us = req[3] | (req[4] << 8) | (req[5] << 16) | (req[6] << 24);

@@ -24,6 +24,7 @@
 #include "stdlib.h"
 #include "ui_input.h"
 #include "ui_keyboard.h"
+extern bool cmsis_dap_is_host_active(void);
 static const char *s_dap_tabs[] = { "状态", "配置", "终端","监控" };
 #define DAP_TAB_COUNT          ((uint8_t)(sizeof(s_dap_tabs) / sizeof(s_dap_tabs[0])))
 
@@ -67,6 +68,11 @@ typedef struct {
     uint32_t size;
     bool is_dir;
 }sym_file_item_t;
+typedef struct {
+    uint16_t sym_idx;   // 对应 sym_loader 的索引 (0xFFFF 表示 "..")
+    uint8_t  is_dir;    // 是否为文件夹
+    uint8_t  dir_id;    // 如果是文件夹，记录外设编号
+} var_view_item_t;
 typedef struct {
     /* 必须放在首字段供 app_manager 读取脏矩形 */
     ui_rect_t dirty_rect;
@@ -143,11 +149,15 @@ typedef struct {
     ui_btn_t add_watch;
     ui_btn_t clear_watch;
     ui_modal_t var_modal;
+    ui_modal_t bit_modal;
     uint32_t last_watch_tick;
 
     ui_keyboard_t kb;
     ui_input_t input;
     int8_t watch_idx;
+    var_view_item_t var_view_items[64]; // 40 * 4 = 仅 160 字节！
+    uint16_t        var_view_count;
+    char            var_cur_dir[24];    // 缩减为 16 字节   
 
 } dap_data_t;
 
@@ -192,6 +202,14 @@ static const char *dap_get_core_name(uint32_t cpuid,dap_core_type_t *type)
         default:
         if(type) *type=DAP_CORE_UNKNOWN;
         return "ARM Cortex-M" ;
+    }
+}
+void app_dap_force_close_swd(void)
+{
+    dap_data_t *data = (dap_data_t *)g_static_app_ram;
+    if (data && data->pio_swd.opened) {
+        fun_pio_swd_close(&data->pio_swd);
+        data->pio_powered = false;
     }
 }
 static void dap_read_all_regs(dap_data_t *data)
@@ -924,6 +942,7 @@ static void dap_config_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
     int16_t x = viewport->x + 16;
     int16_t y = viewport->y + 16 - scroll_y;
     ui_draw_string(tile, x, y, "DAP引脚配置", FONT_24, 0x4208, 0xFFFF);
+   
 
     ui_pin_config_t swdio_view=data->pin_swdio_cf;
     swdio_view.rect=ui_scrollview_content_rect_to_screen(&data->config_scroll,data->pin_swdio_cf.rect);
@@ -943,6 +962,8 @@ static void dap_config_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
     ui_draw_string(tile, x, sym_y, "符号映射配置", FONT_24, 0x4208, 0xFFFF);
 
     char path_buf[64];
+     snprintf(path_buf, sizeof(path_buf), "当前: %d", sizeof(dap_data_t));
+     ui_draw_string(tile,x+24*7,y,path_buf,FONT_16,0x4208, 0xFFFF);
     snprintf(path_buf, sizeof(path_buf), "当前: %s", data->sym_file_path[0] ? data->sym_file_path : "未设置");
     ui_draw_string(tile, x, sym_y + 32, path_buf, FONT_16, 0x1A7B, 0xFFFF);
 
@@ -951,50 +972,264 @@ static void dap_config_draw_content(ui_tile_t *tile, const ui_rect_t *viewport,
     ui_btn_draw(tile, &sym_btn);
 
 }
+static void dap_scan_var_items(dap_data_t *data)
+{
+    if (!data) return;
+    data->var_view_count = 0;
+    uint16_t total = sym_loader_get_var_count();
 
+    // A. 子目录下 (如 "GPIOC")
+    if (data->var_cur_dir[0] != '\0') {
+        var_view_item_t *back = &data->var_view_items[data->var_view_count++];
+        back->sym_idx = 0xFFFF; // 0xFFFF 代表返回上级
+        back->is_dir  = 1;
+
+        size_t dir_len = strlen(data->var_cur_dir);
+        for (uint16_t i = 0; i < total; i++) {
+            if (data->var_view_count >= 64) break;
+            const sym_var_entry_t *v = sym_loader_get_var(i);
+            if (!v) continue;
+            const char *name = sym_loader_get_var_name(v);
+
+            if (strncmp(name, data->var_cur_dir, dir_len) == 0 && name[dir_len] == '/') {
+                var_view_item_t *it = &data->var_view_items[data->var_view_count++];
+                it->sym_idx = i;
+                it->is_dir  = 0;
+            }
+        }
+    }
+    // B. 根目录 (普通全局变量 + 外设文件夹)
+    else {
+        // 1. 普通全局变量 (名字中不含 '/')
+        for (uint16_t i = 0; i < total; i++) {
+            if (data->var_view_count >= 64) break;
+            const sym_var_entry_t *v = sym_loader_get_var(i);
+            if (!v) continue;
+            const char *name = sym_loader_get_var_name(v);
+
+            if (strchr(name, '/') == NULL) {
+                var_view_item_t *it = &data->var_view_items[data->var_view_count++];
+                it->sym_idx = i;
+                it->is_dir  = 0;
+            }
+        }
+
+        // 2. 提取外设文件夹 (如 GPIOA, GPIOB, TIM2...)
+        for (uint16_t i = 0; i < total; i++) {
+            if (data->var_view_count >= 64) break;
+            const sym_var_entry_t *v = sym_loader_get_var(i);
+            if (!v) continue;
+            const char *name = sym_loader_get_var_name(v);
+            const char *slash = strchr(name, '/');
+
+            if (slash != NULL) {
+                size_t p_len = slash - name;
+                bool exists = false;
+                for (uint16_t j = 0; j < data->var_view_count; j++) {
+                    if (data->var_view_items[j].is_dir && data->var_view_items[j].sym_idx != 0xFFFF) {
+                        const sym_var_entry_t *ev = sym_loader_get_var(data->var_view_items[j].sym_idx);
+                        if (ev) {
+                            const char *ev_name = sym_loader_get_var_name(ev);
+                            const char *ev_slash = strchr(ev_name, '/');
+                            size_t ev_len = ev_slash ? (size_t)(ev_slash - ev_name) : strlen(ev_name);
+                            if (p_len == ev_len && strncmp(ev_name, name, p_len) == 0) {
+                                exists = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (!exists) {
+                    var_view_item_t *it = &data->var_view_items[data->var_view_count++];
+                    it->sym_idx = i;
+                    it->is_dir  = 1;
+                }
+            }
+        }
+    }
+
+    // 更新内容高度并归位滚动条
+    data->var_modal.sv_body.content_h = data->var_view_count * 36 + 8;
+    data->var_modal.sv_body.scroll_y = 0;
+}
+// static void on_var_modal_draw_content(ui_tile_t *tile, const ui_rect_t *viewport, int16_t scroll_y, void *user_data)
+// {
+//     dap_data_t *data = (dap_data_t *)user_data;
+//     if (!data) return;
+
+//     uint16_t total = sym_loader_get_var_count();
+//     int16_t item_h = 36;
+
+//     for (uint16_t i = 0; i < total; i++) {
+//         int16_t item_y = viewport->y + i * item_h - scroll_y;
+//         if (item_y + item_h < tile->rect.y || item_y > tile->rect.y + tile->rect.h) continue;
+
+//         const sym_var_entry_t *v = sym_loader_get_var(i);
+//         if (!v) continue;
+
+//         // 检查该变量是否已在监控列表中
+//         bool is_added = false;
+//         for (uint8_t w = 0; w < data->watch_count; w++) {
+//             if (data->watch_items[w].valid && data->watch_items[w].addr == v->addr) {
+//                 is_added = true;
+//                 break;
+//             }
+//         }
+
+//         ui_rect_t item_rect = ui_rect_make(viewport->x + 4, item_y + 2, viewport->w - 8, item_h - 4);
+//         ui_rect_t overlap;
+//         if (ui_rect_intersect(&tile->rect, &item_rect, &overlap)) {
+//             // 已添加的条目使用柔和浅青色背景高亮
+//             ui_draw_fill_rect(tile, &overlap, is_added ? 0xE79F : 0xFFFF);
+//             ui_draw_rect(tile, &item_rect, is_added ? 0x03DF : 0xCE59);
+//         }
+
+//         const char *name = sym_loader_get_var_name(v);
+//         ui_draw_string(tile, item_rect.x + 8, item_rect.y + 8, name, FONT_16, is_added ? 0x0275 : 0x1A7B, is_added ? 0xE79F : 0xFFFF);
+
+//         // 显示变量地址与大小
+//         char info_str[32];
+//         snprintf(info_str, sizeof(info_str), "0x%08lX (%uB)", (unsigned long)v->addr, v->size);
+//         ui_draw_string(tile, item_rect.x + item_rect.w - 130, item_rect.y + 8, info_str, FONT_16, 0x8410, is_added ? 0xE79F : 0xFFFF);
+//     }
+// }
 static void on_var_modal_draw_content(ui_tile_t *tile, const ui_rect_t *viewport, int16_t scroll_y, void *user_data)
 {
     dap_data_t *data = (dap_data_t *)user_data;
     if (!data) return;
 
-    uint16_t total = sym_loader_get_var_count();
     int16_t item_h = 36;
-
-    for (uint16_t i = 0; i < total; i++) {
+    for (uint16_t i = 0; i < data->var_view_count; i++) {
         int16_t item_y = viewport->y + i * item_h - scroll_y;
         if (item_y + item_h < tile->rect.y || item_y > tile->rect.y + tile->rect.h) continue;
 
-        const sym_var_entry_t *v = sym_loader_get_var(i);
-        if (!v) continue;
+        var_view_item_t *item = &data->var_view_items[i];
+        const sym_var_entry_t *v = (item->sym_idx != 0xFFFF) ? sym_loader_get_var(item->sym_idx) : NULL;
 
-        // 检查该变量是否已在监控列表中
         bool is_added = false;
-        for (uint8_t w = 0; w < data->watch_count; w++) {
-            if (data->watch_items[w].valid && data->watch_items[w].addr == v->addr) {
-                is_added = true;
-                break;
+        if (!item->is_dir && v) {
+            for (uint8_t w = 0; w < data->watch_count; w++) {
+                if (data->watch_items[w].valid && data->watch_items[w].addr == v->addr) {
+                    is_added = true;
+                    break;
+                }
             }
         }
 
         ui_rect_t item_rect = ui_rect_make(viewport->x + 4, item_y + 2, viewport->w - 8, item_h - 4);
         ui_rect_t overlap;
         if (ui_rect_intersect(&tile->rect, &item_rect, &overlap)) {
-            // 已添加的条目使用柔和浅青色背景高亮
-            ui_draw_fill_rect(tile, &overlap, is_added ? 0xE79F : 0xFFFF);
+            uint16_t bg_col = is_added ? 0xE79F : (item->is_dir ? 0xF7BE : 0xFFFF);
+            ui_draw_fill_rect(tile, &overlap, bg_col);
             ui_draw_rect(tile, &item_rect, is_added ? 0x03DF : 0xCE59);
         }
 
-        const char *name = sym_loader_get_var_name(v);
-        ui_draw_string(tile, item_rect.x + 8, item_rect.y + 8, name, FONT_16, is_added ? 0x0275 : 0x1A7B, is_added ? 0xE79F : 0xFFFF);
+        if (item->is_dir) {
+            char dir_str[32];
+            if (item->sym_idx == 0xFFFF) {
+                snprintf(dir_str, sizeof(dir_str), "[返回上级] ..");
+            } else if (v) {
+                const char *full = sym_loader_get_var_name(v);
+                const char *slash = strchr(full, '/');
+                size_t p_len = slash ? (size_t)(slash - full) : strlen(full);
+                if (p_len > 20) p_len = 20;
+                snprintf(dir_str, sizeof(dir_str), "[外设] %.*s", (int)p_len, full);
+            }
+            ui_draw_string(tile, item_rect.x + 8, item_rect.y + 8, dir_str, FONT_16, 0x03DF, 0xF7BE);
+        } else if (v) {
+            const char *full = sym_loader_get_var_name(v);
+            const char *slash = strchr(full, '/');
+            const char *disp = slash ? (slash + 1) : full;
 
-        // 显示变量地址与大小
-        char info_str[32];
-        snprintf(info_str, sizeof(info_str), "0x%08lX (%uB)", (unsigned long)v->addr, v->size);
-        ui_draw_string(tile, item_rect.x + item_rect.w - 130, item_rect.y + 8, info_str, FONT_16, 0x8410, is_added ? 0xE79F : 0xFFFF);
+            uint16_t text_col = is_added ? 0x0275 : 0x1A7B;
+            uint16_t bg_col   = is_added ? 0xE79F : 0xFFFF;
+            ui_draw_string(tile, item_rect.x + 8, item_rect.y + 8, disp, FONT_16, text_col, bg_col);
+
+            char info_str[32];
+            snprintf(info_str, sizeof(info_str), "0x%08lX (%uB)", (unsigned long)v->addr, v->size ? v->size : 4);
+            ui_draw_string(tile, item_rect.x + item_rect.w - 130, item_rect.y + 8, info_str, FONT_16, 0x8410, bg_col);
+        }
     }
 }
 
-// 2. 变量选择弹窗触摸判定 (点选即加入/移出)
+// // 2. 变量选择弹窗触摸判定 (点选即加入/移出)
+// static bool on_var_modal_touch_content(ui_modal_t *modal, bool is_touching, int16_t tx, int16_t ty, uint32_t now_tick, void *user_data)
+// {
+//     dap_data_t *data = (dap_data_t *)user_data;
+//     if (!data || !modal) return false;
+
+//     ui_rect_t vr = modal->sv_body.view_rect;
+//     bool in_viewport = (tx >= vr.x && tx < (vr.x + vr.w) && ty >= vr.y && ty < (vr.y + vr.h));
+
+//     static bool    s_was_touching = false;
+//     static int16_t s_down_idx = -1;
+//     static int16_t s_down_y = 0;
+//     static int16_t s_down_scroll_y = 0;
+
+//     int16_t rel_y = ty - vr.y + modal->sv_body.scroll_y;
+//     int idx = (in_viewport && rel_y >= 0) ? (rel_y / 36) : -1;
+
+//     if (is_touching && !s_was_touching) {
+//         s_was_touching = true;
+//         s_down_idx = idx;
+//         s_down_y = ty;
+//         s_down_scroll_y = modal->sv_body.scroll_y;
+//         return false;
+//     }
+
+//     if (!is_touching && s_was_touching) {
+//         s_was_touching = false;
+//         int16_t dy = ty - s_down_y;
+//         int16_t dscroll = modal->sv_body.scroll_y - s_down_scroll_y;
+//         if (dy < -6 || dy > 6 || dscroll != 0 || modal->sv_body.is_dragged) {
+//             s_down_idx = -1;
+//             return false;
+//         }
+
+//         uint16_t total = sym_loader_get_var_count();
+//         if (s_down_idx >= 0 && s_down_idx == idx && s_down_idx < total) {
+//             const sym_var_entry_t *v = sym_loader_get_var(s_down_idx);
+//             s_down_idx = -1;
+//             if (v) {
+//                 // 判断是否已在列表中，已存在则移除
+//                 int found = -1;
+//                 for (uint8_t w = 0; w < data->watch_count; w++) {
+//                     if (data->watch_items[w].valid && data->watch_items[w].addr == v->addr) {
+//                         found = w;
+//                         break;
+//                     }
+//                 }
+
+//                 if (found >= 0) {
+//                     for (uint8_t w = found; w < data->watch_count - 1; w++) {
+//                         data->watch_items[w] = data->watch_items[w + 1];
+//                     }
+//                     data->watch_count--;
+//                     ui_toast_show(&data->toast, "已移出监控", UI_TOAST_INFO, now_tick);
+//                 } else {
+//                     if (data->watch_count < MAX_WATCH_ITEMS) {
+//                         dap_watch_item_t *it = &data->watch_items[data->watch_count++];
+//                         it->addr = v->addr;
+//                         it->size = v->size ? v->size : 4;
+//                         it->val = 0;
+//                         it->last_val = 0;
+//                         it->change_tick = 0;
+//                         it->valid = true;
+//                         snprintf(it->name, sizeof(it->name), "%s", sym_loader_get_var_name(v));
+//                         ui_toast_show(&data->toast, "已加入监控", UI_TOAST_SUCCESS, now_tick);
+//                     } else {
+//                         ui_toast_show(&data->toast, "监控槽位已满(最多6个)", UI_TOAST_WARN, now_tick);
+//                     }
+//                 }
+//                 ui_modal_hide(modal);
+//                 data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
+//             }
+//             return true;
+//         }
+//         s_down_idx = -1;
+//     }
+//     return false;
+// }
 static bool on_var_modal_touch_content(ui_modal_t *modal, bool is_touching, int16_t tx, int16_t ty, uint32_t now_tick, void *user_data)
 {
     dap_data_t *data = (dap_data_t *)user_data;
@@ -1028,12 +1263,33 @@ static bool on_var_modal_touch_content(ui_modal_t *modal, bool is_touching, int1
             return false;
         }
 
-        uint16_t total = sym_loader_get_var_count();
-        if (s_down_idx >= 0 && s_down_idx == idx && s_down_idx < total) {
-            const sym_var_entry_t *v = sym_loader_get_var(s_down_idx);
+        if (s_down_idx >= 0 && s_down_idx == idx && s_down_idx < data->var_view_count) {
+            var_view_item_t *item = &data->var_view_items[s_down_idx];
             s_down_idx = -1;
+
+            // A. 点击文件夹
+            if (item->is_dir) {
+                if (item->sym_idx == 0xFFFF) {
+                    data->var_cur_dir[0] = '\0'; // 返回根目录
+                } else {
+                    const sym_var_entry_t *v = sym_loader_get_var(item->sym_idx);
+                    if (v) {
+                        const char *full = sym_loader_get_var_name(v);
+                        const char *slash = strchr(full, '/');
+                        size_t p_len = slash ? (size_t)(slash - full) : strlen(full);
+                        if (p_len >= sizeof(data->var_cur_dir)) p_len = sizeof(data->var_cur_dir) - 1;
+                        strncpy(data->var_cur_dir, full, p_len);
+                        data->var_cur_dir[p_len] = '\0';
+                    }
+                }
+                dap_scan_var_items(data);
+                data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
+                return true;
+            }
+
+            // B. 点击叶子变量/寄存器
+            const sym_var_entry_t *v = sym_loader_get_var(item->sym_idx);
             if (v) {
-                // 判断是否已在列表中，已存在则移除
                 int found = -1;
                 for (uint8_t w = 0; w < data->watch_count; w++) {
                     if (data->watch_items[w].valid && data->watch_items[w].addr == v->addr) {
@@ -1057,7 +1313,14 @@ static bool on_var_modal_touch_content(ui_modal_t *modal, bool is_touching, int1
                         it->last_val = 0;
                         it->change_tick = 0;
                         it->valid = true;
-                        snprintf(it->name, sizeof(it->name), "%s", sym_loader_get_var_name(v));
+
+                        const char *full = sym_loader_get_var_name(v);
+                        const char *slash = strchr(full, '/');
+                        if (slash) {
+                            snprintf(it->name, sizeof(it->name), "%.*s_%s", (int)(slash - full), full, slash + 1);
+                        } else {
+                            snprintf(it->name, sizeof(it->name), "%s", full);
+                        }
                         ui_toast_show(&data->toast, "已加入监控", UI_TOAST_SUCCESS, now_tick);
                     } else {
                         ui_toast_show(&data->toast, "监控槽位已满(最多6个)", UI_TOAST_WARN, now_tick);
@@ -1072,17 +1335,38 @@ static bool on_var_modal_touch_content(ui_modal_t *modal, bool is_touching, int1
     }
     return false;
 }
-static void on_add_watch_click(ui_btn_t *btn,void *user_data)
+// static void on_add_watch_click(ui_btn_t *btn,void *user_data)
+// {
+//     dap_data_t *data= (dap_data_t *) user_data;
+//     if(!data) return;
+//     uint16_t cnt = sym_loader_get_var_count();
+//     if (cnt == 0) {
+//         ui_toast_show(&data->toast, "未发现变量符号，请检查.sym!", UI_TOAST_WARN, to_ms_since_boot(get_absolute_time()));
+//         return;
+//     }
+
+//     data->var_modal.sv_body.content_h = cnt * 36 + 8;
+//     ui_modal_show(&data->var_modal, "添加监控变量", data);
+//     data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
+// }
+static void on_add_watch_click(ui_btn_t *btn, void *user_data)
 {
-    dap_data_t *data= (dap_data_t *) user_data;
-    if(!data) return;
+    (void)btn;
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data) return;
+
+    // 1. 检查符号表是否加载
     uint16_t cnt = sym_loader_get_var_count();
     if (cnt == 0) {
         ui_toast_show(&data->toast, "未发现变量符号，请检查.sym!", UI_TOAST_WARN, to_ms_since_boot(get_absolute_time()));
         return;
     }
 
-    data->var_modal.sv_body.content_h = cnt * 36 + 8;
+    // ⚡ 核心修复：打开前重置回根目录并执行扫描，把条目装填进 var_view_items！
+    data->var_cur_dir[0] = '\0';
+    dap_scan_var_items(data);
+
+    // 2. 打开弹窗
     ui_modal_show(&data->var_modal, "添加监控变量", data);
     data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
 }
@@ -1416,6 +1700,167 @@ static inline ui_rect_t dap_watch_get_card_screen_rect(dap_data_t *data, uint8_t
     int16_t w = data->watch_scroll.view_rect.w - 16;
     return ui_rect_make(x, y, w, 50);
 }
+
+// ⚡ 方案 A: 32位可视化点阵弹窗绘制
+static void on_bit_modal_draw_content(ui_tile_t *tile, const ui_rect_t *viewport, int16_t scroll_y, void *user_data)
+{
+    (void)scroll_y;
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data || data->watch_idx < 0 || data->watch_idx >= data->watch_count) return;
+
+    dap_watch_item_t *item = &data->watch_items[data->watch_idx];
+    if (!item->valid) return;
+
+    int16_t x = viewport->x + 6;
+    int16_t y = viewport->y + 2;
+
+    // 1. 顶部信息栏 (显示名称、物理地址与当前十六进制/十进制值)
+    char head_str[64];
+    snprintf(head_str, sizeof(head_str), "%s [0x%08lX]", item->name, (unsigned long)item->addr);
+    ui_draw_string(tile, x, y, head_str, FONT_16, 0x03DF, 0xCE79);
+
+    char val_str[48];
+    snprintf(val_str, sizeof(val_str), "HEX: 0x%08lX  DEC: %lu", (unsigned long)item->val, (unsigned long)item->val);
+    ui_draw_string(tile, x, y + 20, val_str, FONT_16, 0x03E0, 0xCE79);
+
+    // 2. 绘制点阵格子 (8位/行，每格 42x26 像素)
+    uint8_t total_bits = (item->size >= 4) ? 32 : (item->size * 8);
+    uint8_t rows = total_bits / 8;
+    int16_t grid_start_y = y + 42;
+
+    for (uint8_t r = 0; r < rows; r++) {
+        uint8_t base_bit = (rows - 1 - r) * 8; // 从高字节向低字节排布 (31..24, 23..16, 15..8, 7..0)
+        for (int b = 7; b >= 0; b--) {
+            uint8_t bit_idx = base_bit + b;
+            int16_t bx = x + (7 - b) * 47;
+            int16_t by = grid_start_y + r * 30;
+
+            ui_rect_t b_rect = ui_rect_make(bx, by, 44, 26);
+            ui_rect_t overlap;
+            if (!ui_rect_intersect(&tile->rect, &b_rect, &overlap)) continue;
+
+            bool is_1 = (item->val >> bit_idx) & 1u;
+            uint16_t bg_col = is_1 ? 0x05E0 : 0xF7BE;     // 置1亮绿底，置0浅灰底
+            uint16_t bd_col = is_1 ? 0x03E0 : 0xCE59;     // 边框色
+            uint16_t tx_col = is_1 ? 0xFFFF : 0x4208;     // 文字色
+
+            ui_draw_fill_rect(tile, &overlap, bg_col);
+            ui_draw_rect(tile, &b_rect, bd_col);
+
+            char bit_txt[12];
+            snprintf(bit_txt, sizeof(bit_txt), "%u:%u", bit_idx, is_1 ? 1 : 0);
+            ui_draw_string(tile, b_rect.x + (bit_idx >= 10 ? 4 : 8), b_rect.y + 5, bit_txt, FONT_16, tx_col, bg_col);
+        }
+    }
+
+    // 3. 底部快捷控制按钮 (全置0、全置1、软键盘、关闭)
+    int16_t btn_y = y + 162;
+    ui_rect_t btns[4] = {
+        ui_rect_make(x,       btn_y, 82, 30),
+        ui_rect_make(x + 88,  btn_y, 82, 30),
+        ui_rect_make(x + 176, btn_y, 82, 30),
+        ui_rect_make(x + 288, btn_y, 82, 30)
+    };
+    const char *btn_labels[4] = { "全部清0", "全部置1", "键盘输入", "关闭" };
+    uint16_t btn_colors[4] = { 0xCE79, 0xCE79, 0x03DF, 0xF800 };
+
+    for (int k = 0; k < 4; k++) {
+        ui_rect_t ov;
+        if (ui_rect_intersect(&tile->rect, &btns[k], &ov)) {
+            ui_draw_fill_rect(tile, &ov, btn_colors[k]);
+            ui_draw_rect(tile, &btns[k], 0xCE59);
+            ui_draw_string(tile, btns[k].x + 8, btns[k].y + 7, btn_labels[k], FONT_16, 0xFFFF, btn_colors[k]);
+        }
+    }
+}
+
+// ⚡ 方案 A: 32位可视化点阵触摸交互 (点格即改，单片机立刻响应)
+static bool on_bit_modal_touch_content(ui_modal_t *modal, bool is_touching, int16_t tx, int16_t ty, uint32_t now_tick, void *user_data)
+{
+    (void)now_tick;
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data || data->watch_idx < 0 || data->watch_idx >= data->watch_count) return false;
+
+    dap_watch_item_t *item = &data->watch_items[data->watch_idx];
+    if (!item->valid) return false;
+
+    static bool s_was_touching = false;
+    static int16_t s_dx = 0, s_dy = 0;
+
+    if (is_touching && !s_was_touching) {
+        s_was_touching = true;
+        s_dx = tx; s_dy = ty;
+        return false;
+    }
+
+    if (!is_touching && s_was_touching) {
+        s_was_touching = false;
+        if (abs(tx - s_dx) > 6 || abs(ty - s_dy) > 6) return false;
+
+        ui_rect_t vr = modal->sv_body.view_rect;
+        int16_t rel_x = tx - vr.x;
+        int16_t rel_y = ty - vr.y;
+
+        int16_t start_x = 6;
+        int16_t grid_y  = 44;
+        uint8_t total_bits = (item->size >= 4) ? 32 : (item->size * 8);
+        uint8_t rows = total_bits / 8;
+
+        // 1. 点选翻转具体某个 Bit
+        for (uint8_t r = 0; r < rows; r++) {
+            uint8_t base_bit = (rows - 1 - r) * 8;
+            for (int b = 7; b >= 0; b--) {
+                int16_t bx = start_x + (7 - b) * 47;
+                int16_t by = grid_y + r * 30;
+
+                if (rel_x >= bx && rel_x <= bx + 44 && rel_y >= by && rel_y <= by + 26) {
+                    uint8_t bit_idx = base_bit + b;
+                    uint32_t new_val = item->val ^ (1u << bit_idx); // 翻转选中的这一位
+                    dap_watch_write_var(data, item, new_val);        // 立即通过 SWD 写入单片机
+                    data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
+                    return true;
+                }
+            }
+        }
+
+        // 2. 底部快捷按钮判定
+        int16_t btn_y = 170;
+        if (rel_y >= btn_y && rel_y <= btn_y + 30) {
+            // [全部清0]
+            if (rel_x >= start_x && rel_x <= start_x + 82) {
+                dap_watch_write_var(data, item, 0);
+                data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
+                return true;
+            }
+            // [全部置1]
+            if (rel_x >= start_x + 88 && rel_x <= start_x + 170) {
+                uint32_t mask = (item->size == 1) ? 0xFFu : ((item->size == 2) ? 0xFFFFu : 0xFFFFFFFFu);
+                dap_watch_write_var(data, item, mask);
+                data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
+                return true;
+            }
+            // [键盘输入] (切回全尺寸软键盘直接打字)
+            if (rel_x >= start_x + 176 && rel_x <= start_x + 258) {
+                ui_modal_hide(modal);
+                char init_val_str[32];
+                snprintf(init_val_str, sizeof(init_val_str), "%lu", (unsigned long)item->val);
+                ui_input_set_text(&data->input, init_val_str);
+                data->kb.mode = UI_KB_MODE_NUM_SYM;
+                ui_keyboard_open(&data->kb, &data->input);
+                data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
+                return true;
+            }
+            // [关闭]
+            if (rel_x >= start_x + 288 && rel_x <= start_x + 370) {
+                ui_modal_hide(modal);
+                data->watch_idx = -1;
+                data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
+                return true;
+            }
+        }
+    }
+    return false;
+}
 static void dap_watch_draw_content(ui_tile_t *tile, const ui_rect_t *viewport, int16_t scroll_y, void *user_data)
 {
     dap_data_t *data = (dap_data_t *)user_data;
@@ -1498,6 +1943,82 @@ static void dap_watch_draw_content(ui_tile_t *tile, const ui_rect_t *viewport, i
     }
 }
 
+// static bool dap_watch_process_touch(dap_data_t *data, bool touching, int16_t x, int16_t y, uint32_t tick)
+// {
+//     if (!data) return false;
+
+//     int16_t content_x = (int16_t)(x - data->watch_scroll.view_rect.x);
+//     int16_t content_y = (int16_t)(y - data->watch_scroll.view_rect.y + data->watch_scroll.scroll_y);
+
+//     if (ui_scrollview_process_touch(&data->watch_scroll, touching, x, y, tick)) {
+//         data->dirty_rect = rect_union_box(data->dirty_rect, data->watch_scroll.view_rect);
+//         return true;
+//     }
+
+//     // 拖拽滑动过程中，绝不误触卡片和按钮
+//     if (data->watch_scroll.is_dragged) {
+//         return true;
+//     }
+
+//     if (ui_btn_process_touch(&data->add_watch, touching, content_x, content_y, tick)) {
+//         data->dirty_rect = rect_union_box(data->dirty_rect, data->watch_scroll.view_rect);
+//         return true;
+//     }
+//     if (ui_btn_process_touch(&data->clear_watch, touching, content_x, content_y, tick)) {
+//         data->dirty_rect = rect_union_box(data->dirty_rect, data->watch_scroll.view_rect);
+//         return true;
+//     }
+
+//     // ⚡ 点击变量卡片唤出全尺寸软键盘
+//     static bool    s_touch_down = false;
+//     static int16_t s_down_x = 0, s_down_y = 0;
+//     static int16_t s_down_scroll_y = 0;
+
+//     if (touching && !s_touch_down) {
+//         s_touch_down = true;
+//         s_down_x = x;
+//         s_down_y = y;
+//         s_down_scroll_y = data->watch_scroll.scroll_y;
+//     }
+
+//     if (!touching && s_touch_down) {
+//         s_touch_down = false;
+//         int16_t dx = x - s_down_x;
+//         int16_t dy = y - s_down_y;
+//         int16_t dscroll = data->watch_scroll.scroll_y - s_down_scroll_y;
+
+//         // 仅在手指无位移且视口未移动时判定为纯点击
+//         if (dx >= -6 && dx <= 6 && dy >= -6 && dy <= 6 && dscroll == 0) {
+//             int16_t cy = (int16_t)(s_down_y - data->watch_scroll.view_rect.y + s_down_scroll_y);
+//             int16_t cx = (int16_t)(s_down_x - data->watch_scroll.view_rect.x);
+
+//             if (cx >= 8 && cx <= data->watch_scroll.view_rect.w - 8) {
+//                 int16_t rel_card_y = cy - 38; // 卡片从 y=38 开始
+//                 if (rel_card_y >= 0) {
+//                     int idx = rel_card_y / 56; // 每张卡片高 50px + 6px 间距 = 56px
+//                     if (idx < data->watch_count && (rel_card_y % 56) <= 50) {
+//                         data->watch_idx = (int8_t)idx;
+//                         dap_watch_item_t *it = &data->watch_items[idx];
+
+//                         // 预填当前十进制纯数值
+//                         char init_val_str[32];
+//                         snprintf(init_val_str, sizeof(init_val_str), "%lu", (unsigned long)it->val);
+//                         ui_input_set_text(&data->input, init_val_str);
+
+//                         // 默认切到数字键盘模式并打开
+//                         data->kb.mode = UI_KB_MODE_NUM_SYM;
+//                         ui_keyboard_open(&data->kb, &data->input);
+
+//                         data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
+//                         return true;
+//                     }
+//                 }
+//             }
+//         }
+//     }
+
+//     return false;
+// }
 static bool dap_watch_process_touch(dap_data_t *data, bool touching, int16_t x, int16_t y, uint32_t tick)
 {
     if (!data) return false;
@@ -1524,7 +2045,7 @@ static bool dap_watch_process_touch(dap_data_t *data, bool touching, int16_t x, 
         return true;
     }
 
-    // ⚡ 点击变量卡片唤出全尺寸软键盘
+    // ⚡ 点击变量卡片识别
     static bool    s_touch_down = false;
     static int16_t s_down_x = 0, s_down_y = 0;
     static int16_t s_down_scroll_y = 0;
@@ -1553,16 +2074,9 @@ static bool dap_watch_process_touch(dap_data_t *data, bool touching, int16_t x, 
                     int idx = rel_card_y / 56; // 每张卡片高 50px + 6px 间距 = 56px
                     if (idx < data->watch_count && (rel_card_y % 56) <= 50) {
                         data->watch_idx = (int8_t)idx;
-                        dap_watch_item_t *it = &data->watch_items[idx];
 
-                        // 预填当前十进制纯数值
-                        char init_val_str[32];
-                        snprintf(init_val_str, sizeof(init_val_str), "%lu", (unsigned long)it->val);
-                        ui_input_set_text(&data->input, init_val_str);
-
-                        // 默认切到数字键盘模式并打开
-                        data->kb.mode = UI_KB_MODE_NUM_SYM;
-                        ui_keyboard_open(&data->kb, &data->input);
+                        // ⚡ 方案 A 核心改动：不再打开打字键盘，直接唤出 32 位点阵控制弹窗！
+                        ui_modal_show(&data->bit_modal, "位状态控制", data);
 
                         data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
                         return true;
@@ -1660,6 +2174,7 @@ static app_t s_dap;
 
 static void dap_init(app_t *self)
 {
+    _Static_assert(sizeof(dap_data_t) <= 8192, "dap_data_t 超出 8KB 静态内存限制！");
     self->user_data = g_static_app_ram;
 }
 
@@ -1861,6 +2376,8 @@ static void dap_enter(app_t *self)
     ui_keyboard_init(&data->kb,on_var_kb_submit);
     data->kb.user_data=data;
     data->watch_idx=-1;
+    ui_modal_init(&data->bit_modal, LCD_WIDTH, LCD_HEIGHT, 400, 240, 200, "位状态控制", UI_MODAL_BTN_NONE, on_bit_modal_draw_content, on_bit_modal_touch_content, NULL);
+    data->bit_modal.user_data = data;
 }
 static void dap_exit(app_t *self)
 {
@@ -1887,6 +2404,14 @@ static void dap_update(app_t *self, uint32_t now_tick)
         data->dirty_rect = rect_union_box(
             data->dirty_rect,
             ui_toast_get_dirty_union(&data->toast));
+    }
+    if (cmsis_dap_is_host_active()) {
+        
+        if (data->pio_swd.opened) {
+            fun_pio_swd_close(&data->pio_swd);
+            data->pio_powered = false;
+        }
+        return; 
     }
     const fun_swd_config_t *cfg = fun_swd_config_get();
     if (cfg && cfg->clock_hz != data->swd.clock_hz) {
@@ -1944,6 +2469,9 @@ static void dap_update(app_t *self, uint32_t now_tick)
                         it->change_tick = now_tick;
                         ui_rect_t card_rect = dap_watch_get_card_screen_rect(data, i);
                         data->dirty_rect = rect_union_box(data->dirty_rect, card_rect);
+                        if (data->bit_modal.is_open && data->watch_idx == i) {
+                            data->dirty_rect = rect_union_box(data->dirty_rect, data->bit_modal.rect);
+                        }
                     }
                 }
             }
@@ -1955,6 +2483,9 @@ static void dap_update(app_t *self, uint32_t now_tick)
                     it->change_tick = 0;
                     ui_rect_t card_rect = dap_watch_get_card_screen_rect(data, i);
                     data->dirty_rect = rect_union_box(data->dirty_rect, card_rect);
+                    if (data->bit_modal.is_open && data->watch_idx == i) {
+                            data->dirty_rect = rect_union_box(data->dirty_rect, data->bit_modal.rect);
+                        }
                 }
             }
         }
@@ -1987,6 +2518,11 @@ static bool dap_process_touch(app_t *self, bool touching, int16_t x,
         if (handled || !data->kb.is_open) {
             data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
         }
+        return true;
+    }
+    if (data->bit_modal.is_open) {
+        bool need_refresh = ui_modal_process_touch(&data->bit_modal, touching, x, y, tick);
+        if (need_refresh) data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
         return true;
     }
     if (ui_tabview_process_touch(&data->tabview, touching, x, y, tick)) {
@@ -2075,6 +2611,7 @@ static void dap_draw(app_t *self, ui_tile_t *tile)
     ui_modal_draw(tile, &data->sym_modal);
     ui_modal_draw(tile, &data->bp_modal);
     ui_modal_draw(tile, &data->var_modal);
+    ui_modal_draw(tile, &data->bit_modal);
     ui_keyboard_draw(tile, &data->kb);
 }
 
