@@ -1094,6 +1094,60 @@ static void on_clear_watch_click(ui_btn_t *btn,void *user_data)
     ui_toast_show(&data->toast, "已清空监控列表", UI_TOAST_INFO, to_ms_since_boot(get_absolute_time()));
     data->dirty_rect = rect_union_box(data->dirty_rect, data->watch_scroll.view_rect);
 }
+// ⚡ 核心：无感安全改写目标单片机变量 (支持 1B / 2B / 4B 自动对齐与读-改-写)
+static bool dap_watch_write_var(dap_data_t *data, dap_watch_item_t *item, uint32_t new_val)
+{
+    if (!data || !item || !swd_open(data)) return false;
+
+    uint32_t aligned_addr = item->addr & ~3u;
+    uint32_t shift = (item->addr & 3u) * 8u;
+
+    if (item->size >= 4) {
+        // 4 字节直接对齐写入
+        if (fun_pio_swd_write_memory32(&data->pio_swd, aligned_addr, new_val)) {
+            item->val = new_val;
+            item->last_val = new_val;
+            return true;
+        }
+    } else {
+        // 1 字节 / 2 字节采用 Read-Modify-Write，严格保护同一 Word 内的相邻变量
+        uint32_t raw_word = 0;
+        if (!fun_pio_swd_read_memory32(&data->pio_swd, aligned_addr, &raw_word)) {
+            return false;
+        }
+
+        uint32_t mask = (item->size == 1) ? (0xFFu << shift) : (0xFFFFu << shift);
+        uint32_t insert = (new_val & ((item->size == 1) ? 0xFFu : 0xFFFFu)) << shift;
+
+        raw_word = (raw_word & ~mask) | insert;
+
+        if (fun_pio_swd_write_memory32(&data->pio_swd, aligned_addr, raw_word)) {
+            item->val = new_val;
+            item->last_val = new_val;
+            return true;
+        }
+    }
+    return false;
+}
+static void on_var_kb_submit(ui_keyboard_t *kb,const char *text,void *user_data)
+{
+    dap_data_t *data =(dap_data_t *)user_data;
+    if(!data||data->watch_idx<0||data->watch_idx>=data->watch_count) return;
+    dap_watch_item_t *item=&data->watch_items[data->watch_idx];
+    if(!item->valid) return;
+    uint32_t parsed_val=0;
+    if(text[0]=='0'&&(text[1]=='x'||text[1]=='X'))
+    parsed_val=(uint32_t)strtoul(text,NULL,16);
+    else
+    parsed_val = (uint32_t)strtoul(text,NULL,10);
+    if(item->size==1) parsed_val &=0xFFu;
+    else if(item->size==2) parsed_val &=0xFFFFu;
+    dap_watch_write_var(data,item,parsed_val);
+    ui_keyboard_close(kb);
+    data->watch_idx=-1;
+    data->dirty_rect = ui_rect_make(0,0,LCD_WIDTH,LCD_HEIGHT);
+
+}
 static bool dap_config_process_touch(dap_data_t *data, bool touching, int16_t x, int16_t y, uint32_t tick)
 {
     if (!data) return false;
@@ -1455,6 +1509,12 @@ static bool dap_watch_process_touch(dap_data_t *data, bool touching, int16_t x, 
         data->dirty_rect = rect_union_box(data->dirty_rect, data->watch_scroll.view_rect);
         return true;
     }
+
+    // 拖拽滑动过程中，绝不误触卡片和按钮
+    if (data->watch_scroll.is_dragged) {
+        return true;
+    }
+
     if (ui_btn_process_touch(&data->add_watch, touching, content_x, content_y, tick)) {
         data->dirty_rect = rect_union_box(data->dirty_rect, data->watch_scroll.view_rect);
         return true;
@@ -1464,8 +1524,123 @@ static bool dap_watch_process_touch(dap_data_t *data, bool touching, int16_t x, 
         return true;
     }
 
+    // ⚡ 点击变量卡片唤出全尺寸软键盘
+    static bool    s_touch_down = false;
+    static int16_t s_down_x = 0, s_down_y = 0;
+    static int16_t s_down_scroll_y = 0;
+
+    if (touching && !s_touch_down) {
+        s_touch_down = true;
+        s_down_x = x;
+        s_down_y = y;
+        s_down_scroll_y = data->watch_scroll.scroll_y;
+    }
+
+    if (!touching && s_touch_down) {
+        s_touch_down = false;
+        int16_t dx = x - s_down_x;
+        int16_t dy = y - s_down_y;
+        int16_t dscroll = data->watch_scroll.scroll_y - s_down_scroll_y;
+
+        // 仅在手指无位移且视口未移动时判定为纯点击
+        if (dx >= -6 && dx <= 6 && dy >= -6 && dy <= 6 && dscroll == 0) {
+            int16_t cy = (int16_t)(s_down_y - data->watch_scroll.view_rect.y + s_down_scroll_y);
+            int16_t cx = (int16_t)(s_down_x - data->watch_scroll.view_rect.x);
+
+            if (cx >= 8 && cx <= data->watch_scroll.view_rect.w - 8) {
+                int16_t rel_card_y = cy - 38; // 卡片从 y=38 开始
+                if (rel_card_y >= 0) {
+                    int idx = rel_card_y / 56; // 每张卡片高 50px + 6px 间距 = 56px
+                    if (idx < data->watch_count && (rel_card_y % 56) <= 50) {
+                        data->watch_idx = (int8_t)idx;
+                        dap_watch_item_t *it = &data->watch_items[idx];
+
+                        // 预填当前十进制纯数值
+                        char init_val_str[32];
+                        snprintf(init_val_str, sizeof(init_val_str), "%lu", (unsigned long)it->val);
+                        ui_input_set_text(&data->input, init_val_str);
+
+                        // 默认切到数字键盘模式并打开
+                        data->kb.mode = UI_KB_MODE_NUM_SYM;
+                        ui_keyboard_open(&data->kb, &data->input);
+
+                        data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
     return false;
 }
+// static bool dap_watch_process_touch(dap_data_t *data, bool touching, int16_t x, int16_t y, uint32_t tick)
+// {
+//     if (!data) return false;
+
+//     int16_t content_x = (int16_t)(x - data->watch_scroll.view_rect.x);
+//     int16_t content_y = (int16_t)(y - data->watch_scroll.view_rect.y + data->watch_scroll.scroll_y);
+
+//     if (ui_scrollview_process_touch(&data->watch_scroll, touching, x, y, tick)) {
+//         data->dirty_rect = rect_union_box(data->dirty_rect, data->watch_scroll.view_rect);
+//         return true;
+//     }
+
+//     // 拖拽滑动过程中，绝不误触卡片和按钮
+//     if (data->watch_scroll.is_dragged) {
+//         return true;
+//     }
+
+//     if (ui_btn_process_touch(&data->add_watch, touching, content_x, content_y, tick)) {
+//         data->dirty_rect = rect_union_box(data->dirty_rect, data->watch_scroll.view_rect);
+//         return true;
+//     }
+//     if (ui_btn_process_touch(&data->clear_watch, touching, content_x, content_y, tick)) {
+//         data->dirty_rect = rect_union_box(data->dirty_rect, data->watch_scroll.view_rect);
+//         return true;
+//     }
+//     static bool    s_touch_down = false;
+//     static int16_t s_down_x = 0, s_down_y = 0;
+//     static int16_t s_down_scroll_y = 0;
+
+//     if (touching && !s_touch_down) {
+//         s_touch_down = true;
+//         s_down_x = x;
+//         s_down_y = y;
+//         s_down_scroll_y = data->watch_scroll.scroll_y;
+//     }
+//     if (!touching && s_touch_down) {
+//         s_touch_down = false;
+//         int16_t dx = x - s_down_x;
+//         int16_t dy = y - s_down_y;
+//         int16_t dscroll = data->watch_scroll.scroll_y - s_down_scroll_y;
+//         if (dx >= -6 && dx <= 6 && dy >= -6 && dy <= 6 && dscroll == 0) {
+//             int16_t cy = (int16_t)(s_down_y - data->watch_scroll.view_rect.y + s_down_scroll_y);
+//             int16_t cx = (int16_t)(s_down_x - data->watch_scroll.view_rect.x);
+
+//             if (cx >= 8 && cx <= data->watch_scroll.view_rect.w - 8) {
+//                 int16_t rel_card_y = cy - 38; 
+//                 if (rel_card_y >= 0) {
+//                     int idx = rel_card_y / 56; 
+//                     if (idx < data->watch_count && (rel_card_y % 56) <= 50) {
+//                         data->watch_idx = (int8_t)idx;
+//                         dap_watch_item_t *it = &data->watch_items[idx];
+//                         char init_val_str[32];
+//                         snprintf(init_val_str, sizeof(init_val_str), "%lu", (unsigned long)it->val);
+//                         ui_input_set_text(&data->input, init_val_str);
+//                         data->kb.mode = UI_KB_MODE_NUM_SYM;
+//                         ui_keyboard_open(&data->kb, &data->input);
+
+//                         data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
+//                         return true;
+//                     }
+//                 }
+//             }
+//         }
+//     }
+
+//     return false;
+// }
 /* ============================================================================
  * 全局生命周期与分发调度
  * ============================================================================ */
@@ -1496,12 +1671,9 @@ static void dap_enter(app_t *self)
     data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
     const fun_swd_config_t *swd_cfg =fun_swd_config_get();
     if (swd_cfg) data->swd = *swd_cfg;
-    /* 1. 初始化 TabView 容器 */
     ui_tabview_init(&data->tabview, 0, 32, LCD_WIDTH, LCD_HEIGHT - 32,
                     110, 48, s_dap_tabs, DAP_TAB_COUNT, 0, on_tab_changed);
     data->tabview.user_data = data;
-
-    /* 2. 分别初始化三个页面的 ScrollView */
     ui_scrollview_init(&data->status_scroll, 120, 40, 350, 260,
                        DAP_STATUS_CONTENT_H, dap_status_draw_content);
     data->status_scroll.user_data = data;
@@ -1685,9 +1857,11 @@ static void dap_enter(app_t *self)
     data->var_modal.user_data = data;
     data->watch_count = 0;
     data->last_watch_tick=0;
-
+    ui_input_init(&data->input,0,0,0,0,"",NULL);
+    ui_keyboard_init(&data->kb,on_var_kb_submit);
+    data->kb.user_data=data;
+    data->watch_idx=-1;
 }
-
 static void dap_exit(app_t *self)
 {
     dap_data_t *data = (dap_data_t *)self->user_data;
@@ -1703,121 +1877,12 @@ static void dap_exit(app_t *self)
     }
     self->user_data = NULL;
 }
-
-// static void dap_update(app_t *self, uint32_t now_tick)
-// {
-//     dap_data_t *data = (dap_data_t *)self->user_data;
-//     if (!data) return;
-
-//     data->dirty_rect = ui_rect_make(0, 0, 0, 0);
-//     if (ui_toast_update(&data->toast, now_tick)) {
-//         data->dirty_rect = rect_union_box(
-//             data->dirty_rect,
-//             ui_toast_get_dirty_union(&data->toast));
-//     }
-
-    
-//     const fun_swd_config_t *cfg=fun_swd_config_get();
-//     if(cfg&&cfg->clock_hz!=data->swd.clock_hz){
-//         data->swd=*cfg;
-//         if(data->tabview.active_tab_idx==0)
-//         data->dirty_rect =rect_union_box(data->dirty_rect,data->status_card);
-//     }
-//     if(data->tabview.active_tab_idx == 2&&data->auto_step_enablde&&data->is_halted&&data->pio_swd.opened){
-//         if(now_tick-data->auto_step_last_tick >= data->auto_step_ms){
-//             data->auto_step_last_tick=now_tick;
-//             if(fun_pio_swd_step_over(&data->pio_swd,1000))
-//             {
-//                 data->is_halted=true;
-//                 dap_read_all_regs(data);
-//             }else
-//             auto_default(data);
-//             data->dirty_rect=rect_union_box(data->dirty_rect,data->term_scroll.view_rect);
-//         }
-//     }
-//     if(!data->is_halted&&data->pio_swd.opened){
-//         if(now_tick-data->last_halt_check >=50)
-//         {
-//             data->last_halt_check=now_tick;
-//             bool is_halted=false;
-//             if(fun_pio_swd_is_halted(&data->pio_swd,&is_halted)&&is_halted){
-//                 data->is_halted=true;
-//                 dap_read_all_regs(data);
-//                 uint32_t pc=data->core_regs[15] &~1u;
-//                 // if(data->bp_active&&pc==data->bp_addr)
-//                 // ui_toast_show(&data->toast,"命中断点",UI_TOAST_SUCCESS,now_tick);
-//             }
-//             data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
-//         }
-//     }
-//     if(data->tabview.active_tab_idx==3&&data->watch_count>0&&data->pio_swd.opened&&now_tick-data->last_watch_tick>=25){
-//         if (data->pio_swd.opened && (now_tick - data->last_watch_tick >= 50)) {
-//             data->last_watch_tick = now_tick;
-
-//             for (uint8_t i = 0; i < data->watch_count; i++) {
-//                 dap_watch_item_t *it = &data->watch_items[i];
-//                 if (!it->valid) continue;
-
-//                 uint32_t al_addr = it->addr & ~3u;
-//                 uint32_t shift = (it->addr & 3u) * 8u;
-//                 uint32_t raw_word = 0;
-
-//                 if (fun_pio_swd_read_memory32(&data->pio_swd, al_addr, &raw_word)) {
-//                     uint32_t new_val = 0;
-//                     if (it->size == 1) {
-//                         new_val = (raw_word >> shift) & 0xFFu;
-//                     } else if (it->size == 2) {
-//                         new_val = (raw_word >> shift) & 0xFFFFu;
-//                     } else {
-//                         new_val = raw_word;
-//                     }
-
-//                     // 变量发生变动
-//                     if (new_val != it->val) {
-//                         it->last_val = it->val;
-//                         it->val = new_val;
-//                         it->change_tick = now_tick;
-
-//                         // ⚡ 核心提速：仅将当前这一张卡片标记为脏矩形，耗时从 30ms 暴降至 3ms！
-//                         ui_rect_t card_rect = dap_watch_get_card_screen_rect(data, i);
-//                         data->dirty_rect = rect_union_box(data->dirty_rect, card_rect);
-//                     }
-//                 }
-//             }
-//         }
-
-//         // 2. 500ms 变色恢复检测（单次精准触发并清零，杜绝空转刷屏）
-//         for (uint8_t i = 0; i < data->watch_count; i++) {
-//             dap_watch_item_t *it = &data->watch_items[i];
-//             if (it->valid && it->change_tick > 0) {
-//                 if (now_tick - it->change_tick >= 500) {
-//                     it->change_tick = 0; // 清除标记，保证只重绘一次！
-//                     ui_rect_t card_rect = dap_watch_get_card_screen_rect(data, i);
-//                     data->dirty_rect = rect_union_box(data->dirty_rect, card_rect);
-//                 }
-//             }
-//         }
-      
-//     }
-//     if (data->tabview.active_tab_idx == 3) {
-//         for (uint8_t i = 0; i < data->watch_count; i++) {
-//             if (data->watch_items[i].valid && data->watch_items[i].change_tick > 0) {
-//                 uint32_t elapsed = now_tick - data->watch_items[i].change_tick;
-//                 if (elapsed >= 500 && elapsed < 530) {
-//                     data->dirty_rect = rect_union_box(data->dirty_rect, data->watch_scroll.view_rect);
-//                 }
-//             }
-//         }
-//     }
-// }
 static void dap_update(app_t *self, uint32_t now_tick)
 {
     dap_data_t *data = (dap_data_t *)self->user_data;
     if (!data) return;
 
     data->dirty_rect = ui_rect_make(0, 0, 0, 0);
-
-    // 1. Toast 驱动
     if (ui_toast_update(&data->toast, now_tick)) {
         data->dirty_rect = rect_union_box(
             data->dirty_rect,
@@ -1831,7 +1896,6 @@ static void dap_update(app_t *self, uint32_t now_tick)
         }
     }
 
-    // 4. Tab 2: 终端页自动单步
     if (data->tabview.active_tab_idx == 2 && data->auto_step_enablde && data->is_halted && data->pio_swd.opened) {
         if (now_tick - data->auto_step_last_tick >= data->auto_step_ms) {
             data->auto_step_last_tick = now_tick;
@@ -1844,8 +1908,6 @@ static void dap_update(app_t *self, uint32_t now_tick)
             data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
         }
     }
-
-    // ⚡ 修复 1：目标停机检测（只有真正停机 且 处于终端页时才刷新，彻底斩断每秒20次全屏重绘！）
     if (!data->is_halted && data->pio_swd.opened) {
         if (now_tick - data->last_halt_check >= 50) {
             data->last_halt_check = now_tick;
@@ -1859,40 +1921,33 @@ static void dap_update(app_t *self, uint32_t now_tick)
             }
         }
     }
-
-    // ⚡ 修复 2：Tab 3 监控页独立采样（50ms 黄金采样 + 仅刷变动的单张卡片）
-    if (data->tabview.active_tab_idx == 3 && data->watch_count > 0&&data->pio_swd.opened) {
+    if (data->tabview.active_tab_idx == 3 && data->watch_count > 0) {
+        if (!data->pio_swd.opened) {
+            swd_open(data);
+        }
         if (data->pio_swd.opened && (now_tick - data->last_watch_tick >= 50)) {
             data->last_watch_tick = now_tick;
-
             for (uint8_t i = 0; i < data->watch_count; i++) {
                 dap_watch_item_t *it = &data->watch_items[i];
                 if (!it->valid) continue;
-
                 uint32_t al_addr = it->addr & ~3u;
                 uint32_t shift = (it->addr & 3u) * 8u;
                 uint32_t raw_word = 0;
-
                 if (fun_pio_swd_read_memory32(&data->pio_swd, al_addr, &raw_word)) {
                     uint32_t new_val = 0;
                     if (it->size == 1)      new_val = (raw_word >> shift) & 0xFFu;
                     else if (it->size == 2) new_val = (raw_word >> shift) & 0xFFFFu;
                     else                    new_val = raw_word;
-
                     if (new_val != it->val) {
                         it->last_val = it->val;
                         it->val = new_val;
                         it->change_tick = now_tick;
-
-                        // 仅重绘当前变动的这一行卡片 (仅 33KB，耗时 < 3ms)
                         ui_rect_t card_rect = dap_watch_get_card_screen_rect(data, i);
                         data->dirty_rect = rect_union_box(data->dirty_rect, card_rect);
                     }
                 }
             }
         }
-
-        // 500ms 红色跳变恢复科技蓝 (单次精准触发并清零，杜绝重复刷屏)
         for (uint8_t i = 0; i < data->watch_count; i++) {
             dap_watch_item_t *it = &data->watch_items[i];
             if (it->valid && it->change_tick > 0) {
@@ -1927,7 +1982,13 @@ static bool dap_process_touch(app_t *self, bool touching, int16_t x,
         if (need_refresh) data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
         return true;
     }
-
+    if (data->kb.is_open) {
+        bool handled = ui_keyboard_process_touch(&data->kb, touching, x, y, tick);
+        if (handled || !data->kb.is_open) {
+            data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
+        }
+        return true;
+    }
     if (ui_tabview_process_touch(&data->tabview, touching, x, y, tick)) {
         if (data->tabview.active_tab_idx != data->last_tab_idx) {
             data->last_tab_idx = data->tabview.active_tab_idx;
@@ -1997,12 +2058,24 @@ static void dap_draw(app_t *self, ui_tile_t *tile)
             ui_pin_config_draw_modal(tile, &data->pin_swclk_cf);
         }
     }
+    if (data->kb.is_open && data->watch_idx >= 0 && data->watch_idx < data->watch_count) {
+        dap_watch_item_t *item = &data->watch_items[data->watch_idx];
+        ui_rect_t banner = ui_rect_make(0, 88, LCD_WIDTH, 32);
+        ui_rect_t overlap;
+        if (ui_rect_intersect(&tile->rect, &banner, &overlap)) {
+            ui_draw_fill_rect(tile, &overlap, 0x1A7B); // 深藏青底色
+            char tip[64];
+            snprintf(tip, sizeof(tip), "正在修改: %s [0x%08lX]", item->name, (unsigned long)item->addr);
+            ui_draw_string(tile, 16, banner.y + 8, tip, FONT_16, 0xFFFF, 0x1A7B);
+        }
+    }
 
     /* Toast 是全局覆盖层，即使切片不在 Tab 内容区域也必须绘制。 */
     ui_toast_draw(tile, &data->toast);
     ui_modal_draw(tile, &data->sym_modal);
     ui_modal_draw(tile, &data->bp_modal);
     ui_modal_draw(tile, &data->var_modal);
+    ui_keyboard_draw(tile, &data->kb);
 }
 
 app_t *app_dap_get_instance(void)
