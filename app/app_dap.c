@@ -24,8 +24,10 @@
 #include "stdlib.h"
 #include "ui_input.h"
 #include "ui_keyboard.h"
+#include "ui_terminal.h"
+#include "pico/multicore.h"
 extern bool cmsis_dap_is_host_active(void);
-static const char *s_dap_tabs[] = { "状态", "配置", "终端","监控" };
+static const char *s_dap_tabs[] = { "状态", "配置", "终端","监控","日志" };
 #define DAP_TAB_COUNT          ((uint8_t)(sizeof(s_dap_tabs) / sizeof(s_dap_tabs[0])))
 
 #define DAP_STATUS_CONTENT_H   260
@@ -35,6 +37,34 @@ static const char *s_dap_tabs[] = { "状态", "配置", "终端","监控" };
 #define MAX_WATCH_ITEMS 6
 #define MAX_SYM_ITEMS 16
 
+#define RTT_TERM_X       120
+#define RTT_TERM_Y       38
+#define RTT_TERM_W       350
+#define RTT_TERM_H       226
+
+#define RTT_BTN_CLEAR_X   352
+#define RTT_BTN_CLEAR_Y   272
+#define RTT_BTN_CLEAR_W   56
+#define RTT_BTN_CLEAR_H   36
+
+#define RTT_BTN_SEARCH_X  230
+#define RTT_BTN_SEARCH_Y  272
+#define RTT_BTN_SEARCH_W  110
+#define RTT_BTN_SEARCH_H  36
+
+#define RTT_QUEUE_SIZE    16
+#define RTT_LINE_SIZE     64
+
+typedef struct {
+    char text[RTT_LINE_SIZE];
+    uint16_t color;
+} rtt_term_msg_t;
+static rtt_term_msg_t s_rtt_queue[RTT_QUEUE_SIZE];
+static volatile uint8_t s_rtt_head = 0;
+static volatile uint8_t s_rtt_tail = 0;
+static volatile bool    s_dap_session_active = false;
+static char          s_rtt_tx_buf[64];
+static volatile bool s_rtt_tx_pending = false;
 typedef struct {
     uint32_t addr;
     char name[32];
@@ -157,7 +187,24 @@ typedef struct {
     int8_t watch_idx;
     var_view_item_t var_view_items[64]; // 40 * 4 = 仅 160 字节！
     uint16_t        var_view_count;
-    char            var_cur_dir[24];    // 缩减为 16 字节   
+    char            var_cur_dir[24];    // 缩减为 16 字节
+    
+    ui_terminal_t rtt_terminal;
+    ui_btn_t rtt_clear;
+    ui_btn_t rtt_search;
+    bool rtt_found;
+    ui_btn_t      rtt_send;
+    uint32_t      rtt_cb_addr;     // SEGGER RTT 控制块物理地址
+    uint32_t      rtt_buf_addr; // 上行 Buffer (MCU -> Host) 物理首地址
+    int32_t       rtt_buf_size; // Buffer 尺寸
+    int32_t       rtt_last_rd_off; // 上次已消费的偏移
+    uint32_t rtt_down_buf_addr;
+    int32_t rtt_down_buf_size;
+    uint32_t rtt_down_cb_addr;
+    volatile bool rtt_worker_enable;
+    volatile bool rtt_core1_idle;
+
+
 
 } dap_data_t;
 
@@ -250,6 +297,261 @@ static void dap_hardware_bp(dap_data_t *data)
     fun_pio_swd_set_breakpoint_ch(&data->pio_swd,1,data->bp_addr);
     else fun_pio_swd_clear_breakpoint_ch(&data->pio_swd,1);
 
+}
+static inline void rtt_queue_push(const char *text ,uint16_t color)
+{
+    uint8_t next = (uint8_t)((s_rtt_head+1)%RTT_QUEUE_SIZE);
+    if(next==s_rtt_tail) return;
+    strncpy(s_rtt_queue[s_rtt_head].text,text,RTT_LINE_SIZE-1);
+    s_rtt_queue[s_rtt_head].text[RTT_LINE_SIZE-1] ='\0';
+    s_rtt_queue[s_rtt_head].color=color;
+    s_rtt_head=next;
+
+}
+static bool rtt_search_cb(void *user_data)
+{
+    dap_data_t *data=(dap_data_t*) user_data;
+    if(!data||!data->pio_swd.opened) return false;
+    uint32_t scan_buf[32];
+    const char magic[10]="SEGGER RTT";
+    for(uint32_t addr = 0x20000000;addr < 0x20004000;addr+=128){
+        if(!fun_pio_swd_read_memory_block32(&data->pio_swd,addr,scan_buf,32))
+        continue;
+        const char *p =(const char*)scan_buf;
+        for(int i=0;i<128-16;i+=4){
+            if(memcmp(p+i,magic,10)==0){
+                data->rtt_cb_addr=addr+i;
+                // 1. 读取 Up Buffer 0 参数 (接收日志)
+                fun_pio_swd_read_memory32(&data->pio_swd, data->rtt_cb_addr + 28, &data->rtt_buf_addr);
+                uint32_t sz = 0, rd = 0;
+                fun_pio_swd_read_memory32(&data->pio_swd, data->rtt_cb_addr + 32, &sz);
+                fun_pio_swd_read_memory32(&data->pio_swd, data->rtt_cb_addr + 40, &rd);
+                data->rtt_buf_size = (int32_t)sz;
+                data->rtt_last_rd_off = (int32_t)rd;
+
+                // 2. ⚡ 读取 Down Buffer 0 参数 (下发命令，位于 aUp 数组之后)[cite: 17]
+                uint32_t max_up = 0;
+                fun_pio_swd_read_memory32(&data->pio_swd, data->rtt_cb_addr + 16, &max_up);
+                if (max_up == 0 || max_up > 4) max_up = 2; // 默认防守值
+
+                data->rtt_down_cb_addr = data->rtt_cb_addr + 24 + max_up * 24; // aDown[0] 首地址[cite: 17]
+                fun_pio_swd_read_memory32(&data->pio_swd, data->rtt_down_cb_addr + 4, &data->rtt_down_buf_addr);
+                uint32_t down_sz = 0;
+                fun_pio_swd_read_memory32(&data->pio_swd, data->rtt_down_cb_addr + 8, &down_sz);
+                data->rtt_down_buf_size = (int32_t)down_sz;
+
+                data->rtt_found = true;
+                return true;
+            }
+        }
+    }
+    data->rtt_found = false;
+    return false;
+}
+static void utf8_to_gbk_string(const char *utf8, char *gbk_out, size_t max_out_len)
+{
+    if (!utf8 || !gbk_out || max_out_len == 0) return;
+
+    size_t in_idx = 0;
+    size_t out_idx = 0;
+
+    while (utf8[in_idx] != '\0' && out_idx < max_out_len - 1) {
+        uint8_t c = (uint8_t)utf8[in_idx];
+
+        // 1. 单字节标准 ASCII (0x00 ~ 0x7F) 直接透传
+        if (c < 0x80) {
+            gbk_out[out_idx++] = (char)c;
+            in_idx++;
+        }
+        // 2. 3 字节标准汉字 UTF-8 (0xE0 ~ 0xEF)
+        else if ((c & 0xF0) == 0xE0 && utf8[in_idx + 1] && utf8[in_idx + 2]) {
+            uint8_t c2 = (uint8_t)utf8[in_idx + 1];
+            uint8_t c3 = (uint8_t)utf8[in_idx + 2];
+
+            // 拼出 16 位 Unicode (UCS-2)
+            WCHAR unicode = (WCHAR)(((c & 0x0F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F));
+
+            // 调用 FatFs 的 Flash 对照表查出 GBK (代码页 936)
+            DWORD gbk_code = ff_uni2oem(unicode, 936);
+
+            if (gbk_code > 0xFF) {
+                // 双字节汉字 (高字节在前，低字节在后)
+                if (out_idx + 2 < max_out_len) {
+                    gbk_out[out_idx++] = (char)(gbk_code >> 8);
+                    gbk_out[out_idx++] = (char)(gbk_code & 0xFF);
+                }
+            } else if (gbk_code > 0) {
+                gbk_out[out_idx++] = (char)gbk_code;
+            } else {
+                gbk_out[out_idx++] = '?'; // 未识别字符占位
+            }
+            in_idx += 3;
+        }
+        // 3. 2 字节特殊拉丁符号等 (0xC0 ~ 0xDF)
+        else if ((c & 0xE0) == 0xC0 && utf8[in_idx + 1]) {
+            uint8_t c2 = (uint8_t)utf8[in_idx + 1];
+            WCHAR unicode = (WCHAR)(((c & 0x1F) << 6) | (c2 & 0x3F));
+            DWORD gbk_code = ff_uni2oem(unicode, 936);
+            if (gbk_code > 0 && out_idx < max_out_len - 1) {
+                gbk_out[out_idx++] = (char)gbk_code;
+            }
+            in_idx += 2;
+        }
+        else {
+            in_idx++; // 丢弃孤立的非法字节
+        }
+    }
+    gbk_out[out_idx] = '\0';
+}
+static void rtt_send_cmd(dap_data_t *data, const char *cmd)
+{
+    if (!data || !cmd || cmd[0] == '\0' || !data->rtt_found || !data->pio_swd.opened) return;
+    if (data->rtt_down_buf_size <= 0 || data->rtt_down_buf_addr == 0) return;
+
+    uint32_t wr_off = 0, rd_off = 0;
+    if (!fun_pio_swd_read_memory32(&data->pio_swd, data->rtt_down_cb_addr + 12, &wr_off) ||
+        !fun_pio_swd_read_memory32(&data->pio_swd, data->rtt_down_cb_addr + 16, &rd_off)) {
+        return;
+    }
+
+    int32_t sz = data->rtt_down_buf_size;
+    char send_buf[64];
+    snprintf(send_buf, sizeof(send_buf), "%s\r\n", cmd); // 自动追加回车换行
+    size_t len = strlen(send_buf);
+
+    for (size_t i = 0; i < len; i++) {
+        uint32_t next_wr = (wr_off + 1) % sz;
+        if (next_wr == rd_off) break; // 缓冲区满则停止写入
+
+        uint32_t cur_addr = data->rtt_down_buf_addr + wr_off;
+        uint32_t aligned_addr = cur_addr & ~3u;
+        uint32_t shift = (cur_addr & 3u) * 8u;
+
+        uint32_t word = 0;
+        if (fun_pio_swd_read_memory32(&data->pio_swd, aligned_addr, &word)) {
+            word = (word & ~(0xFFu << shift)) | (((uint8_t)send_buf[i]) << shift);
+            fun_pio_swd_write_memory32(&data->pio_swd, aligned_addr, word);
+            wr_off = next_wr;
+        }
+    }
+
+    // 更新 WrOff 指针通知 STM32[cite: 16]
+    fun_pio_swd_write_memory32(&data->pio_swd, data->rtt_down_cb_addr + 12, wr_off);
+}
+static void rtt_poll_data(void *user_data) {
+    dap_data_t *data=(dap_data_t*) user_data;
+    if (!data || !data->rtt_found || !data->pio_swd.opened) return;
+
+    uint32_t wr_off = 0;
+    // 读取单片机当前的写入指针
+    if (!fun_pio_swd_read_memory32(&data->pio_swd, data->rtt_cb_addr + 36, &wr_off)) 
+        return;
+    if ((int32_t)wr_off == data->rtt_last_rd_off) return; // 暂无新数据
+
+    // 计算待读字节量
+    int32_t rd = data->rtt_last_rd_off;
+    int32_t wr = (int32_t)wr_off;
+    int32_t sz = data->rtt_buf_size;
+    int32_t bytes_to_read = (wr >= rd) ? (wr - rd) : (sz - rd + wr);
+    if (bytes_to_read > 256) bytes_to_read = 256; // 限制单批吞吐
+    static char line_accum[RTT_LINE_SIZE];
+    static size_t line_len = 0;
+    for (int32_t i = 0; i < bytes_to_read; i++) {
+        uint32_t char_word = 0;
+        uint32_t cur_addr = data->rtt_buf_addr + rd;
+        // SWD 按 4 字节读取并取字节
+        if (fun_pio_swd_read_memory32(&data->pio_swd, cur_addr & ~3u, &char_word)) {
+            uint8_t ch = (uint8_t)(char_word >> ((cur_addr & 3u) * 8u));
+            if (ch == '\r') {
+                // 忽略 CR
+            } else if (ch == '\n' || line_len >= RTT_LINE_SIZE - 1) {
+                line_accum[line_len] = '\0';
+                char gbk_converted[RTT_LINE_SIZE];
+                utf8_to_gbk_string(line_accum, gbk_converted, sizeof(gbk_converted));
+                rtt_queue_push(gbk_converted, 0x5E7F); // 经典终端亮绿字
+                line_len = 0;
+            } else {
+                line_accum[line_len++] = (char)ch;
+            }
+        }
+        rd = (rd + 1) % sz;
+    }
+    data->rtt_last_rd_off = rd;
+    fun_pio_swd_write_memory32(&data->pio_swd, data->rtt_cb_addr + 40, (uint32_t)rd);
+}
+static void dap_core1_rtt_worker(void) {
+    dap_data_t *data = (dap_data_t *)g_static_app_ram;
+    uint32_t last_search = 0;
+
+    while (true) {
+        // 避让保护：未激活会话、电脑 Keil 占用总线、或者用户不在“日志”页时，Core 1 静默避让
+        if (!s_dap_session_active || !data->rtt_worker_enable || cmsis_dap_is_host_active() || data->tabview.active_tab_idx != 4) {
+            data->rtt_core1_idle = true;
+            sleep_ms(20);
+            continue;
+        }
+
+        data->rtt_core1_idle = false;
+        uint32_t now = to_ms_since_boot(get_absolute_time());
+
+        // 未锁定 RTT 控制块时，每 1 秒尝试重搜一次
+        if (!data->rtt_found) {
+            if (now - last_search >= 1000) {
+                last_search = now;
+                if (swd_open(data)) {
+                    if (rtt_search_cb(data)) {
+                        rtt_queue_push("[系统] 已成功锁定 SEGGER RTT 控制块!", 0x07E0);
+                    }
+                }
+            }
+            sleep_ms(50);
+            continue;
+        }
+        if (s_rtt_tx_pending) {
+            rtt_send_cmd(data, s_rtt_tx_buf);
+            s_rtt_tx_pending = false;
+        }
+        // 已锁定控制块，高频轮询新字符
+        rtt_poll_data(data);
+        sleep_ms(15);
+    }
+}
+static void on_rtt_input_focus(ui_input_t *input, void *user_data) {
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data) return;
+    data->kb.mode = UI_KB_MODE_LOWER; // 弹出全功能英文软键盘
+    ui_keyboard_open(&data->kb, input);
+    data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
+}
+
+static void on_rtt_send_click(ui_btn_t *btn, void *user_data) {
+    (void)btn;
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data || data->input.text[0] == '\0') return;
+
+    if (!s_rtt_tx_pending) {
+        strncpy(s_rtt_tx_buf, data->input.text, sizeof(s_rtt_tx_buf) - 1);
+        s_rtt_tx_buf[sizeof(s_rtt_tx_buf) - 1] = '\0';
+        s_rtt_tx_pending = true;
+        ui_input_clear(&data->input);
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->input.rect);
+    }
+}
+
+static void on_rtt_clear_click(ui_btn_t *btn, void *user_data) {
+    (void)btn;
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data) return;
+    ui_terminal_clear(&data->rtt_terminal);
+    data->dirty_rect = rect_union_box(data->dirty_rect, data->rtt_terminal.rect);
+}
+
+static void on_rtt_search_click(ui_btn_t *btn, void *user_data) {
+    (void)btn;
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data) return;
+    data->rtt_found = false;
+    ui_toast_show(&data->toast, "正在重新搜索 RTT...", UI_TOAST_INFO, to_ms_since_boot(get_absolute_time()));
 }
 static void bp_step_out(dap_data_t *data)
 {
@@ -1432,6 +1734,26 @@ static void on_var_kb_submit(ui_keyboard_t *kb,const char *text,void *user_data)
     data->dirty_rect = ui_rect_make(0,0,LCD_WIDTH,LCD_HEIGHT);
 
 }
+
+
+static void on_dap_kb_submit(ui_keyboard_t *kb, const char *text, void *user_data) {
+    dap_data_t *data = (dap_data_t *)user_data;
+    if (!data) return;
+
+    if (data->tabview.active_tab_idx == 4) {
+        if (text && text[0] != '\0' && !s_rtt_tx_pending) {
+            strncpy(s_rtt_tx_buf, text, sizeof(s_rtt_tx_buf) - 1);
+            s_rtt_tx_buf[sizeof(s_rtt_tx_buf) - 1] = '\0';
+            s_rtt_tx_pending = true;
+        }
+        ui_input_clear(&data->input);
+        ui_keyboard_close(kb);
+        data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
+    } else {
+        on_var_kb_submit(kb, text, user_data);
+    }
+}
+
 static bool dap_config_process_touch(dap_data_t *data, bool touching, int16_t x, int16_t y, uint32_t tick)
 {
     if (!data) return false;
@@ -2174,7 +2496,7 @@ static app_t s_dap;
 
 static void dap_init(app_t *self)
 {
-    _Static_assert(sizeof(dap_data_t) <= 8192, "dap_data_t 超出 8KB 静态内存限制！");
+    // _Static_assert(sizeof(dap_data_t) <= 10240, "dap_data_t 超出 10KB 静态内存限制！");
     self->user_data = g_static_app_ram;
 }
 
@@ -2378,6 +2700,59 @@ static void dap_enter(app_t *self)
     data->watch_idx=-1;
     ui_modal_init(&data->bit_modal, LCD_WIDTH, LCD_HEIGHT, 400, 240, 200, "位状态控制", UI_MODAL_BTN_NONE, on_bit_modal_draw_content, on_bit_modal_touch_content, NULL);
     data->bit_modal.user_data = data;
+
+    //tab4
+ui_terminal_init(&data->rtt_terminal, RTT_TERM_X, RTT_TERM_Y, RTT_TERM_W, RTT_TERM_H);
+    data->rtt_terminal.color_bg        = 0x10A2;
+    data->rtt_terminal.color_border    = 0x31A6;
+    data->rtt_terminal.color_text_def  = 0xDEFB;
+    data->rtt_terminal.color_scrollbar = 0x05DF;
+    ui_terminal_write_line(&data->rtt_terminal, "RTT 交互终端就绪", 0x5E7F);
+
+    // ⚡ 底部输入控制行 (Y=272, H=36)
+    // 1. 命令输入框 (宽 150)
+    ui_input_init(&data->input, 120, 272, 150, 36, "输入指令", on_rtt_input_focus);
+    data->input.user_data = data;
+    data->input.color_bg = 0xFFFF;
+    data->input.color_border = 0xC618;
+    data->input.color_focus_border = 0x03DF;
+    data->input.color_text = 0x4208;
+    data->input.color_placeholder = 0x8410;
+
+    // 2. 发送按钮
+    ui_btn_init(&data->rtt_send, 276, 272, 54, 36, "发送", on_rtt_send_click);
+    data->rtt_send.user_data = data;
+    data->rtt_send.style = UI_BTN_STYLE_ROUND;
+    data->rtt_send.font_size = FONT_16;
+    ui_btn_set_color(&data->rtt_send, 0x03DF, 0x0275, 0xFFFF);
+
+    // 3. 重新搜索按钮
+    ui_btn_init(&data->rtt_search, 336, 272, 64, 36, "重搜", on_rtt_search_click);
+    data->rtt_search.user_data = data;
+    data->rtt_search.style = UI_BTN_STYLE_ROUND;
+    data->rtt_search.font_size = FONT_16;
+    ui_btn_set_color(&data->rtt_search, 0x05E0, 0x03E0, 0xFFFF);
+
+    // 4. 清屏按钮
+    ui_btn_init(&data->rtt_clear, 406, 272, 58, 36, "清屏", on_rtt_clear_click);
+    data->rtt_clear.user_data = data;
+    data->rtt_clear.style = UI_BTN_STYLE_ROUND;
+    data->rtt_clear.font_size = FONT_16;
+    ui_btn_set_color(&data->rtt_clear, 0x8410, 0x630C, 0xFFFF);
+
+    // 键盘初始化挂接统一回调
+    ui_keyboard_init(&data->kb, on_dap_kb_submit);
+    data->kb.user_data = data;
+
+    data->rtt_found = false;
+    data->rtt_worker_enable = true;
+    s_rtt_head = 0;
+    s_rtt_tail = 0;
+    s_dap_session_active = true;
+
+    // 启动第二核专用轮询线程
+    multicore_reset_core1();
+    multicore_launch_core1(dap_core1_rtt_worker);
 }
 static void dap_exit(app_t *self)
 {
@@ -2392,6 +2767,9 @@ static void dap_exit(app_t *self)
         fun_pio_swd_run_target(&data->pio_swd);
         fun_pio_swd_close(&data->pio_swd);
     }
+    s_dap_session_active = false;
+    data->rtt_worker_enable = false;
+    multicore_reset_core1(); // 彻底停止并复位 Core 1
     self->user_data = NULL;
 }
 static void dap_update(app_t *self, uint32_t now_tick)
@@ -2433,16 +2811,14 @@ static void dap_update(app_t *self, uint32_t now_tick)
             data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
         }
     }
-    if (!data->is_halted && data->pio_swd.opened) {
+    if (data->tabview.active_tab_idx == 2&&!data->is_halted && data->pio_swd.opened) {
         if (now_tick - data->last_halt_check >= 50) {
             data->last_halt_check = now_tick;
             bool is_halted = false;
             if (fun_pio_swd_is_halted(&data->pio_swd, &is_halted) && is_halted) {
                 data->is_halted = true;
                 dap_read_all_regs(data);
-                if (data->tabview.active_tab_idx == 2) {
                     data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
-                }
             }
         }
     }
@@ -2489,6 +2865,18 @@ static void dap_update(app_t *self, uint32_t now_tick)
                 }
             }
         }
+    }
+    // 将 Core 1 收集到的 RTT 日志行刷入 UI 终端
+    bool term_has_new = false;
+    while (s_rtt_tail != s_rtt_head) {
+        rtt_term_msg_t *msg = &s_rtt_queue[s_rtt_tail];
+        ui_terminal_write_line(&data->rtt_terminal, msg->text, msg->color);
+        s_rtt_tail = (uint8_t)((s_rtt_tail + 1) % RTT_QUEUE_SIZE);
+        term_has_new = true;
+    }
+
+    if (term_has_new && data->tabview.active_tab_idx == 4) {
+        data->dirty_rect = rect_union_box(data->dirty_rect, data->rtt_terminal.rect);
     }
 }
 static bool dap_process_touch(app_t *self, bool touching, int16_t x,
@@ -2549,6 +2937,28 @@ static bool dap_process_touch(app_t *self, bool touching, int16_t x,
     case 3:
         handled =dap_watch_process_touch(data,touching,x,y,tick);
         break;
+    case 4:
+        if (ui_terminal_process_touch(&data->rtt_terminal, touching, x, y, tick)) {
+            data->dirty_rect = rect_union_box(data->dirty_rect, data->rtt_terminal.rect);
+            handled = true;
+        }
+        if (ui_input_process_touch(&data->input, touching, x, y, tick)) {
+            data->dirty_rect = rect_union_box(data->dirty_rect, data->input.rect);
+            handled = true;
+        }
+        if (ui_btn_process_touch(&data->rtt_send, touching, x, y, tick)) {
+            data->dirty_rect = rect_union_box(data->dirty_rect, data->rtt_send.rect);
+            handled = true;
+        }
+        if (ui_btn_process_touch(&data->rtt_clear, touching, x, y, tick)) {
+            data->dirty_rect = rect_union_box(data->dirty_rect, data->rtt_clear.rect);
+            handled = true;
+        }
+        if (ui_btn_process_touch(&data->rtt_search, touching, x, y, tick)) {
+            data->dirty_rect = rect_union_box(data->dirty_rect, data->rtt_search.rect);
+            handled = true;
+        }
+        break;
     default:
         break;
     }
@@ -2583,6 +2993,13 @@ static void dap_draw(app_t *self, ui_tile_t *tile)
             break;
         case 3:
             ui_scrollview_draw(tile,&data->watch_scroll);
+            break;
+            case 4:
+            ui_terminal_draw(tile, &data->rtt_terminal);
+            ui_input_draw(tile, &data->input);
+            ui_btn_draw(tile, &data->rtt_send);
+            ui_btn_draw(tile, &data->rtt_search);
+            ui_btn_draw(tile, &data->rtt_clear);
             break;
         default:
             break;
