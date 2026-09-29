@@ -77,7 +77,7 @@ static bool g_last_touch_val = false; //
 static bool g_w25_ok = false;         //
 
 /* ================= 2. 硬件传感器与交互回调 ================= */
-
+ 
 // 片内 ADC 温度传感器初始化
 static void chip_temp_init(void)
 {

@@ -481,11 +481,14 @@ static void rtt_poll_data(void *user_data) {
 }
 static void dap_core1_rtt_worker(void) {
     dap_data_t *data = (dap_data_t *)g_static_app_ram;
-    uint32_t last_search = 0;
+
+    uint32_t last_watch_tick = 0;
+    uint32_t last_halt_tick = 0;
+    uint32_t last_rtt_search_tick = 0;
 
     while (true) {
-        // 避让保护：未激活会话、电脑 Keil 占用总线、或者用户不在“日志”页时，Core 1 静默避让
-        if (!s_dap_session_active || !data->rtt_worker_enable || cmsis_dap_is_host_active() || data->tabview.active_tab_idx != 4) {
+        
+        if (!s_dap_session_active || cmsis_dap_is_host_active()) {
             data->rtt_core1_idle = true;
             sleep_ms(20);
             continue;
@@ -494,26 +497,89 @@ static void dap_core1_rtt_worker(void) {
         data->rtt_core1_idle = false;
         uint32_t now = to_ms_since_boot(get_absolute_time());
 
-        // 未锁定 RTT 控制块时，每 1 秒尝试重搜一次
-        if (!data->rtt_found) {
-            if (now - last_search >= 1000) {
-                last_search = now;
+        
+        switch (data->tabview.active_tab_idx) {
+        
+        case 2: 
+            if (data->pio_swd.opened) {
+                if (data->auto_step_enablde && data->is_halted) {
+                    if (now - data->auto_step_last_tick >= data->auto_step_ms) {
+                        data->auto_step_last_tick = now;
+                        if (fun_pio_swd_step_over(&data->pio_swd, 1000)) {
+                            dap_read_all_regs(data);
+                        } else {
+                            data->auto_step_enablde = false; //自恢复
+                        }
+                    }
+                } else if (!data->is_halted && (now - last_halt_tick >= 50)) {
+                    last_halt_tick = now;
+                    bool halted = false;
+
+                    if (fun_pio_swd_is_halted(&data->pio_swd, &halted) && halted) {
+                        data->is_halted = true;
+                        dap_read_all_regs(data);
+                    }
+                    
+                }
+            }
+            sleep_ms(10);
+            break;
+
+        case 3: 
+            if (data->watch_count > 0 && (now - last_watch_tick >= 50)) {
+                last_watch_tick = now;
                 if (swd_open(data)) {
-                    if (rtt_search_cb(data)) {
+                    for (uint8_t i = 0; i < data->watch_count; i++) {
+                        dap_watch_item_t *it = &data->watch_items[i];
+                        if (!it->valid) continue;
+
+                        uint32_t al_addr = it->addr & ~3u;
+                        uint32_t shift   = (it->addr & 3u) * 8u;
+                        uint32_t raw_word = 0;
+
+                        if (fun_pio_swd_read_memory32(&data->pio_swd, al_addr, &raw_word)) {
+                            uint32_t new_val = (it->size == 1) ? ((raw_word >> shift) & 0xFFu) :
+                                               (it->size == 2) ? ((raw_word >> shift) & 0xFFFFu) : raw_word;
+
+                            if (new_val != it->val) {
+                                it->last_val = it->val;
+                                it->val = new_val;
+                                it->change_tick = now; // 仅更新时间戳，交给 Core 0 渲染
+                            }
+                        }
+                    }
+                }
+                
+            }
+            sleep_ms(15);
+            break;
+
+        case 4: // --- 日志页业务：RTT 收发 ---
+            
+            // 先处理发送
+            if (s_rtt_tx_pending) {
+                rtt_send_cmd(data, s_rtt_tx_buf);
+                s_rtt_tx_pending = false;
+            }
+            // 再处理接收
+            if (!data->rtt_found) {
+                if (now - last_rtt_search_tick >= 1000) {
+                    last_rtt_search_tick = now;
+                    if (swd_open(data) && rtt_search_cb(data)) {
                         rtt_queue_push("[系统] 已成功锁定 SEGGER RTT 控制块!", 0x07E0);
                     }
                 }
+            } else {
+                rtt_poll_data(data);
             }
-            sleep_ms(50);
-            continue;
+            
+            sleep_ms(15);
+            break;
+
+        default:
+            sleep_ms(30);
+            break;
         }
-        if (s_rtt_tx_pending) {
-            rtt_send_cmd(data, s_rtt_tx_buf);
-            s_rtt_tx_pending = false;
-        }
-        // 已锁定控制块，高频轮询新字符
-        rtt_poll_data(data);
-        sleep_ms(15);
     }
 }
 static void on_rtt_input_focus(ui_input_t *input, void *user_data) {
@@ -2779,94 +2845,30 @@ static void dap_update(app_t *self, uint32_t now_tick)
 
     data->dirty_rect = ui_rect_make(0, 0, 0, 0);
     if (ui_toast_update(&data->toast, now_tick)) {
-        data->dirty_rect = rect_union_box(
-            data->dirty_rect,
-            ui_toast_get_dirty_union(&data->toast));
+        data->dirty_rect = rect_union_box(data->dirty_rect, ui_toast_get_dirty_union(&data->toast));
     }
-    if (cmsis_dap_is_host_active()) {
-        
-        if (data->pio_swd.opened) {
-            fun_pio_swd_close(&data->pio_swd);
-            data->pio_powered = false;
-        }
-        return; 
-    }
-    const fun_swd_config_t *cfg = fun_swd_config_get();
-    if (cfg && cfg->clock_hz != data->swd.clock_hz) {
-        data->swd = *cfg;
-        if (data->tabview.active_tab_idx == 0) {
-            data->dirty_rect = rect_union_box(data->dirty_rect, data->status_card);
-        }
-    }
-
-    if (data->tabview.active_tab_idx == 2 && data->auto_step_enablde && data->is_halted && data->pio_swd.opened) {
-        if (now_tick - data->auto_step_last_tick >= data->auto_step_ms) {
-            data->auto_step_last_tick = now_tick;
-            if (fun_pio_swd_step_over(&data->pio_swd, 1000)) {
-                data->is_halted = true;
-                dap_read_all_regs(data);
-            } else {
-                auto_default(data);
-            }
+    static bool     s_last_halted = false;
+    static uint32_t s_last_pc = 0;
+    if (data->tabview.active_tab_idx == 2) {
+        if (data->is_halted != s_last_halted || data->core_regs[15] != s_last_pc) {
+            s_last_halted = data->is_halted;
+            s_last_pc     = data->core_regs[15];
             data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
         }
     }
-    if (data->tabview.active_tab_idx == 2&&!data->is_halted && data->pio_swd.opened) {
-        if (now_tick - data->last_halt_check >= 50) {
-            data->last_halt_check = now_tick;
-            bool is_halted = false;
-            if (fun_pio_swd_is_halted(&data->pio_swd, &is_halted) && is_halted) {
-                data->is_halted = true;
-                dap_read_all_regs(data);
-                    data->dirty_rect = rect_union_box(data->dirty_rect, data->term_scroll.view_rect);
-            }
-        }
-    }
-    if (data->tabview.active_tab_idx == 3 && data->watch_count > 0) {
-        if (!data->pio_swd.opened) {
-            swd_open(data);
-        }
-        if (data->pio_swd.opened && (now_tick - data->last_watch_tick >= 50)) {
-            data->last_watch_tick = now_tick;
-            for (uint8_t i = 0; i < data->watch_count; i++) {
-                dap_watch_item_t *it = &data->watch_items[i];
-                if (!it->valid) continue;
-                uint32_t al_addr = it->addr & ~3u;
-                uint32_t shift = (it->addr & 3u) * 8u;
-                uint32_t raw_word = 0;
-                if (fun_pio_swd_read_memory32(&data->pio_swd, al_addr, &raw_word)) {
-                    uint32_t new_val = 0;
-                    if (it->size == 1)      new_val = (raw_word >> shift) & 0xFFu;
-                    else if (it->size == 2) new_val = (raw_word >> shift) & 0xFFFFu;
-                    else                    new_val = raw_word;
-                    if (new_val != it->val) {
-                        it->last_val = it->val;
-                        it->val = new_val;
-                        it->change_tick = now_tick;
-                        ui_rect_t card_rect = dap_watch_get_card_screen_rect(data, i);
-                        data->dirty_rect = rect_union_box(data->dirty_rect, card_rect);
-                        if (data->bit_modal.is_open && data->watch_idx == i) {
-                            data->dirty_rect = rect_union_box(data->dirty_rect, data->bit_modal.rect);
-                        }
-                    }
-                }
-            }
-        }
+    if (data->tabview.active_tab_idx == 3) {
         for (uint8_t i = 0; i < data->watch_count; i++) {
             dap_watch_item_t *it = &data->watch_items[i];
-            if (it->valid && it->change_tick > 0) {
+            if (!it->valid) continue;
+            if (it->change_tick > 0) {
                 if (now_tick - it->change_tick >= 500) {
                     it->change_tick = 0;
-                    ui_rect_t card_rect = dap_watch_get_card_screen_rect(data, i);
-                    data->dirty_rect = rect_union_box(data->dirty_rect, card_rect);
-                    if (data->bit_modal.is_open && data->watch_idx == i) {
-                            data->dirty_rect = rect_union_box(data->dirty_rect, data->bit_modal.rect);
-                        }
                 }
+                ui_rect_t card_rect = dap_watch_get_card_screen_rect(data, i);
+                data->dirty_rect = rect_union_box(data->dirty_rect, card_rect);
             }
         }
     }
-    // 将 Core 1 收集到的 RTT 日志行刷入 UI 终端
     bool term_has_new = false;
     while (s_rtt_tail != s_rtt_head) {
         rtt_term_msg_t *msg = &s_rtt_queue[s_rtt_tail];
@@ -2874,7 +2876,6 @@ static void dap_update(app_t *self, uint32_t now_tick)
         s_rtt_tail = (uint8_t)((s_rtt_tail + 1) % RTT_QUEUE_SIZE);
         term_has_new = true;
     }
-
     if (term_has_new && data->tabview.active_tab_idx == 4) {
         data->dirty_rect = rect_union_box(data->dirty_rect, data->rtt_terminal.rect);
     }
