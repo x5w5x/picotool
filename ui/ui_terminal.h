@@ -1,7 +1,7 @@
 /*
  * @Author: 轩
  * @Date: 2026-08-20 13:25:48
- * @LastEditTime: 2026-08-21 12:32:25
+ * @LastEditTime: 2026-09-29 13:33:56
  * @FilePath: \pico\ui\ui_terminal.h
  */
 #ifndef UI_TERMINAL_H
@@ -19,7 +19,7 @@ extern "C" {
 #endif
 
 #define UI_TERM_MAX_LINES    64   // 环形缓冲最大行数
-#define UI_TERM_LINE_LEN     64   // 单行最大字符数
+#define UI_TERM_LINE_LEN     40   // 单行最大字符数
 
 typedef enum {
     UI_TERM_MODE_ASCII = 0,       // 标准 ASCII 文本模式
