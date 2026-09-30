@@ -13,7 +13,7 @@
 #include "ui_toast.h"
 #include "ui_pin_config.h"
 #include "lcd.h"
-
+#include "ff.h"
 #include "pico/stdlib.h"
 #include <string.h>
 #include "fun_uart.h"
@@ -183,6 +183,57 @@ static bool s_uart_profile_ready = false;
 static void uart_start_dma(uart_data_t *data);
 static void uart_stop_dma(void);
 
+static void utf8_to_gbk_string(const char *utf8, char *gbk_out, size_t max_out_len)
+{
+    if (!utf8 || !gbk_out || max_out_len == 0) return;
+
+    size_t in_idx = 0;
+    size_t out_idx = 0;
+
+    while (utf8[in_idx] != '\0' && out_idx < max_out_len - 1) {
+        uint8_t c = (uint8_t)utf8[in_idx];
+
+        // 1. 标准 ASCII (0x00 ~ 0x7F)
+        if (c < 0x80) {
+            gbk_out[out_idx++] = (char)c;
+            in_idx++;
+        }
+        // 2. 3 字节标准汉字 UTF-8 (0xE0 ~ 0xEF)
+        else if ((c & 0xF0) == 0xE0 && utf8[in_idx + 1] && utf8[in_idx + 2]) {
+            uint8_t c2 = (uint8_t)utf8[in_idx + 1];
+            uint8_t c3 = (uint8_t)utf8[in_idx + 2];
+
+            WCHAR unicode = (WCHAR)(((c & 0x0F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F));
+            DWORD gbk_code = ff_uni2oem(unicode, 936);
+
+            if (gbk_code > 0xFF) {
+                if (out_idx + 2 < max_out_len) {
+                    gbk_out[out_idx++] = (char)(gbk_code >> 8);
+                    gbk_out[out_idx++] = (char)(gbk_code & 0xFF);
+                }
+            } else if (gbk_code > 0) {
+                gbk_out[out_idx++] = (char)gbk_code;
+            } else {
+                gbk_out[out_idx++] = '?';
+            }
+            in_idx += 3;
+        }
+        // 3. 2 字节特殊符号
+        else if ((c & 0xE0) == 0xC0 && utf8[in_idx + 1]) {
+            uint8_t c2 = (uint8_t)utf8[in_idx + 1];
+            WCHAR unicode = (WCHAR)(((c & 0x1F) << 6) | (c2 & 0x3F));
+            DWORD gbk_code = ff_uni2oem(unicode, 936);
+            if (gbk_code > 0 && out_idx < max_out_len - 1) {
+                gbk_out[out_idx++] = (char)gbk_code;
+            }
+            in_idx += 2;
+        }
+        else {
+            in_idx++;
+        }
+    }
+    gbk_out[out_idx] = '\0';
+}
 static size_t uart_tx_ring_free(void)
 {
     return (size_t)((s_uart_tx_tail - s_uart_tx_head - 1u) &
@@ -246,6 +297,39 @@ static void uart_tx_ring_flush(uart_data_t *data)
     }
 }
 
+// static void uart_queue_push(const char *tag, const uint8_t *data, size_t length, uint16_t color)
+// {
+//     if (data == NULL || length == 0) return;
+
+//     uint8_t next = (uint8_t)((s_uart_term_head + 1) % UART_TERM_QUEUE_SIZE);
+//     if (next == s_uart_term_tail) return;
+
+//     uart_term_message_t *message = &s_uart_term_queue[s_uart_term_head];
+//     size_t index = 0;
+
+//     if (tag != NULL) {
+//         while (*tag != '\0' && index < UART_TERM_LINE_SIZE - 1) {
+//             message->text[index++] = *tag++;
+//         }
+//     }
+//     if (index < UART_TERM_LINE_SIZE - 1) {
+//         message->text[index++] = ' ';
+//     }
+
+//     for (size_t i = 0; i < length && index < UART_TERM_LINE_SIZE - 1; ++i) {
+//         uint8_t value = data[i];
+//         if (value == '\r' || value == '\n') continue;
+//         if (value >= 32 && value <= 126) {
+//             message->text[index++] = (char)value;
+//         } else {
+//             message->text[index++] = '.';
+//         }
+//     }
+
+//     message->text[index] = '\0';
+//     message->color = color;
+//     s_uart_term_head = next;
+// }
 static void uart_queue_push(const char *tag, const uint8_t *data, size_t length, uint16_t color)
 {
     if (data == NULL || length == 0) return;
@@ -253,33 +337,32 @@ static void uart_queue_push(const char *tag, const uint8_t *data, size_t length,
     uint8_t next = (uint8_t)((s_uart_term_head + 1) % UART_TERM_QUEUE_SIZE);
     if (next == s_uart_term_tail) return;
 
-    uart_term_message_t *message = &s_uart_term_queue[s_uart_term_head];
+    char raw_line[UART_TERM_LINE_SIZE];
     size_t index = 0;
 
     if (tag != NULL) {
-        while (*tag != '\0' && index < UART_TERM_LINE_SIZE - 1) {
-            message->text[index++] = *tag++;
+        while (*tag != '\0' && index < sizeof(raw_line) - 1) {
+            raw_line[index++] = *tag++;
         }
     }
-    if (index < UART_TERM_LINE_SIZE - 1) {
-        message->text[index++] = ' ';
+    if (index < sizeof(raw_line) - 1) {
+        raw_line[index++] = ' ';
     }
 
-    for (size_t i = 0; i < length && index < UART_TERM_LINE_SIZE - 1; ++i) {
+    for (size_t i = 0; i < length && index < sizeof(raw_line) - 1; ++i) {
         uint8_t value = data[i];
         if (value == '\r' || value == '\n') continue;
-        if (value >= 32 && value <= 126) {
-            message->text[index++] = (char)value;
-        } else {
-            message->text[index++] = '.';
-        }
+        raw_line[index++] = (char)value; // ⚡ 完整保留所有原始字节（含汉字）
     }
+    raw_line[index] = '\0';
 
-    message->text[index] = '\0';
+    // ⚡ 转换为字库支持的 GBK
+    uart_term_message_t *message = &s_uart_term_queue[s_uart_term_head];
+    utf8_to_gbk_string(raw_line, message->text, sizeof(message->text));
     message->color = color;
+
     s_uart_term_head = next;
 }
-
 static void uart_start_dma(uart_data_t *data)
 {
     if (data == NULL || data->uart.uart_hw == NULL) return;
@@ -1695,7 +1778,7 @@ static void uart_enter(app_t *self)
 
     ui_input_init(&data->input_cmd, UART_INPUT_X, UART_INPUT_Y, UART_INPUT_W, UART_INPUT_H, "输入串口指令", on_cmd_input_focus);
     data->input_cmd.user_data = data;
-    data->input_cmd.color_bg = 0xFFFF;
+    data->input_cmd.color_bg = 0xDEFB;
     data->input_cmd.color_border = 0xC618;
     data->input_cmd.color_focus_border = 0x03DF;
     data->input_cmd.color_text = 0x4208;
@@ -1705,13 +1788,13 @@ static void uart_enter(app_t *self)
     data->btn_clear.user_data = data;
     data->btn_clear.style = UI_BTN_STYLE_ROUND;
     data->btn_clear.font_size = FONT_16;
-    ui_btn_set_color(&data->btn_clear, 0x8410, 0x630C, 0xFFFF);
+    ui_btn_set_color(&data->btn_clear, 0xDEFB, 0x630C, 0xFFFF);
 
     ui_btn_init(&data->btn_send, UART_SEND_X, UART_SEND_Y, UART_SEND_W, UART_SEND_H, "发送", on_send_click);
     data->btn_send.user_data = data;
     data->btn_send.style = UI_BTN_STYLE_ROUND;
     data->btn_send.font_size = FONT_16;
-    ui_btn_set_color(&data->btn_send, 0x03DF, 0x0275, 0xFFFF);
+    ui_btn_set_color(&data->btn_send, 0xDEFB, 0x0275, 0xFFFF);
 
     ui_keyboard_init(&data->keyboard, on_keyboard);
     data->keyboard.user_data = data;
