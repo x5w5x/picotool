@@ -32,7 +32,7 @@ static const char *s_uart_tabs[] = {
     "终端"};
 #define TAB_COUNT (sizeof(s_uart_tabs) / sizeof(s_uart_tabs[0]))
 
-#define STATUS_CONTENT_H   520
+#define STATUS_CONTENT_H   260
 #define SETTINGS_CONTENT_H 360   // 内容总高精简至 360px，滚动体验更平滑
 #define UART_DMA_RING_SIZE 2048u
 #define UART_DMA_RING_BITS 11u
@@ -1305,264 +1305,132 @@ if (pins_claimed && !opened) {
 //     snprintf(text,sizeof(text),"DMA: %s",s_uart_dma_channel>=0 ? "运行中" : "已停止");
 //     ui_draw_string(tile, x,y + 164,text,FONT_16,value_color, bg_color);
 // }
-static void on_status_draw_content(
-    ui_tile_t *tile,
-    const ui_rect_t *viewport,
-    int16_t scroll_y,
-    void *user_data
-)
+static void on_status_draw_content(ui_tile_t *tile,const ui_rect_t *viewport,int16_t scroll_y,void *user_data)
 {
-    uart_data_t *data =
-        (uart_data_t *)user_data;
-
-    if (data == NULL) {
-        return;
-    }
-
-    const int16_t x =
-        viewport->x + 18;
-
-    const int16_t y =
-        viewport->y - scroll_y + 18;
-
-    const uint16_t title_color = 0x4208;
-    const uint16_t value_color = 0x632C;
-    const uint16_t bg_color = 0xFFFF;
-
-    char text[96];
+    uart_data_t *data = (uart_data_t *)user_data;
+    if (data == NULL) return;
 
     bool running = false;
-    uint8_t tx_gpio = 0;
-    uint8_t rx_gpio = 0;
+    uint8_t tx_gpio = 0, rx_gpio = 0;
     uint32_t baudrate = 0;
+    uint8_t data_bits = 8, stop_bits = 1;
+    const char *parity_text = "N";
 
-    if (data->active_backend ==
-        UART_BACKEND_HARDWARE) {
-        running =
-            fun_uart_is_open(&data->uart);
-
-        tx_gpio =
-            data->uart_config.tx_gpio;
-
-        rx_gpio =
-            data->uart_config.rx_gpio;
-
-        baudrate =
-            data->uart_config.baudrate;
-    }
-    else if (data->active_backend ==
-             UART_BACKEND_PIO) {
-        running =
-            fun_pio_uart_is_open(
-                &data->pio_uart
-            );
-
-        tx_gpio =
-            data->pio_uart.tx.tx_gpio;
-
-        rx_gpio =
-            data->pio_uart.rx.rx_gpio;
-
-        baudrate =
-            data->pio_uart.tx.baudrate;
+    if (data->active_backend == UART_BACKEND_HARDWARE) {
+        running   = fun_uart_is_open(&data->uart);
+        tx_gpio   = data->uart_config.tx_gpio;
+        rx_gpio   = data->uart_config.rx_gpio;
+        baudrate  = data->uart_config.baudrate;
+        data_bits = data->uart_config.data_bits;
+        stop_bits = data->uart_config.stop_bits;
+        parity_text = (data->uart_config.parity == FUN_UART_PARITY_NONE) ? "N" :
+                      (data->uart_config.parity == FUN_UART_PARITY_EVEN) ? "E" : "O";
+    } else {
+        running   = fun_pio_uart_is_open(&data->pio_uart);
+        tx_gpio   = data->pio_uart.tx.tx_gpio;
+        rx_gpio   = data->pio_uart.rx.rx_gpio;
+        baudrate  = data->pio_uart.tx.baudrate;
+        data_bits = 8;
+        stop_bits = 1;
+        parity_text = "N";
     }
 
-    ui_draw_string(
-        tile,
-        x,
-        y,
-        "串口运行状态",
-        FONT_20,
-        title_color,
-        bg_color
-    );
+    const int16_t card_x = viewport->x + 14;
+    const int16_t card_w = viewport->w - 28; // 350 - 28 = 322px
+    int16_t cur_y = viewport->y + 10 - scroll_y;
+    ui_rect_t overlap;
 
-    snprintf(
-        text,
-        sizeof(text),
-        "实现: %s",
-        data->active_backend ==
-                UART_BACKEND_PIO
-            ? "PIO UART"
-            : "硬件 UART"
-    );
+    /* =========================================================================
+     * 卡片 1: 运行概览卡片 (Card 1)
+     * ========================================================================= */
+    ui_rect_t c1_rect = ui_rect_make(card_x, cur_y, card_w, 66);
+    if (ui_rect_intersect(&tile->rect, &c1_rect, &overlap)) {
+        ui_draw_fill_rect(tile, &overlap, 0xF7BE); // 柔和灰白底色
+        ui_draw_rect(tile, &c1_rect, 0xCE59);
 
-    ui_draw_string(
-        tile,
-        x,
-        y + 34,
-        text,
-        FONT_16,
-        value_color,
-        bg_color
-    );
+        // 标题与波特率格式
+        ui_draw_string(tile, c1_rect.x + 14, c1_rect.y + 10, "串口运行状态", FONT_16, 0x1A7B, 0xF7BE);
 
-    snprintf(
-        text,
-        sizeof(text),
-        "状态: %s",
-        running ? "已运行" : "未运行"
-    );
+        char fmt_str[48];
+        snprintf(fmt_str, sizeof(fmt_str), "%lu  %u-%s-%u", (unsigned long)baudrate, data_bits, parity_text, stop_bits);
+        ui_draw_string(tile, c1_rect.x + 14, c1_rect.y + 36, fmt_str, FONT_20, 0x0275, 0xF7BE);
 
-    ui_draw_string(
-        tile,
-        x,
-        y + 60,
-        text,
-        FONT_16,
-        value_color,
-        bg_color
-    );
+        // 右侧运行徽章
+        ui_rect_t badge = ui_rect_make(c1_rect.x + c1_rect.w - 74, c1_rect.y + 10, 64, 22);
+        ui_draw_fill_rect(tile, &badge, running ? 0x05E0 : 0xCE79);
+        ui_draw_string(tile, badge.x + 8, badge.y + 3, running ? "已运行" : "未启动", FONT_16, 0xFFFF, running ? 0x05E0 : 0xCE79);
 
-    snprintf(
-        text,
-        sizeof(text),
-        "引脚: TX GP%u / RX GP%u",
-        tx_gpio,
-        rx_gpio
-    );
-
-    ui_draw_string(
-        tile,
-        x,
-        y + 86,
-        text,
-        FONT_16,
-        value_color,
-        bg_color
-    );
-
-    if (data->active_backend ==
-        UART_BACKEND_PIO) {
-        snprintf(
-            text,
-            sizeof(text),
-            "格式: %lu-8-N-1",
-            (unsigned long)baudrate
-        );
+        // 驱动徽章 (硬件 / PIO)
+        const char *drv_name = (data->active_backend == UART_BACKEND_PIO) ? "PIO" : "UART1";
+        ui_rect_t drv_badge = ui_rect_make(c1_rect.x + c1_rect.w - 74, c1_rect.y + 36, 64, 20);
+        ui_draw_fill_rect(tile, &drv_badge, 0xDEFB);
+        ui_draw_rect(tile, &drv_badge, 0x3186);
+        ui_draw_string(tile, drv_badge.x + 12, drv_badge.y + 2, drv_name, FONT_16, 0x1A7B, 0xDEFB);
     }
-    else {
-        const char *parity_text =
-            data->uart_config.parity ==
-                    FUN_UART_PARITY_NONE
-                ? "N"
-                : (data->uart_config.parity ==
-                           FUN_UART_PARITY_EVEN
-                       ? "E"
-                       : "O");
+    cur_y += 76;
 
-        snprintf(
-            text,
-            sizeof(text),
-            "格式: %lu-%u-%s-%u",
-            (unsigned long)baudrate,
-            data->uart_config.data_bits,
-            parity_text,
-            data->uart_config.stop_bits
-        );
+    /* =========================================================================
+     * 卡片 2: 流量统计双仪表 (Card 2 - 双并排指标卡)
+     * ========================================================================= */
+    int16_t half_w = (card_w - 8) / 2; // ~157px
+
+    // 2.1 RX 接收卡片 (左卡 - 科技绿)
+    ui_rect_t rx_card = ui_rect_make(card_x, cur_y, half_w, 72);
+    if (ui_rect_intersect(&tile->rect, &rx_card, &overlap)) {
+        ui_draw_fill_rect(tile, &overlap, 0xFFFF);
+        ui_draw_rect(tile, &rx_card, 0xCE59);
+        ui_draw_string(tile, rx_card.x + 12, rx_card.y + 8, "RX 接收", FONT_16, 0x8410, 0xFFFF);
+        char num_str[24];
+        snprintf(num_str, sizeof(num_str), "%lu B", (unsigned long)data->uart_to_usb_count);
+        ui_draw_string(tile, rx_card.x + 12, rx_card.y + 36, num_str, FONT_20, 0x03E0, 0xFFFF);
     }
 
-    ui_draw_string(
-        tile,
-        x,
-        y + 112,
-        text,
-        FONT_16,
-        value_color,
-        bg_color
-    );
-
-    snprintf(
-        text,
-        sizeof(text),
-        "RX 字节: %lu",
-        (unsigned long)
-            data->uart_to_usb_count
-    );
-
-    ui_draw_string(
-        tile,
-        x,
-        y + 138,
-        text,
-        FONT_16,
-        value_color,
-        bg_color
-    );
-
-    snprintf(
-        text,
-        sizeof(text),
-        "TX 字节: %lu",
-        (unsigned long)
-            data->usb_to_uart_count
-    );
-
-    ui_draw_string(
-        tile,
-        x,
-        y + 164,
-        text,
-        FONT_16,
-        value_color,
-        bg_color
-    );
-
-    if (data->active_backend ==
-        UART_BACKEND_HARDWARE) {
-        snprintf(
-            text,
-            sizeof(text),
-            "DMA: %s",
-            s_uart_dma_channel >= 0
-                ? "运行中"
-                : "已停止"
-        );
+    // 2.2 TX 发送卡片 (右卡 - 科技蓝)
+    ui_rect_t tx_card = ui_rect_make(card_x + half_w + 8, cur_y, half_w, 72);
+    if (ui_rect_intersect(&tile->rect, &tx_card, &overlap)) {
+        ui_draw_fill_rect(tile, &overlap, 0xFFFF);
+        ui_draw_rect(tile, &tx_card, 0xCE59);
+        ui_draw_string(tile, tx_card.x + 12, tx_card.y + 8, "TX 发送", FONT_16, 0x8410, 0xFFFF);
+        char num_str[24];
+        snprintf(num_str, sizeof(num_str), "%lu B", (unsigned long)data->usb_to_uart_count);
+        ui_draw_string(tile, tx_card.x + 12, tx_card.y + 36, num_str, FONT_20, 0x0275, 0xFFFF);
     }
-    else if (data->selected_pio <
-             PIO_BLOCK_COUNT) {
-        pio_manager_stats_t stats;
+    cur_y += 82;
 
-        if (pio_manager_get_stats(
-                pio_manager_get_default(),
-                data->selected_pio,
-                &stats)) {
-            snprintf(
-                text,
-                sizeof(text),
-                "PIO%u: SM %u/%u  指令 %u/%u",
-                data->selected_pio,
-                stats.used_sm_count,
-                stats.total_sm_count,
-                stats.used_cmd_count,
-                stats.total_cmd_count
-            );
+    /* =========================================================================
+     * 卡片 3: 硬件拓扑与底层引擎详情 (Card 3)
+     * ========================================================================= */
+    ui_rect_t c3_rect = ui_rect_make(card_x, cur_y, card_w, 88);
+    if (ui_rect_intersect(&tile->rect, &c3_rect, &overlap)) {
+        ui_draw_fill_rect(tile, &overlap, 0xF7BE);
+        ui_draw_rect(tile, &c3_rect, 0xCE59);
+
+        ui_draw_string(tile, c3_rect.x + 14, c3_rect.y + 8, "硬件引脚映射", FONT_16, 0x8410, 0xF7BE);
+
+        // 引脚高亮标签
+        char pin_buf[32];
+        snprintf(pin_buf, sizeof(pin_buf), "TX: GP%u", tx_gpio);
+        ui_draw_string(tile, c3_rect.x + 14, c3_rect.y + 32, pin_buf, FONT_16, 0x0275, 0xF7BE);
+
+        snprintf(pin_buf, sizeof(pin_buf), "RX: GP%u", rx_gpio);
+        ui_draw_string(tile, c3_rect.x + 150, c3_rect.y + 32, pin_buf, FONT_16, 0x03E0, 0xF7BE);
+
+        // 底层引擎状态细则
+        char eng_buf[64];
+        if (data->active_backend == UART_BACKEND_HARDWARE) {
+            snprintf(eng_buf, sizeof(eng_buf), "DMA 引擎: %s (环形 2KB)", (s_uart_dma_channel >= 0) ? "通道启动" : "已释放");
+        } else if (data->selected_pio < PIO_BLOCK_COUNT) {
+            pio_manager_stats_t stats;
+            if (pio_manager_get_stats(pio_manager_get_default(), data->selected_pio, &stats)) {
+                snprintf(eng_buf, sizeof(eng_buf), "PIO%u: 状态机 %u/%u  指令 %u/32", data->selected_pio, stats.used_sm_count, stats.total_sm_count, stats.used_cmd_count);
+            } else {
+                snprintf(eng_buf, sizeof(eng_buf), "PIO 引擎就绪");
+            }
+        } else {
+            snprintf(eng_buf, sizeof(eng_buf), "底层引擎空闲");
         }
-        else {
-            snprintf(
-                text,
-                sizeof(text),
-                "PIO资源状态不可用"
-            );
-        }
+        ui_draw_string(tile, c3_rect.x + 14, c3_rect.y + 58, eng_buf, FONT_16, 0x632C, 0xF7BE);
     }
-    else {
-        snprintf(
-            text,
-            sizeof(text),
-            "PIO尚未分配"
-        );
-    }
-
-    ui_draw_string(
-        tile,
-        x,
-        y + 190,
-        text,
-        FONT_16,
-        value_color,
-        bg_color
-    );
 }
 /* ⚡ 修复：独占弹出层事件处理，彻底消除多下拉框同时打开与穿透点击问题 */
 static bool on_uart_settings_touch_content(bool is_touching, int16_t content_x, int16_t content_y, uint32_t now_tick, void *user_data)
@@ -1717,7 +1585,7 @@ static void uart_enter(app_t *self)
     data->status_scroll.user_data = data;
     data->status_scroll.color_bg = 0xFFFF;
     data->status_scroll.color_scrollbar = 0xA514;
-    data->status_scroll.show_scrollbar = true;
+    data->status_scroll.show_scrollbar = false;
 
     ui_scrollview_init(&data->setting_scroll, 120, 40, 350, 260, SETTINGS_CONTENT_H, on_uart_settings_draw_content);
     data->setting_scroll.user_data = data;

@@ -33,11 +33,19 @@
 #define USB_VID          0x2E8A
 #define PID_DAP_CDC      0xD003  // 默认模式 PID (DAP + 串口，无盘符)
 #define PID_MSC_CDC      0xD004  // U盘模式 PID (U盘 + 串口)
+#define PID_KB_CDC       0xD005  //键盘模式
+
+
 
 typedef enum {
     USB_MODE_DAP_CDC = 0,
-    USB_MODE_MSC_CDC = 1
+    USB_MODE_MSC_CDC = 1,
+    USB_MODE_HID_KM  =2
 } usb_mode_t;
+enum{
+    REPORT_ID_KEYBOARD =1,
+    REPORT_ID_MOUSE    =2
+};
 
 static volatile usb_mode_t s_usb_mode = USB_MODE_DAP_CDC;
 
@@ -59,33 +67,178 @@ static tusb_desc_device_t desc_device = {
     .bNumConfigurations = 0x01
 };
 
+// uint8_t const *tud_descriptor_device_cb(void) {
+//     desc_device.idProduct = (s_usb_mode == USB_MODE_MSC_CDC) ? PID_MSC_CDC : PID_DAP_CDC;
+//     return (uint8_t const *)&desc_device;
+// }
+
+// // 2. HID 报表描述符 (CMSIS-DAP)
+// uint8_t const desc_hid_report[] = {
+//     0x06, 0x00, 0xFF, 0x09, 0x01, 0xA1, 0x01,
+//     0x15, 0x00, 0x26, 0xFF, 0x00, 0x75, 0x08, 0x95, 0x40,
+//     0x09, 0x01, 0x81, 0x02, 0x09, 0x01, 0x91, 0x02, 0xC0
+// };
+
+// uint8_t const *tud_hid_descriptor_report_cb(uint8_t instance) {
+//     (void)instance;
+//     return desc_hid_report;
+// }
+
+// // 3. 配置描述符 A: 默认模式 (HID + CDC，共 3 个接口，无 MSC)
+// #define CONFIG_DAP_CDC_LEN (TUD_CONFIG_DESC_LEN + TUD_HID_INOUT_DESC_LEN + TUD_CDC_DESC_LEN)
+// static uint8_t const desc_dap_cdc_configuration[] = {
+//     TUD_CONFIG_DESCRIPTOR(1, 3, 0, CONFIG_DAP_CDC_LEN, 0x00, 100),
+//     TUD_HID_INOUT_DESCRIPTOR(0, 4, HID_ITF_PROTOCOL_NONE, sizeof(desc_hid_report),
+//                              0x01, 0x81, CFG_TUD_HID_EP_BUFSIZE, 1),
+//     TUD_CDC_DESCRIPTOR(1, 5, 0x82, 8, 0x03, 0x83, CFG_TUD_CDC_EP_BUFSIZE)
+// };
+
+// // 4. 配置描述符 B: U 盘模式 (CDC + MSC，共 3 个接口)
+// #define CONFIG_MSC_CDC_LEN (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + TUD_MSC_DESC_LEN)
+// static uint8_t const desc_msc_cdc_configuration[] = {
+//     TUD_CONFIG_DESCRIPTOR(1, 3, 0, CONFIG_MSC_CDC_LEN, 0x00, 100),
+//     TUD_CDC_DESCRIPTOR(0, 5, 0x82, 8, 0x03, 0x83, CFG_TUD_CDC_EP_BUFSIZE),
+//     TUD_MSC_DESCRIPTOR(2, 6, 0x04, 0x84, 64)
+// };
+
+// uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
+//     (void)index;
+//     if (s_usb_mode == USB_MODE_MSC_CDC) {
+//         return desc_msc_cdc_configuration;
+//     }
+//     return desc_dap_cdc_configuration;
+// }
+
+// // 5. 字符串描述符
+// static char const *string_desc_arr[] = {
+//     (const char[]){0x09, 0x04},
+//     "Raspberry Pi",
+//     "Pico Multi-Tool",
+//     "12345678",
+//     "CMSIS-DAP",
+//     "Pico CDC Serial",
+//     "Pico TF Storage",
+// };
+
+// static uint16_t _desc_str[32];
+// uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
+//     (void)langid;
+//     uint8_t chr_count;
+
+//     if (index == 0) {
+//         memcpy(&_desc_str[1], string_desc_arr[0], 2);
+//         chr_count = 1;
+//     } else {
+//         if (index >= sizeof(string_desc_arr) / sizeof(string_desc_arr[0])) return NULL;
+//         const char *str = string_desc_arr[index];
+//         chr_count = (uint8_t)strlen(str);
+//         if (chr_count > 31) chr_count = 31;
+//         for (uint8_t i = 0; i < chr_count; i++) _desc_str[1 + i] = str[i];
+//     }
+
+//     _desc_str[0] = (uint16_t)((TUSB_DESC_STRING << 8) | (2 * chr_count + 2));
+//     return _desc_str;
+// }
+
+// // 6. 核心模式切换函数 (触发 USB 热重插拔)
+// void usb_switch_mode(uint8_t mode) {
+//     if ((uint8_t)s_usb_mode == mode) return;
+//     tud_disconnect();
+//     sleep_ms(150); // 确保 Windows 完全卸载当前驱动栈
+//     s_usb_mode = (usb_mode_t)mode;
+//     tud_connect();
+// }
+
+// // 7. 回调处理
+// void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
+//                            hid_report_type_t report_type, uint8_t const *buffer, uint16_t bufsize) {
+//     (void)instance; (void)report_id; (void)report_type; (void)bufsize;
+//     if (!g_dap_enabled) return;
+
+//     static uint8_t resp_buf[64];
+//     memset(resp_buf, 0, sizeof(resp_buf));
+//     dap_process_command(buffer, resp_buf);
+//     g_dap_packet_counter++;
+//     tud_hid_report(0, resp_buf, 64);
+// }
+
+// uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id,
+//                                hid_report_type_t report_type, uint8_t *buffer, uint16_t reqlen) {
+//     (void)instance; (void)report_id; (void)report_type; (void)buffer; (void)reqlen;
+//     return 0;
+// }
+
+// void tud_cdc_rx_cb(uint8_t itf) {
+//     (void)itf;
+// }
+
+// uint8_t const desc_hid_km_report[] = {
+//     TUD_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(REPORT_ID_KEYBOARD)),
+//     TUD_HID_REPORT_DESC_MOUSE   (HID_REPORT_ID(REPORT_ID_MOUSE))
+// };
+
+// uint8_t const *tud_hid_descriptor_report_cb(uint8_t instances)
+// {
+//     if (s_usb_mode == USB_MODE_HID_KM) {
+//         return desc_hid_km_report;
+//     }
+//     return desc_hid_report;
+// }
+// #define CONFIG_HID_KM_LEN  (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN)
+
+// static uint8_t const desc_hid_km_configuration[] = {
+//     TUD_CONFIG_DESCRIPTOR(1, 1, 0, CONFIG_HID_KM_LEN, 0x00, 100),
+//     TUD_HID_DESCRIPTOR(0, 0, HID_ITF_PROTOCOL_NONE, sizeof(desc_hid_km_report),0x81, 16, 8)
+// };
+
+// uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
+//     (void)index;
+//     if (s_usb_mode == USB_MODE_MSC_CDC) return desc_msc_cdc_configuration;
+//     if (s_usb_mode == USB_MODE_HID_KM)  return desc_hid_km_configuration;
+//     return desc_dap_cdc_configuration;
+// }
+
+// 1. 设备描述符回调 (⚡ 补全三模 PID 自动切换)
 uint8_t const *tud_descriptor_device_cb(void) {
-    desc_device.idProduct = (s_usb_mode == USB_MODE_MSC_CDC) ? PID_MSC_CDC : PID_DAP_CDC;
+    if (s_usb_mode == USB_MODE_MSC_CDC) {
+        desc_device.idProduct = PID_MSC_CDC;
+    } else if (s_usb_mode == USB_MODE_HID_KM) {
+        desc_device.idProduct = PID_KB_CDC; // 0xD005
+    } else {
+        desc_device.idProduct = PID_DAP_CDC; // 0xD003
+    }
     return (uint8_t const *)&desc_device;
 }
 
-// 2. HID 报表描述符 (CMSIS-DAP)
-uint8_t const desc_hid_report[] = {
+// 2. HID 报表描述符 (A: CMSIS-DAP / B: 键鼠复合)
+uint8_t const desc_hid_dap_report[] = {
     0x06, 0x00, 0xFF, 0x09, 0x01, 0xA1, 0x01,
     0x15, 0x00, 0x26, 0xFF, 0x00, 0x75, 0x08, 0x95, 0x40,
     0x09, 0x01, 0x81, 0x02, 0x09, 0x01, 0x91, 0x02, 0xC0
 };
 
+uint8_t const desc_hid_km_report[] = {
+    TUD_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(REPORT_ID_KEYBOARD)),
+    TUD_HID_REPORT_DESC_MOUSE   (HID_REPORT_ID(REPORT_ID_MOUSE))
+};
+
 uint8_t const *tud_hid_descriptor_report_cb(uint8_t instance) {
     (void)instance;
-    return desc_hid_report;
+    if (s_usb_mode == USB_MODE_HID_KM) {
+        return desc_hid_km_report;
+    }
+    return desc_hid_dap_report;
 }
 
-// 3. 配置描述符 A: 默认模式 (HID + CDC，共 3 个接口，无 MSC)
+// 3. 配置描述符 (模式 A: DAP+CDC / 模式 B: MSC+CDC / 模式 C: 键鼠复合)
 #define CONFIG_DAP_CDC_LEN (TUD_CONFIG_DESC_LEN + TUD_HID_INOUT_DESC_LEN + TUD_CDC_DESC_LEN)
 static uint8_t const desc_dap_cdc_configuration[] = {
     TUD_CONFIG_DESCRIPTOR(1, 3, 0, CONFIG_DAP_CDC_LEN, 0x00, 100),
-    TUD_HID_INOUT_DESCRIPTOR(0, 4, HID_ITF_PROTOCOL_NONE, sizeof(desc_hid_report),
+    TUD_HID_INOUT_DESCRIPTOR(0, 4, HID_ITF_PROTOCOL_NONE, sizeof(desc_hid_dap_report),
                              0x01, 0x81, CFG_TUD_HID_EP_BUFSIZE, 1),
     TUD_CDC_DESCRIPTOR(1, 5, 0x82, 8, 0x03, 0x83, CFG_TUD_CDC_EP_BUFSIZE)
 };
 
-// 4. 配置描述符 B: U 盘模式 (CDC + MSC，共 3 个接口)
 #define CONFIG_MSC_CDC_LEN (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + TUD_MSC_DESC_LEN)
 static uint8_t const desc_msc_cdc_configuration[] = {
     TUD_CONFIG_DESCRIPTOR(1, 3, 0, CONFIG_MSC_CDC_LEN, 0x00, 100),
@@ -93,15 +246,20 @@ static uint8_t const desc_msc_cdc_configuration[] = {
     TUD_MSC_DESCRIPTOR(2, 6, 0x04, 0x84, 64)
 };
 
+#define CONFIG_HID_KM_LEN  (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN)
+static uint8_t const desc_hid_km_configuration[] = {
+    TUD_CONFIG_DESCRIPTOR(1, 1, 0, CONFIG_HID_KM_LEN, 0x00, 100),
+    TUD_HID_DESCRIPTOR(0, 7, HID_ITF_PROTOCOL_NONE, sizeof(desc_hid_km_report), 0x81, 16, 8)
+};
+
 uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
     (void)index;
-    if (s_usb_mode == USB_MODE_MSC_CDC) {
-        return desc_msc_cdc_configuration;
-    }
+    if (s_usb_mode == USB_MODE_MSC_CDC) return desc_msc_cdc_configuration;
+    if (s_usb_mode == USB_MODE_HID_KM)  return desc_hid_km_configuration;
     return desc_dap_cdc_configuration;
 }
 
-// 5. 字符串描述符
+// 4. 字符串描述符
 static char const *string_desc_arr[] = {
     (const char[]){0x09, 0x04},
     "Raspberry Pi",
@@ -110,6 +268,7 @@ static char const *string_desc_arr[] = {
     "CMSIS-DAP",
     "Pico CDC Serial",
     "Pico TF Storage",
+    "Pico HID KM",
 };
 
 static uint16_t _desc_str[32];
@@ -132,20 +291,22 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
     return _desc_str;
 }
 
-// 6. 核心模式切换函数 (触发 USB 热重插拔)
+// 5. 核心模式切换函数 (触发 USB 热重插拔)
 void usb_switch_mode(uint8_t mode) {
     if ((uint8_t)s_usb_mode == mode) return;
     tud_disconnect();
-    sleep_ms(150); // 确保 Windows 完全卸载当前驱动栈
+    sleep_ms(150); // 确保 Windows/Linux 完全卸载驱动栈
     s_usb_mode = (usb_mode_t)mode;
     tud_connect();
 }
 
-// 7. 回调处理
+// 6. 回调处理
 void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
                            hid_report_type_t report_type, uint8_t const *buffer, uint16_t bufsize) {
     (void)instance; (void)report_id; (void)report_type; (void)bufsize;
-    if (!g_dap_enabled) return;
+    
+    // ⚡ 仅在 DAP 模式下才分发仿真器指令
+    if (s_usb_mode != USB_MODE_DAP_CDC || !g_dap_enabled) return;
 
     static uint8_t resp_buf[64];
     memset(resp_buf, 0, sizeof(resp_buf));

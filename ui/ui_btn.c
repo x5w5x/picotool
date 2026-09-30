@@ -190,7 +190,7 @@ void ui_btn_draw(ui_tile_t *tile, const ui_btn_t *btn) {
         ui_draw_fill_circle(tile, right_cx, cy, r, current_bg);
 
         if (btn->rect.w > btn->rect.h) {
-            ui_rect_t mid_rect = ui_rect_make(left_cx, btn->rect.y, (int16_t)(btn->rect.w - 2 * r), btn->rect.h);
+            ui_rect_t mid_rect = ui_rect_make(left_cx, btn->rect.y, (int16_t)(btn->rect.w - 2 * r), btn->rect.h+1);
             ui_rect_t mid_ov;
             if (ui_rect_intersect(&tile->rect, &mid_rect, &mid_ov)) {
                 ui_draw_fill_rect(tile, &mid_ov, current_bg);

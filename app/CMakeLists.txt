@@ -10,6 +10,7 @@ cmake_minimum_required(VERSION 3.13)
 add_library(appmgr STATIC
     app_uart.c
     app_dap.c
+    app_hid_km.c
     ui_pin_config.c
     app_manager.c
     app_led.c
