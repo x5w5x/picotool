@@ -48,6 +48,7 @@
 #include "app_uart.h"
 #include "app_dap.h"
 #include "app_hid_km.h"
+#include "app_esp.h"
 
 #define LED_PIN PICO_DEFAULT_LED_PIN
 #define CHIP_TEMP_OFFSET_C 13.0f
@@ -161,7 +162,7 @@ void app_ui_custom_init(void)
   
   
  
- 
+    app_manager_register(&g_app_mgr, app_esp_get_instance());
     app_manager_register(&g_app_mgr, app_uart_get_instance());
     app_manager_register(&g_app_mgr, app_dap_get_instance());
     app_manager_register(&g_app_mgr, app_hid_km_get_instance());

@@ -17,7 +17,6 @@
 #include "pico/stdlib.h"
 #include <string.h>
 #include "fun_uart.h"
-#include "fun_uart_profile.h"
 #include "fun_pio_uart.h"
 #include "pin_manager.h"
 #include "pio/pio_manager.h"
@@ -182,7 +181,15 @@ static bool s_uart_profile_ready = false;
 
 static void uart_start_dma(uart_data_t *data);
 static void uart_stop_dma(void);
-
+const fun_uart_profile_t *app_uart_get_profile(void)
+{
+    // 如果尚未初始化，先装载系统默认配置
+    if (!s_uart_profile_ready || !fun_uart_profile_is_valid(&s_uart_profile)) {
+        fun_uart_profile_set_defaults(&s_uart_profile);
+        s_uart_profile_ready = true;
+    }
+    return &s_uart_profile;
+}
 static void utf8_to_gbk_string(const char *utf8, char *gbk_out, size_t max_out_len)
 {
     if (!utf8 || !gbk_out || max_out_len == 0) return;

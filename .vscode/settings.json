@@ -72,7 +72,8 @@
         "fun_swd_config.h": "c",
         "ui_toast.h": "c",
         "sym_loader.h": "c",
-        "time.h": "c"
+        "time.h": "c",
+        "fun_uart_profile.h": "c"
     },
     "idf.currentSetup": "D:/espidf/Espressif/frameworks/esp-idf-v5.3.1/"
 }
