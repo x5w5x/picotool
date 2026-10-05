@@ -2808,6 +2808,7 @@ ui_terminal_init(&data->rtt_terminal, RTT_TERM_X, RTT_TERM_Y, RTT_TERM_W, RTT_TE
 
     // 键盘初始化挂接统一回调
     ui_keyboard_init(&data->kb, on_dap_kb_submit);
+    ui_input_bind_btn(&data->input, &data->rtt_send);
     data->kb.user_data = data;
 
     data->rtt_found = false;

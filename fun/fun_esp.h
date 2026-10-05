@@ -1,16 +1,17 @@
 /*
  * @Author: 轩
  * @Date: 2026-09-07 12:43:27
- * @LastEditTime: 2026-09-07 13:08:09
+ * @LastEditTime: 2026-10-05 15:46:07
  * @FilePath: \pico\fun\fun_esp.h
  */
 #ifndef FUN_ESP
 #define FUN_ESP
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-
 #include "hardware/uart.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -19,11 +20,18 @@ extern "C" {
 #define ESP_RX 1
 #define ESP_UART uart0
 #define ESP_BAUD 921600
-bool fun_esp_init();
-bool esp_readable();
-size_t esp_read(uint8_t *data,size_t len);
+
+bool fun_esp_init(void);
+bool esp_readable(void);
+size_t esp_read(uint8_t *data, size_t len);
 size_t esp_send_string(const char *text);
+
+// ⚡ 硬件中断驱动的高速键盘协议接口
+extern volatile bool g_kb_has_frame;
+bool esp_pop_keyboard_line(char *out, size_t max_len);
+
 #ifdef __cplusplus
 }
 #endif
+
 #endif // !FUN_ESP

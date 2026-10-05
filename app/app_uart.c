@@ -1640,6 +1640,7 @@ static void on_uart_settings_draw_content(ui_tile_t *tile, const ui_rect_t *view
         data->rx_pin_config.rect
     );
     ui_pin_config_draw(tile, &rx_pin_config);
+    ui_input_bind_btn(&data->input_cmd, &data->btn_send);
 }
 
 static void uarttool_init(app_t *self)

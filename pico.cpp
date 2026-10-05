@@ -30,7 +30,7 @@
 #include "ui_picture.h"
 #include "ui_btn.h"
 #include "dog_data.h"
- 
+ #include "ui_input.h"
 // App 管理与独立应用模块
 #include "app_manager.h"
 #include "app_led.h"
@@ -290,7 +290,30 @@ static void render_custom_scene(ui_tile_t *tile)
     // ---------------- 图层 3: 顶部常驻状态栏 (最顶层保护) ----------------
     ui_status_bar_draw(tile, &g_status_bar);
 }
+static void sys_process_keyboard_line(const char *line)
+{
+    if (strncmp(line, "#KB:D,", 6) != 0) return;
 
+    int ascii = 0;
+    unsigned int hid_code = 0, mod = 0;
+    if (sscanf(line, "#KB:D,%d,0x%x,0x%x", &ascii, &hid_code, &mod) >= 2) {
+        // 尝试注入当前焦点输入框
+        if (ui_input_inject_key(ascii, (uint8_t)hid_code)) {
+            if (g_focused_input) {
+                LCD_WaitDMA();
+                // ? 关键修复：如果是按了 Enter 回车，刷新整个 App 内容区（终端+输入框）；普通打字只刷输入框
+                if (ascii == '\n' || hid_code == 0x28) {
+                    ui_rect_t body = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
+                    ui_render_dirty_clipped(&body, render_custom_scene);
+                } else {
+                    ui_rect_t r = g_focused_input->rect;
+                    ui_render_dirty_clipped(&r, render_custom_scene);
+                }
+            }
+            return;
+        }
+    }
+}
 /* ================= 5. 裸机主入口与事件循环 ================= */
 int main(void)
 {
@@ -354,7 +377,10 @@ esp_send_string("#PWM:204\r\n"); //80%亮度
     {
         uint64_t loop_start_us = time_us_64();
         uint32_t now = to_ms_since_boot(get_absolute_time());
-
+        char kb_line[48];
+        while (esp_pop_keyboard_line(kb_line, sizeof(kb_line))) {
+            sys_process_keyboard_line(kb_line);
+        }
         // ================= A. 秒级状态栏遥测推流 =================
         if (now - last_sec_tick >= 1000)
         {

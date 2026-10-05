@@ -5,6 +5,70 @@
 
 #define TOUCH_SLOP_PX   8 // 8 像素滑动防抖死区
 
+// 全局焦点指针定义
+ui_input_t *g_focused_input = NULL;
+
+void ui_input_set_focus(ui_input_t *input) {
+    if (g_focused_input && g_focused_input != input) {
+        g_focused_input->is_focused = false;
+    }
+    g_focused_input = input;
+    if (input) {
+        input->is_focused = true;
+    }
+}
+
+void ui_input_clear_focus(void) {
+    if (g_focused_input) {
+        g_focused_input->is_focused = false;
+        g_focused_input = NULL;
+    }
+}
+
+void ui_input_bind_btn(ui_input_t *input, ui_btn_t *btn) {
+    if (input) {
+        input->submit_btn = btn;
+    }
+}
+
+bool ui_input_inject_key(int ascii, uint8_t hid_code) {
+    if (!g_focused_input) return false;
+
+    // 1. 退格键 Backspace (ASCII '\b' 或 HID 0x2A)
+    if (ascii == '\b' || hid_code == 0x2A) {
+        size_t len = strlen(g_focused_input->text);
+        if (len > 0) {
+            g_focused_input->text[len - 1] = '\0';
+            g_focused_input->cursor_pos = (uint8_t)(len - 1);
+        }
+        return true;
+    }
+
+    // 2. 回车键 Enter (ASCII '\n' 或 HID 0x28)：自动触发绑定的按钮点击
+    if (ascii == '\n' || hid_code == 0x28) {
+        if (g_focused_input->submit_btn && g_focused_input->submit_btn->on_click) {
+            g_focused_input->submit_btn->on_click(
+                g_focused_input->submit_btn, 
+                g_focused_input->submit_btn->user_data
+            );
+        }
+        return true;
+    }
+
+    // 3. 可见字符输入 (ASCII 32 ~ 126: 字母、数字、标点、空格)
+    if (ascii >= 32 && ascii <= 126) {
+        size_t len = strlen(g_focused_input->text);
+        if (len + 1 < UI_INPUT_MAX_LEN) {
+            g_focused_input->text[len] = (char)ascii;
+            g_focused_input->text[len + 1] = '\0';
+            g_focused_input->cursor_pos = (uint8_t)(len + 1);
+        }
+        return true;
+    }
+
+    return false;
+}
+
 void ui_input_init(ui_input_t *input, int16_t x, int16_t y, int16_t w, int16_t h, 
                    const char *placeholder, ui_input_cb_t on_focus) {
     if (!input) return;
@@ -27,6 +91,7 @@ void ui_input_init(ui_input_t *input, int16_t x, int16_t y, int16_t w, int16_t h
     input->is_dragged    = false;
 
     input->on_focus   = on_focus;
+    input->submit_btn = NULL;
     input->user_data  = NULL;
 }
 
@@ -71,13 +136,13 @@ bool ui_input_process_touch(ui_input_t *input, bool is_touching, int16_t tx, int
         }
         return false;
     } else {
-        // C. ⚡ 手指松开 (Touch Up): 唯一允许触发聚焦与呼出键盘的时机
+        // C. 手指松开 (Touch Up): 唯一允许触发聚焦与呼出键盘的时机
         if (input->is_touch_down) {
             input->is_touch_down = false;
 
             // 只有未发生滑动的纯点按，且松开点仍在输入框内才触发聚焦
             if (!input->is_dragged && ui_rect_contains_point(&input->rect, tx, ty)) {
-                input->is_focused = true;
+                ui_input_set_focus(input);
                 if (input->on_focus) {
                     input->on_focus(input, input->user_data);
                 }

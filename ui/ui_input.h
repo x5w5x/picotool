@@ -6,6 +6,7 @@
 #include "ui_geometry.h"
 #include "ui_tile.h"
 #include "chinese.h"
+#include "ui_btn.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,13 +31,14 @@ struct ui_input {
     uint16_t        color_text;
     uint16_t        color_placeholder;
 
-    // ⚡ 触控手势防抖与防误触状态机
+    // 触控手势防抖与防误触状态机
     int16_t         down_x;
     int16_t         down_y;
     bool            is_touch_down;
     bool            is_dragged;                 // 是否已识别为滑动手势 (位移 > 8px)
 
     ui_input_cb_t   on_focus;                   // 点击聚焦回调 (用于呼出键盘)
+    ui_btn_t       *submit_btn;                 // 绑定的触发按钮 (如 btn_send / rtt_send)
     void           *user_data;
 };
 
@@ -50,6 +52,13 @@ bool ui_input_process_touch(ui_input_t *input, bool is_touching, int16_t tx, int
 
 // 切片光栅化渲染 (受全局视口裁剪保护)
 void ui_input_draw(ui_tile_t *tile, const ui_input_t *input);
+
+// ================= [ 全局焦点与物理键盘绑定接口 ] =================
+extern ui_input_t *g_focused_input;
+void ui_input_set_focus(ui_input_t *input);
+void ui_input_clear_focus(void);
+void ui_input_bind_btn(ui_input_t *input, ui_btn_t *btn);
+bool ui_input_inject_key(int ascii, uint8_t hid_code);
 
 #ifdef __cplusplus
 }

@@ -534,7 +534,99 @@ static void on_keyboard_submit(ui_keyboard_t *kb, const char *text, void *user_d
         data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
     }
 }
+/* ============================================================================
+ * 蓝牙键盘事件解析与动作分发
+ * ============================================================================ */
+static void esp_handle_keyboard_line(esp_app_data_t *data, const char *line)
+{
+    if (!data || !line) return;
 
+    // 1. 按键全部释放
+    if (strncmp(line, "#KB:U", 5) == 0) {
+        return;
+    }
+
+    // 2. 连接与断开状态通知
+    if (strstr(line, "#KB:CONN_OK")) {
+        ui_toast_show(&data->toast, "蓝牙键盘已就绪", UI_TOAST_SUCCESS, to_ms_since_boot(get_absolute_time()));
+        return;
+    }
+    if (strstr(line, "#KB:DISCONN")) {
+        ui_toast_show(&data->toast, "蓝牙键盘已断开", UI_TOAST_WARN, to_ms_since_boot(get_absolute_time()));
+        return;
+    }
+
+    // 3. 按键按下事件: #KB:D,<ascii>,<hid_code>,<mod>
+    int ascii = 0;
+    unsigned int hid_code = 0, mod = 0;
+    if (sscanf(line, "#KB:D,%d,0x%x,0x%x", &ascii, &hid_code, &mod) >= 2) {
+        // 当前焦点输入框：若 Wi-Fi 密码弹窗打开则操作密码框，否则操作终端指令框
+        ui_input_t *target_input = (data->connect_modal_open) ? &data->input_wifi_pass : &data->input_cmd;
+
+        // 【回车键 Enter】-> 触发发送命令或确认连接
+        if (ascii == '\n' || hid_code == 0x28) {
+            if (data->connect_modal_open) {
+                on_do_connect_click(&data->btn_do_connect, data);
+            } else if (data->tabview.active_tab_idx == 1) {
+                on_btn_send_click(&data->btn_send, data);
+            }
+            return;
+        }
+
+        // 【退格键 Backspace】-> 删除最后一个字符
+        if (ascii == '\b' || hid_code == 0x2A) {
+            size_t len = strlen(target_input->text);
+            if (len > 0) {
+                target_input->text[len - 1] = '\0';
+                data->dirty_rect = rect_union_box(data->dirty_rect, target_input->rect);
+            }
+            return;
+        }
+
+        // 【ESC 键】-> 关闭连接弹窗或软键盘
+        if (hid_code == 0x29) {
+            if (data->connect_modal_open) {
+                on_cancel_connect_click(&data->btn_cancel_connect, data);
+            }
+            if (data->keyboard.is_open) {
+                ui_keyboard_close(&data->keyboard);
+                data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
+            }
+            return;
+        }
+
+        // 【方向键 LEFT / RIGHT】-> 无弹窗时直接横向切换 Tab 页面
+        if (hid_code == 0x50 && !data->connect_modal_open) { // 方向左键
+            if (data->tabview.active_tab_idx > 0) {
+                data->tabview.active_tab_idx--;
+                data->last_tab_idx = data->tabview.active_tab_idx;
+                if (data->keyboard.is_open) ui_keyboard_close(&data->keyboard);
+                data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
+            }
+            return;
+        }
+        if (hid_code == 0x4F && !data->connect_modal_open) { // 方向右键
+            if (data->tabview.active_tab_idx < ESP_TAB_COUNT - 1) {
+                data->tabview.active_tab_idx++;
+                data->last_tab_idx = data->tabview.active_tab_idx;
+                if (data->keyboard.is_open) ui_keyboard_close(&data->keyboard);
+                data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
+            }
+            return;
+        }
+
+        // 【可见字符打字】ASCII 32~126: a-z, A-Z, 0-9, 符号, 空格
+        if (ascii >= 32 && ascii <= 126) {
+            size_t len = strlen(target_input->text);
+            if (len + 1 < sizeof(target_input->text)) {
+                target_input->text[len] = (char)ascii;
+                target_input->text[len + 1] = '\0';
+                data->dirty_rect = rect_union_box(data->dirty_rect, target_input->rect);
+            }
+            return;
+        }
+    }
+}
 static void draw_status_page(ui_tile_t *tile, const esp_app_data_t *data)
 {
     ui_rect_t ov;
@@ -654,7 +746,8 @@ static void app_esp_enter(app_t *self)
 
     ui_keyboard_init(&data->keyboard, on_keyboard_submit);
     data->keyboard.user_data = data;
-
+    ui_input_bind_btn(&data->input_cmd, &data->btn_send);
+    ui_input_bind_btn(&data->input_wifi_pass, &data->btn_do_connect);
     // 6. Tab 2: 状态展示
     data->status_card = ui_rect_make(130, 48, 330, 220);
     ui_toast_init(&data->toast);
@@ -689,10 +782,14 @@ static void app_esp_update(app_t *self, uint32_t now_tick)
     bool has_new = false;
     while (data->tail != data->head) {
         esp_msg_t *msg = &data->queue[data->tail];
-        ui_terminal_write_line(&data->terminal, msg->text, msg->color);
-        esp_sniff_protocol_line(data, msg->text);
+        if (strncmp(msg->text, "#KB:", 4) == 0) {
+            esp_handle_keyboard_line(data, msg->text);
+        } else {
+            ui_terminal_write_line(&data->terminal, msg->text, msg->color);
+            esp_sniff_protocol_line(data, msg->text);
+            has_new = true;
+        }
         data->tail = (uint8_t)((data->tail + 1) % ESP_QUEUE_SIZE);
-        has_new = true;
     }
     if (has_new && data->tabview.active_tab_idx == 1) {
         data->dirty_rect = rect_union_box(data->dirty_rect, data->terminal.rect);
