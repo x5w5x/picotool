@@ -31,6 +31,7 @@ add_library(appmgr STATIC
     app_audio.c
     app_loader.c
     app_settings.c
+    app_script.c
 )
 
 target_include_directories(appmgr PUBLIC

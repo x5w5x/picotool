@@ -9,6 +9,7 @@ add_library(fun STATIC
     fun_pio_swd.c
     thumb_disasm.c
     sym_loader.c
+    fun_script_engine.c
     
 )
 
