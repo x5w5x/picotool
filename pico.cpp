@@ -50,6 +50,7 @@
 #include "app_hid_km.h"
 #include "app_esp.h"
 #include "app_script.h"
+#include "app_ir.h"
 #define LED_PIN PICO_DEFAULT_LED_PIN
 #define CHIP_TEMP_OFFSET_C 13.0f
 
@@ -160,7 +161,7 @@ void app_ui_custom_init(void)
     // 3. 初始化顶部状态栏 (X:0, Y:0, W:480, H:32)
 
   
-  
+    app_manager_register(&g_app_mgr, app_ir_get_instance());
     app_manager_register(&g_app_mgr, app_script_get_instance());
     app_manager_register(&g_app_mgr, app_esp_get_instance());
     app_manager_register(&g_app_mgr, app_uart_get_instance());
@@ -294,24 +295,30 @@ static void sys_process_keyboard_line(const char *line)
 {
     if (strncmp(line, "#KB:D,", 6) != 0) return;
 
-    int ascii = 0;
-    unsigned int hid_code = 0, mod = 0;
-    if (sscanf(line, "#KB:D,%d,0x%x,0x%x", &ascii, &hid_code, &mod) >= 2) {
-        // 尝试注入当前焦点输入框
-        if (ui_input_inject_key(ascii, (uint8_t)hid_code)) {
-            if (g_focused_input) {
-                LCD_WaitDMA();
-                // ? 关键修复：如果是按了 Enter 回车，刷新整个 App 内容区（终端+输入框）；普通打字只刷输入框
-                if (ascii == '\n' || hid_code == 0x28) {
-                    ui_rect_t body = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
-                    ui_render_dirty_clipped(&body, render_custom_scene);
-                } else {
-                    ui_rect_t r = g_focused_input->rect;
-                    ui_render_dirty_clipped(&r, render_custom_scene);
-                }
+    // ? 彻底移除 sscanf，直接切断 Newlib 全家桶依赖链
+    const char *p = line + 6;
+    char *endp = NULL;
+    
+    int ascii = (int)strtol(p, &endp, 10);
+    if (!endp || *endp != ',') return;
+    
+    p = endp + 1;
+    unsigned int hid_code = (unsigned int)strtoul(p, &endp, 0); // 0 自动解析十进制或 0x 十六进制
+    if (!endp) return;
+
+    // 尝试注入当前焦点输入框
+    if (ui_input_inject_key(ascii, (uint8_t)hid_code)) {
+        if (g_focused_input) {
+            LCD_WaitDMA();
+            if (ascii == '\n' || hid_code == 0x28) {
+                ui_rect_t body = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
+                ui_render_dirty_clipped(&body, render_custom_scene);
+            } else {
+                ui_rect_t r = g_focused_input->rect;
+                ui_render_dirty_clipped(&r, render_custom_scene);
             }
-            return;
         }
+        return;
     }
 }
 /* ================= 5. 裸机主入口与事件循环 ================= */

@@ -9,7 +9,7 @@
 #include "ui_slider.h"
 #include "lcd.h"
 #include "chinese.h"
-
+#include <stdlib.h>
 #include "pico/stdlib.h"
 #include "pico/unique_id.h"
 #include "hardware/clocks.h"
@@ -105,26 +105,41 @@ static inline ui_rect_t rect_union_box(ui_rect_t a, ui_rect_t b)
     int16_t y2 = ((a.y + a.h) > (b.y + b.h)) ? (a.y + a.h) : (b.y + b.h);
     return ui_rect_make(x1, y1, x2 - x1, y2 - y1);
 }
-
 static void format_build_date(char *out, size_t out_size)
 {
     static const char *months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
-    char month[4] = {0};
-    int day = 0, year = 0, month_idx = 0;
-    if (sscanf(FW_BUILD_DATE, "%3s %d %d", month, &day, &year) == 3)
-    {
-        for (int i = 0; i < 12; ++i)
-            if (strcmp(month, months[i]) == 0)
-            {
-                month_idx = i + 1;
-                break;
-            }
+    if (!out || out_size == 0) return;
+
+    const char *p = FW_BUILD_DATE;
+    while (*p == ' ') p++; // 跳过前导空格
+
+    int month_idx = 0;
+    // 匹配前 3 个字符对应的月份
+    for (int i = 0; i < 12; ++i) {
+        if (strncmp(p, months[i], 3) == 0) {
+            month_idx = i + 1;
+            break;
+        }
     }
-    if (month_idx)
-        snprintf(out, out_size, "%04d年%02d月%02d日", year, month_idx, day);
-    else
-        snprintf(out, out_size, "%s", FW_BUILD_DATE);
+
+    if (month_idx > 0) {
+        p += 3; // 跳过月份缩写
+        char *endp = NULL;
+        // strtol 会自动跳过中间所有空格 (完美兼容 "Oct  7 2026" 和 "Oct 17 2026")
+        int day = (int)strtol(p, &endp, 10);
+        if (endp && endp != p) {
+            p = endp;
+            int year = (int)strtol(p, &endp, 10);
+            if (endp && endp != p && year > 0) {
+                snprintf(out, out_size, "%04d年%02d月%02d日", year, month_idx, day);
+                return;
+            }
+        }
+    }
+
+    // 解析失败退化输出原始宏字符串
+    snprintf(out, out_size, "%s", FW_BUILD_DATE);
 }
 
 /* =========================================================================

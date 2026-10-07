@@ -4,80 +4,39 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/* ================= 1. 基础硬件与控制原语 ================= */
+// 由 GNU ld 链接器根据 section("script_prims") 自动生成的边界符号
+extern const script_prim_entry_t __start_script_prims[];
+extern const script_prim_entry_t __stop_script_prims[];
 
-static int32_t prim_delay(script_vm_t *vm, int argc, const char *argv[]) {
-    if (argc < 2) return -1;
-    uint32_t ms = (uint32_t)strtoul(argv[1], NULL, 0);
-    while (ms > 0 && !vm->abort_req) {
-        uint32_t step = (ms > 10) ? 10 : ms;
-        sleep_ms(step);
-        ms -= step;
-    }
-    return 0;
-}
+/* ================= 1. 动态段原语查找器 ================= */
 
-// ⚡ 修复 1：输出时动态解析 $0~$7 与 $? 变量值
-static int32_t prim_print(script_vm_t *vm, int argc, const char *argv[]) {
-    if (argc < 2 || !vm->log_cb) return 0;
-    char buf[128] = {0};
-    for (int i = 1; i < argc; i++) {
-        const char *val_str = argv[i];
-        char num_buf[16];
-
-        if (argv[i][0] == '$') {
-            if (argv[i][1] >= '0' && argv[i][1] <= '7') {
-                snprintf(num_buf, sizeof(num_buf), "%ld", (long)vm->regs[argv[i][1] - '0']);
-                val_str = num_buf;
-            } else if (argv[i][1] == '?') {
-                snprintf(num_buf, sizeof(num_buf), "%ld", (long)vm->last_ret);
-                val_str = num_buf;
-            }
+static const script_prim_entry_t *find_primitive(const char *name) {
+    if (!name) return NULL;
+    const script_prim_entry_t *p = __start_script_prims;
+    while (p < __stop_script_prims) {
+        if (p->name && strcmp(p->name, name) == 0) {
+            return p;
         }
-
-        strncat(buf, val_str, sizeof(buf) - strlen(buf) - 2);
-        if (i < argc - 1) strncat(buf, " ", sizeof(buf) - strlen(buf) - 1);
+        p++;
     }
-    vm->log_cb(buf, 0xFFFF, vm->user_data);
-    return 0;
+    return NULL;
 }
 
-static int32_t prim_pin_mode(script_vm_t *vm, int argc, const char *argv[]) {
-    (void)vm;
-    if (argc < 3) return -1;
-    uint pin = (uint)strtoul(argv[1], NULL, 0);
-    bool is_out = (strcmp(argv[2], "out") == 0 || strcmp(argv[2], "OUT") == 0);
-    gpio_init(pin);
-    gpio_set_dir(pin, is_out ? GPIO_OUT : GPIO_IN);
-    return 0;
+void script_vm_print_help(script_vm_t *vm) {
+    if (!vm || !vm->log_cb) return;
+    vm->log_cb("=== 固件支持的原语指令 ===", 0x03DF, vm->user_data);
+    const script_prim_entry_t *p = __start_script_prims;
+    while (p < __stop_script_prims) {
+        if (p->name) {
+            char buf[64];
+            snprintf(buf, sizeof(buf), " %-12s - %s", p->name, p->help ? p->help : "");
+            vm->log_cb(buf, 0xDEFB, vm->user_data);
+        }
+        p++;
+    }
 }
 
-static int32_t prim_pin_write(script_vm_t *vm, int argc, const char *argv[]) {
-    (void)vm;
-    if (argc < 3) return -1;
-    uint pin = (uint)strtoul(argv[1], NULL, 0);
-    uint val = (uint)strtoul(argv[2], NULL, 0);
-    gpio_put(pin, val != 0);
-    return 0;
-}
-
-static int32_t prim_pin_read(script_vm_t *vm, int argc, const char *argv[]) {
-    (void)vm;
-    if (argc < 2) return -1;
-    uint pin = (uint)strtoul(argv[1], NULL, 0);
-    return gpio_get(pin) ? 1 : 0;
-}
-
-static const script_primitive_t k_primitives[] = {
-    { "delay",      prim_delay },
-    { "print",      prim_print },
-    { "pin.mode",   prim_pin_mode },
-    { "pin.write",  prim_pin_write },
-    { "pin.read",   prim_pin_read },
-};
-#define PRIMITIVE_COUNT (sizeof(k_primitives) / sizeof(k_primitives[0]))
-
-/* ================= 2. 词法切分与数值解析 ================= */
+/* ================= 2. 词法分词与变量解析 ================= */
 
 static int32_t resolve_val(script_vm_t *vm, const char *tok) {
     if (tok[0] == '$') {
@@ -97,11 +56,11 @@ static int tokenize_line(char *line, char *argv[], int max_args) {
         if (*p == '"') {
             p++;
             argv[argc++] = p;
-            while (*p && *p != '"') p++;
+            while (*p && *p != '"' && *p != '\r' && *p != '\n') p++;
             if (*p == '"') *p++ = '\0';
         } else {
             argv[argc++] = p;
-            while (*p && *p != ' ' && *p != '\t' && *p != ',' && *p != '#') p++;
+            while (*p && *p != ' ' && *p != '\t' && *p != ',' && *p != '#' && *p != '\r' && *p != '\n') p++;
             if (*p) *p++ = '\0';
         }
     }
@@ -130,6 +89,7 @@ static void prescan_labels(script_vm_t *vm) {
             name[idx] = '\0';
             if (vm->label_count < SCRIPT_MAX_LABELS) {
                 strncpy(vm->labels[vm->label_count].name, name, 15);
+                vm->labels[vm->label_count].name[15] = '\0';
                 vm->labels[vm->label_count].char_offset = line_start;
                 vm->label_count++;
             }
@@ -154,18 +114,21 @@ static void jump_to_label(script_vm_t *vm, const char *label) {
     vm->abort_req = true;
 }
 
-/* ================= 4. 解释器运行主入口 ================= */
+/* ================= 4. 虚拟机运行与单行 REPL 交互 ================= */
 
 void script_vm_init(script_vm_t *vm) {
+    if (!vm) return;
     memset(vm, 0, sizeof(*vm));
 }
 
 void script_vm_set_log(script_vm_t *vm, void (*log_cb)(const char*, uint16_t, void*), void *user_data) {
+    if (!vm) return;
     vm->log_cb = log_cb;
     vm->user_data = user_data;
 }
 
 void script_vm_load(script_vm_t *vm, const char *script_text) {
+    if (!vm) return;
     vm->src = script_text;
     vm->pc = 0;
     vm->abort_req = false;
@@ -177,7 +140,95 @@ void script_vm_load(script_vm_t *vm, const char *script_text) {
 }
 
 void script_vm_abort(script_vm_t *vm) {
-    vm->abort_req = true;
+    if (vm) vm->abort_req = true;
+}
+
+// ⚡ 单行执行核心 (供多行解释器和终端 REPL 共同调用)
+int32_t script_vm_exec_line(script_vm_t *vm, char *line, char *out_msg, size_t out_len) {
+    static script_vm_t s_default_repl_vm;
+    if (!vm) {
+        vm = &s_default_repl_vm;
+    }
+
+    char *argv[SCRIPT_MAX_ARGS];
+    int argc = tokenize_line(line, argv, SCRIPT_MAX_ARGS);
+    if (argc == 0 || argv[0][0] == ':') return 0;
+
+    // 1. 变量赋值与运算分支: $0 = ...
+    if (argv[0][0] == '$' && argc >= 3 && strcmp(argv[1], "=") == 0) {
+        uint8_t r_idx = argv[0][1] - '0';
+        if (r_idx < 8) {
+            if (argc == 5) {
+                // $0 = $0 - 1
+                int32_t a = resolve_val(vm, argv[2]);
+                int32_t b = resolve_val(vm, argv[4]);
+                if (strcmp(argv[3], "+") == 0) vm->regs[r_idx] = a + b;
+                else if (strcmp(argv[3], "-") == 0) vm->regs[r_idx] = a - b;
+                else if (strcmp(argv[3], "*") == 0) vm->regs[r_idx] = a * b;
+                else if (strcmp(argv[3], "/") == 0 && b != 0) vm->regs[r_idx] = a / b;
+            } else if (argc == 3) {
+                // $0 = 10 或 $0 = $1
+                vm->regs[r_idx] = resolve_val(vm, argv[2]);
+            } else {
+                // $0 = pin.read 4 (原语返回值赋值)
+                const script_prim_entry_t *prim = find_primitive(argv[2]);
+                if (prim) {
+                    vm->regs[r_idx] = prim->handler(vm, argc - 2, (const char**)&argv[2]);
+                }
+            }
+            if (out_msg && out_len > 0) {
+                snprintf(out_msg, out_len, "$%u = %ld", r_idx, (long)vm->regs[r_idx]);
+            }
+            return 0;
+        }
+    }
+
+    // 2. 无条件跳转: goto LABEL
+    if (strcmp(argv[0], "goto") == 0 && argc >= 2) {
+        jump_to_label(vm, argv[1]);
+        return 0;
+    }
+
+    // 3. 条件跳转: if $0 > 0 goto LABEL
+    if (strcmp(argv[0], "if") == 0 && argc >= 6 && strcmp(argv[4], "goto") == 0) {
+        int32_t v1 = resolve_val(vm, argv[1]);
+        const char *op = argv[2];
+        int32_t v2 = resolve_val(vm, argv[3]);
+        bool cond = false;
+
+        if (strcmp(op, "==") == 0)      cond = (v1 == v2);
+        else if (strcmp(op, "!=") == 0) cond = (v1 != v2);
+        else if (strcmp(op, ">") == 0)  cond = (v1 > v2);
+        else if (strcmp(op, "<") == 0)  cond = (v1 < v2);
+        else if (strcmp(op, ">=") == 0) cond = (v1 >= v2);
+        else if (strcmp(op, "<=") == 0) cond = (v1 <= v2);
+
+        if (cond) {
+            jump_to_label(vm, argv[5]);
+        }
+        return 0;
+    }
+
+    // 4. 动态段原语查找执行
+    const script_prim_entry_t *prim = find_primitive(argv[0]);
+    if (prim) {
+        if ((argc - 1) < prim->min_args) {
+            if (out_msg && out_len > 0) {
+                snprintf(out_msg, out_len, "[ERR] 参数不足! 用法: %s", prim->help ? prim->help : "");
+            }
+            return -2;
+        }
+        vm->last_ret = prim->handler(vm, argc, (const char**)argv);
+        if (out_msg && out_len > 0) {
+            snprintf(out_msg, out_len, "[OK] 返回值: %ld", (long)vm->last_ret);
+        }
+        return vm->last_ret;
+    }
+
+    if (out_msg && out_len > 0) {
+        snprintf(out_msg, out_len, "[ERR] 未知指令: %s", argv[0]);
+    }
+    return -1;
 }
 
 void script_vm_run(script_vm_t *vm) {
@@ -194,76 +245,10 @@ void script_vm_run(script_vm_t *vm) {
         line[i] = '\0';
         if (vm->src[vm->pc] == '\n') vm->pc++;
 
-        char *argv[SCRIPT_MAX_ARGS];
-        int argc = tokenize_line(line, argv, SCRIPT_MAX_ARGS);
-        if (argc == 0 || argv[0][0] == ':') continue;
-
-        // ⚡ 修复 2：统一收敛赋值分支，优先匹配 argc == 5 算术表达式
-        if (argv[0][0] == '$' && argc >= 3 && strcmp(argv[1], "=") == 0) {
-            uint8_t r_idx = argv[0][1] - '0';
-            if (r_idx < 8) {
-                if (argc == 5) {
-                    // 运算赋值: $0 = $0 - 1 或 $0 = $1 + 2
-                    int32_t a = resolve_val(vm, argv[2]);
-                    int32_t b = resolve_val(vm, argv[4]);
-                    if (strcmp(argv[3], "+") == 0) vm->regs[r_idx] = a + b;
-                    else if (strcmp(argv[3], "-") == 0) vm->regs[r_idx] = a - b;
-                } else if (argc == 3) {
-                    // 常数或寄存器直接赋值: $0 = 10 或 $0 = $1
-                    vm->regs[r_idx] = resolve_val(vm, argv[2]);
-                } else {
-                    // 原语返回值赋值: $0 = pin.read 4
-                    for (size_t p = 0; p < PRIMITIVE_COUNT; p++) {
-                        if (strcmp(k_primitives[p].name, argv[2]) == 0) {
-                            vm->regs[r_idx] = k_primitives[p].handler(vm, argc - 2, (const char**)&argv[2]);
-                            break;
-                        }
-                    }
-                }
-            }
-            continue;
-        }
-
-        // 无条件跳转: goto LABEL
-        if (strcmp(argv[0], "goto") == 0 && argc >= 2) {
-            jump_to_label(vm, argv[1]);
-            continue;
-        }
-
-        // 条件跳转: if $0 > 0 goto LABEL
-        if (strcmp(argv[0], "if") == 0 && argc >= 6 && strcmp(argv[4], "goto") == 0) {
-            int32_t v1 = resolve_val(vm, argv[1]);
-            const char *op = argv[2];
-            int32_t v2 = resolve_val(vm, argv[3]);
-            bool cond = false;
-
-            if (strcmp(op, "==") == 0)      cond = (v1 == v2);
-            else if (strcmp(op, "!=") == 0) cond = (v1 != v2);
-            else if (strcmp(op, ">") == 0)  cond = (v1 > v2);
-            else if (strcmp(op, "<") == 0)  cond = (v1 < v2);
-            else if (strcmp(op, ">=") == 0) cond = (v1 >= v2);
-            else if (strcmp(op, "<=") == 0) cond = (v1 <= v2);
-
-            if (cond) {
-                jump_to_label(vm, argv[5]);
-            }
-            continue;
-        }
-
-        // 普通原语调用
-        bool matched = false;
-        for (size_t p = 0; p < PRIMITIVE_COUNT; p++) {
-            if (strcmp(k_primitives[p].name, argv[0]) == 0) {
-                vm->last_ret = k_primitives[p].handler(vm, argc, (const char**)argv);
-                matched = true;
-                break;
-            }
-        }
-
-        if (!matched && vm->log_cb) {
-            char err[48];
-            snprintf(err, sizeof(err), "[ERR] 未知原语: %s", argv[0]);
-            vm->log_cb(err, 0xF800, vm->user_data);
+        char err_msg[64] = {0};
+        int32_t ret = script_vm_exec_line(vm, line, err_msg, sizeof(err_msg));
+        if (ret == -1 && vm->log_cb && err_msg[0]) {
+            vm->log_cb(err_msg, 0xF800, vm->user_data);
         }
     }
 
@@ -273,3 +258,77 @@ void script_vm_run(script_vm_t *vm) {
         else vm->log_cb("[SYS] 脚本执行完毕", 0x07E0, vm->user_data);
     }
 }
+
+/* ================= 5. 原生基础硬件与控制原语 (通过宏就地注册) ================= */
+
+static int32_t prim_delay(script_vm_t *vm, int argc, const char *argv[]) {
+    if (argc < 2) return -1;
+    uint32_t ms = (uint32_t)strtoul(argv[1], NULL, 0);
+    while (ms > 0 && (!vm || !vm->abort_req)) {
+        uint32_t step = (ms > 10) ? 10 : ms;
+        sleep_ms(step);
+        ms -= step;
+    }
+    return 0;
+}
+SCRIPT_PRIMITIVE("delay", prim_delay, 1, "delay <毫秒>");
+
+static int32_t prim_print(script_vm_t *vm, int argc, const char *argv[]) {
+    if (argc < 2 || !vm || !vm->log_cb) return 0;
+    char buf[128] = {0};
+    for (int i = 1; i < argc; i++) {
+        const char *val_str = argv[i];
+        char num_buf[16];
+
+        if (argv[i][0] == '$') {
+            if (argv[i][1] >= '0' && argv[i][1] <= '7') {
+                snprintf(num_buf, sizeof(num_buf), "%ld", (long)vm->regs[argv[i][1] - '0']);
+                val_str = num_buf;
+            } else if (argv[i][1] == '?') {
+                snprintf(num_buf, sizeof(num_buf), "%ld", (long)vm->last_ret);
+                val_str = num_buf;
+            }
+        }
+
+        strncat(buf, val_str, sizeof(buf) - strlen(buf) - 2);
+        if (i < argc - 1) strncat(buf, " ", sizeof(buf) - strlen(buf) - 1);
+    }
+    vm->log_cb(buf, 0xFFFF, vm->user_data);
+    return 0;
+}
+SCRIPT_PRIMITIVE("print", prim_print, 1, "print <内容/$0>");
+
+static int32_t prim_pin_mode(script_vm_t *vm, int argc, const char *argv[]) {
+    (void)vm;
+    if (argc < 3) return -1;
+    uint pin = (uint)strtoul(argv[1], NULL, 0);
+    bool is_out = (strcmp(argv[2], "out") == 0 || strcmp(argv[2], "OUT") == 0);
+    gpio_init(pin);
+    gpio_set_dir(pin, is_out ? GPIO_OUT : GPIO_IN);
+    return 0;
+}
+SCRIPT_PRIMITIVE("pin.mode", prim_pin_mode, 2, "pin.mode <引脚> <in/out>");
+
+static int32_t prim_pin_write(script_vm_t *vm, int argc, const char *argv[]) {
+    (void)vm;
+    if (argc < 3) return -1;
+    uint pin = (uint)strtoul(argv[1], NULL, 0);
+    uint val = (uint)strtoul(argv[2], NULL, 0);
+    gpio_put(pin, val != 0);
+    return 0;
+}
+SCRIPT_PRIMITIVE("pin.write", prim_pin_write, 2, "pin.write <引脚> <0/1>");
+
+static int32_t prim_pin_read(script_vm_t *vm, int argc, const char *argv[]) {
+    (void)vm;
+    if (argc < 2) return -1;
+    uint pin = (uint)strtoul(argv[1], NULL, 0);
+    return gpio_get(pin) ? 1 : 0;
+}
+SCRIPT_PRIMITIVE("pin.read", prim_pin_read, 1, "pin.read <引脚>");
+static int32_t prim_help(script_vm_t *vm, int argc, const char *argv[]) {
+    (void)argc; (void)argv;
+    script_vm_print_help(vm);
+    return 0;
+}
+SCRIPT_PRIMITIVE("help", prim_help, 0, "打印支持的原语清单");

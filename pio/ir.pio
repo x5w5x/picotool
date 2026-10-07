@@ -1,0 +1,57 @@
+.program ir_rx
+
+; 状态机时钟分频至 2MHz (1 指令周期 = 0.5us)
+; 每个计数循环严格占用 2 周期 = 1.0 微秒分辨率
+; VS1838B 输出为低有效：低电平为 Mark (发光期)，高电平为 Space (静默期)
+
+.wrap_target
+wait_idle:
+    wait 1 pin 0             ; 等待引脚恢复高电平空闲
+wait_mark:
+    wait 0 pin 0             ; 等待红外前导码下降沿 (Mark 开始)
+
+mark_loop_start:
+    set x, 0                 ; x = 0 (递减后变为 0xFFFFFFFF, 0xFFFFFFFE...)
+mark_loop:
+    jmp pin mark_done        ; 引脚变高，说明 Mark 结束 (1 周期)
+    jmp x-- mark_loop        ; 引脚保持低电平，x 递减 (1 周期)
+mark_done:
+    mov isr, x
+    push noblock             ; 将 Mark 持续计数值推入 FIFO
+
+    set x, 0
+space_loop:
+    jmp pin space_still      ; 引脚保持高电平，继续计时 (1 周期)
+    jmp space_done           ; 引脚变低，说明下一段 Mark 开始 (1 周期)
+space_still:
+    jmp x-- space_loop       ; x 递减 (1 周期)
+space_done:
+    mov isr, x
+    push noblock             ; 将 Space 持续计数值推入 FIFO
+.wrap
+
+% c-sdk {
+#include "hardware/clocks.h"
+#include "hardware/gpio.h"
+
+static inline void ir_rx_program_init(PIO pio, uint sm, uint offset, uint rx_pin) {
+    pio_sm_config c = ir_rx_program_get_default_config(offset);
+
+    // 配置 IN 与 JMP 引脚绑定到接收 GPIO
+    sm_config_set_in_pins(&c, rx_pin);
+    sm_config_set_jmp_pin(&c, rx_pin);
+
+    // 内部上拉保证空闲态稳定
+    pio_gpio_init(pio, rx_pin);
+    gpio_pull_up(rx_pin);
+
+    // 设置时钟分频使状态机频率为 2.0 MHz (2 周期 = 1us)
+    float div = (float)clock_get_hz(clk_sys) / 2000000.0f;
+    sm_config_set_clkdiv(&c, div);
+
+    sm_config_set_in_shift(&c, false, false, 32);
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
+
+    pio_sm_init(pio, sm, offset, &c);
+}
+%}

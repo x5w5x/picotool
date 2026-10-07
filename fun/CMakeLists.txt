@@ -10,6 +10,7 @@ add_library(fun STATIC
     thumb_disasm.c
     sym_loader.c
     fun_script_engine.c
+     fun_ir.c
     
 )
 
@@ -30,8 +31,10 @@ target_link_libraries(fun PUBLIC
     hardware_uart
     hardware_gpio
     hardware_pio
+    hardware_pwm
     hardware_clocks
     pio_manager
+   
 )
 
 pico_generate_pio_header(fun
@@ -40,4 +43,5 @@ pico_generate_pio_header(fun
 
 pico_generate_pio_header(fun
     ${CMAKE_CURRENT_LIST_DIR}/../pio/swd.pio
+     ${CMAKE_CURRENT_LIST_DIR}/../pio/ir.pio
 )

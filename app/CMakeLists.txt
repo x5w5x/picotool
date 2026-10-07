@@ -32,6 +32,7 @@ add_library(appmgr STATIC
     app_loader.c
     app_settings.c
     app_script.c
+    app_ir.c
 )
 
 target_include_directories(appmgr PUBLIC

@@ -556,14 +556,28 @@ static void esp_handle_keyboard_line(esp_app_data_t *data, const char *line)
         return;
     }
 
-    // 3. 按键按下事件: #KB:D,<ascii>,<hid_code>,<mod>
-    int ascii = 0;
-    unsigned int hid_code = 0, mod = 0;
-    if (sscanf(line, "#KB:D,%d,0x%x,0x%x", &ascii, &hid_code, &mod) >= 2) {
-        // 当前焦点输入框：若 Wi-Fi 密码弹窗打开则操作密码框，否则操作终端指令框
+    // 3. ⚡ 彻底移除 sscanf，改用纯整型指针解析，斩断整个 Newlib C 库底座
+    if (strncmp(line, "#KB:D,", 6) == 0) {
+        const char *p = line + 6;
+        char *endp = NULL;
+
+        int ascii = (int)strtol(p, &endp, 10);
+        if (!endp || *endp != ',') return;
+
+        p = endp + 1;
+        unsigned int hid_code = (unsigned int)strtoul(p, &endp, 0); // 0 兼容 0x 十六进制与十进制
+        if (!endp) return;
+
+        unsigned int mod = 0;
+        if (*endp == ',') {
+            mod = (unsigned int)strtoul(endp + 1, NULL, 0);
+        }
+        (void)mod;
+
+        // 当前焦点输入框
         ui_input_t *target_input = (data->connect_modal_open) ? &data->input_wifi_pass : &data->input_cmd;
 
-        // 【回车键 Enter】-> 触发发送命令或确认连接
+        // 【回车键 Enter】
         if (ascii == '\n' || hid_code == 0x28) {
             if (data->connect_modal_open) {
                 on_do_connect_click(&data->btn_do_connect, data);
@@ -573,7 +587,7 @@ static void esp_handle_keyboard_line(esp_app_data_t *data, const char *line)
             return;
         }
 
-        // 【退格键 Backspace】-> 删除最后一个字符
+        // 【退格键 Backspace】
         if (ascii == '\b' || hid_code == 0x2A) {
             size_t len = strlen(target_input->text);
             if (len > 0) {
@@ -583,7 +597,7 @@ static void esp_handle_keyboard_line(esp_app_data_t *data, const char *line)
             return;
         }
 
-        // 【ESC 键】-> 关闭连接弹窗或软键盘
+        // 【ESC 键】
         if (hid_code == 0x29) {
             if (data->connect_modal_open) {
                 on_cancel_connect_click(&data->btn_cancel_connect, data);
@@ -595,8 +609,8 @@ static void esp_handle_keyboard_line(esp_app_data_t *data, const char *line)
             return;
         }
 
-        // 【方向键 LEFT / RIGHT】-> 无弹窗时直接横向切换 Tab 页面
-        if (hid_code == 0x50 && !data->connect_modal_open) { // 方向左键
+        // 【方向键 LEFT / RIGHT】
+        if (hid_code == 0x50 && !data->connect_modal_open) {
             if (data->tabview.active_tab_idx > 0) {
                 data->tabview.active_tab_idx--;
                 data->last_tab_idx = data->tabview.active_tab_idx;
@@ -605,7 +619,7 @@ static void esp_handle_keyboard_line(esp_app_data_t *data, const char *line)
             }
             return;
         }
-        if (hid_code == 0x4F && !data->connect_modal_open) { // 方向右键
+        if (hid_code == 0x4F && !data->connect_modal_open) {
             if (data->tabview.active_tab_idx < ESP_TAB_COUNT - 1) {
                 data->tabview.active_tab_idx++;
                 data->last_tab_idx = data->tabview.active_tab_idx;
@@ -615,7 +629,7 @@ static void esp_handle_keyboard_line(esp_app_data_t *data, const char *line)
             return;
         }
 
-        // 【可见字符打字】ASCII 32~126: a-z, A-Z, 0-9, 符号, 空格
+        // 【可见字符打字】
         if (ascii >= 32 && ascii <= 126) {
             size_t len = strlen(target_input->text);
             if (len + 1 < sizeof(target_input->text)) {

@@ -213,6 +213,7 @@ E:/pico/pico/build/pio/CMakeFiles/rebuild_cache.dir
 E:/pico/pico/build/fun/CMakeFiles/fun.dir
 E:/pico/pico/build/fun/CMakeFiles/fun_uart_pio_h.dir
 E:/pico/pico/build/fun/CMakeFiles/fun_swd_pio_h.dir
+E:/pico/pico/build/fun/CMakeFiles/fun_ir_pio_h.dir
 E:/pico/pico/build/fun/CMakeFiles/edit_cache.dir
 E:/pico/pico/build/fun/CMakeFiles/rebuild_cache.dir
 E:/pico/pico/build/app/CMakeFiles/appmgr.dir

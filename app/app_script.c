@@ -5,6 +5,8 @@
 #include "ui_draw.h"
 #include "ui_tabview.h"
 #include "ui_terminal.h"
+#include "ui_input.h"
+#include "ui_keyboard.h"
 #include "ui_btn.h"
 #include "ui_toast.h"
 #include "lcd.h"
@@ -23,25 +25,35 @@ static const char *s_script_tabs[] = { "执行终端", "脚本管理" };
 #define TERM_W              348
 #define TERM_H              224
 
-#define BTN_RUN_X           124
-#define BTN_RUN_Y           270
-#define BTN_RUN_W           80
+// 底部交互栏 (Y=268, H=36)
+#define INPUT_CMD_X         124
+#define INPUT_CMD_Y         268
+#define INPUT_CMD_W         190
+#define INPUT_CMD_H         36
+
+#define BTN_EXEC_X          318
+#define BTN_EXEC_Y          268
+#define BTN_EXEC_W          46
+#define BTN_EXEC_H          36
+
+#define BTN_RUN_X           368
+#define BTN_RUN_Y           268
+#define BTN_RUN_W           50
 #define BTN_RUN_H           36
 
-#define BTN_CLEAR_X         214
-#define BTN_CLEAR_Y         270
-#define BTN_CLEAR_W         80
+#define BTN_CLEAR_X         422
+#define BTN_CLEAR_Y         268
+#define BTN_CLEAR_W         50
 #define BTN_CLEAR_H         36
 
 #define SCRIPT_QUEUE_SIZE   16
 #define SCRIPT_MSG_MAX_LEN  128
 
-// 默认内置的硬件自测脚本（UTF-8 编码，入队时会自动转为 GBK）
 static const char *k_fallback_script =
     "# 默认硬件自测脚本\n"
     "print \"=== 脚本引擎启动 ===\"\n"
     "pin.mode 4 out\n"
-    "$0 = 5\n"
+    "$0 = 3\n"
     ":LOOP\n"
     "print \"倒计时次数:\" $0\n"
     "pin.write 4 1\n"
@@ -63,13 +75,17 @@ typedef struct {
     uint8_t             last_tab_idx;
 
     ui_terminal_t       terminal;
+
+    /* ⚡ 交互式控制台输入栏与按键 */
+    ui_input_t          input_cmd;
+    ui_keyboard_t       keyboard;
+    ui_btn_t            btn_exec;
     ui_btn_t            btn_run;
     ui_btn_t            btn_clear;
     ui_toast_t          toast;
 
     script_vm_t         vm;
 
-    // Core1 -> Core0 无锁日志环形缓冲队列
     script_log_msg_t    log_queue[SCRIPT_QUEUE_SIZE];
     volatile uint8_t    log_head;
     volatile uint8_t    log_tail;
@@ -89,29 +105,20 @@ static inline ui_rect_t rect_union_box(ui_rect_t a, ui_rect_t b) {
     return ui_rect_make(x1, y1, x2 - x1, y2 - y1);
 }
 
-/* ================= 1. UTF-8 转 GBK 编码转换器 ================= */
 static void utf8_to_gbk_string(const char *utf8, char *gbk_out, size_t max_out_len) {
     if (!utf8 || !gbk_out || max_out_len == 0) return;
-
-    size_t in_idx = 0;
-    size_t out_idx = 0;
+    size_t in_idx = 0, out_idx = 0;
 
     while (utf8[in_idx] != '\0' && out_idx < max_out_len - 1) {
         uint8_t c = (uint8_t)utf8[in_idx];
-
-        // ASCII (0x00 ~ 0x7F)[cite: 13]
         if (c < 0x80) {
             gbk_out[out_idx++] = (char)c;
             in_idx++;
-        }
-        // 3 字节标准汉字 UTF-8 (0xE0 ~ 0xEF)[cite: 13]
-        else if ((c & 0xF0) == 0xE0 && utf8[in_idx + 1] && utf8[in_idx + 2]) {
+        } else if ((c & 0xF0) == 0xE0 && utf8[in_idx + 1] && utf8[in_idx + 2]) {
             uint8_t c2 = (uint8_t)utf8[in_idx + 1];
             uint8_t c3 = (uint8_t)utf8[in_idx + 2];
-
             WCHAR unicode = (WCHAR)(((c & 0x0F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F));
-            DWORD gbk_code = ff_uni2oem(unicode, 936); // 调用 FatFs 内置字码表[cite: 13]
-
+            DWORD gbk_code = ff_uni2oem(unicode, 936);
             if (gbk_code > 0xFF) {
                 if (out_idx + 2 < max_out_len) {
                     gbk_out[out_idx++] = (char)(gbk_code >> 8);
@@ -123,9 +130,7 @@ static void utf8_to_gbk_string(const char *utf8, char *gbk_out, size_t max_out_l
                 gbk_out[out_idx++] = '?';
             }
             in_idx += 3;
-        }
-        // 2 字节特殊符号 (0xC0 ~ 0xDF)[cite: 13]
-        else if ((c & 0xE0) == 0xC0 && utf8[in_idx + 1]) {
+        } else if ((c & 0xE0) == 0xC0 && utf8[in_idx + 1]) {
             uint8_t c2 = (uint8_t)utf8[in_idx + 1];
             WCHAR unicode = (WCHAR)(((c & 0x1F) << 6) | (c2 & 0x3F));
             DWORD gbk_code = ff_uni2oem(unicode, 936);
@@ -146,12 +151,10 @@ static void term_write_utf8(ui_terminal_t *term, const char *utf8_text, uint16_t
     ui_terminal_write_line(term, gbk_buf, color);
 }
 
-/* ================= 2. Core1 工作线程与日志桥接 ================= */
 static void script_log_bridge(const char *text, uint16_t color, void *user_data) {
     script_app_data_t *data = (script_app_data_t *)user_data;
     uint8_t next = (data->log_head + 1) % SCRIPT_QUEUE_SIZE;
     if (next != data->log_tail) {
-        // 入队前统一转为屏幕字库支持的 GBK
         utf8_to_gbk_string(text, data->log_queue[data->log_head].text, SCRIPT_MSG_MAX_LEN);
         data->log_queue[data->log_head].color = color;
         data->log_head = next;
@@ -161,17 +164,54 @@ static void script_log_bridge(const char *text, uint16_t color, void *user_data)
 static void core1_worker(void) {
     script_app_data_t *data = (script_app_data_t *)g_static_app_ram;
     data->core1_running = true;
-
-    // Core1 独立执行，delay 与死循环绝不阻塞 Core0 屏幕渲染
     script_vm_run(&data->vm);
-
     data->core1_running = false;
-    while (true) {
-        tight_loop_contents();
-    }
+    while (true) tight_loop_contents();
 }
 
-/* ================= 3. UI 交互回调 ================= */
+/* ================= 交互回调 ================= */
+
+// ⚡ 单行 REPL 触发：回显命令行，并在 Core 0 立即执行
+static void on_exec_line_submit(script_app_data_t *data) {
+    if (!data || data->input_cmd.text[0] == '\0') return;
+
+    char cmd[SCRIPT_LINE_MAX];
+    strncpy(cmd, data->input_cmd.text, sizeof(cmd) - 1);
+    cmd[sizeof(cmd) - 1] = '\0';
+
+    char echo[SCRIPT_LINE_MAX + 4];
+    snprintf(echo, sizeof(echo), "> %s", cmd);
+    term_write_utf8(&data->terminal, echo, 0x07FF);
+
+    char out_msg[64] = {0};
+    script_vm_exec_line(&data->vm, cmd, out_msg, sizeof(out_msg));
+    if (out_msg[0] != '\0') {
+        term_write_utf8(&data->terminal, out_msg, 0x5E7F);
+    }
+
+    ui_input_clear(&data->input_cmd);
+    data->dirty_rect = rect_union_box(data->dirty_rect, data->input_cmd.rect);
+    data->dirty_rect = rect_union_box(data->dirty_rect, data->terminal.rect);
+}
+
+static void on_btn_exec_click(ui_btn_t *btn, void *user_data) {
+    (void)btn;
+    on_exec_line_submit((script_app_data_t *)user_data);
+}
+
+static void on_input_focus(ui_input_t *input, void *user_data) {
+    script_app_data_t *data = (script_app_data_t *)user_data;
+    if (!data) return;
+    ui_keyboard_open(&data->keyboard, input);
+    data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
+}
+
+static void on_keyboard_submit(ui_keyboard_t *kb, const char *text, void *user_data) {
+    (void)kb; (void)text;
+    script_app_data_t *data = (script_app_data_t *)user_data;
+    if (data) on_exec_line_submit(data);
+}
+
 static void on_run_click(ui_btn_t *btn, void *user_data) {
     script_app_data_t *data = (script_app_data_t *)user_data;
     if (!data) return;
@@ -180,7 +220,6 @@ static void on_run_click(ui_btn_t *btn, void *user_data) {
         static FATFS s_fs;
         bool loaded = false;
 
-        // 优先挂载 TF 卡并加载 0:/scripts/run.txt
         if (f_mount(&s_fs, "0:", 1) == FR_OK) {
             FIL f;
             if (f_open(&f, "0:/scripts/run.txt", FA_READ) == FR_OK) {
@@ -198,13 +237,11 @@ static void on_run_click(ui_btn_t *btn, void *user_data) {
             }
         }
 
-        // 兜底方案：自动加载静态自测脚本，确保 vm.src 不为 NULL
         if (!loaded) {
             script_vm_load(&data->vm, k_fallback_script);
             term_write_utf8(&data->terminal, "[SYS] 运行内置自测脚本", 0xFD20);
         }
 
-        // 启动 Core1 线程
         multicore_reset_core1();
         multicore_launch_core1(core1_worker);
 
@@ -214,7 +251,6 @@ static void on_run_click(ui_btn_t *btn, void *user_data) {
 
         data->dirty_rect = rect_union_box(btn->rect, data->terminal.rect);
     } else {
-        // 强行中止并物理重置 Core1
         script_vm_abort(&data->vm);
         sleep_ms(5);
         multicore_reset_core1();
@@ -240,10 +276,13 @@ static void on_clear_click(ui_btn_t *btn, void *user_data) {
 static void on_tab_changed(ui_tabview_t *tv, uint8_t old_tab, uint8_t new_tab, void *user_data) {
     (void)old_tab; (void)new_tab;
     script_app_data_t *data = (script_app_data_t *)user_data;
-    if (data) data->dirty_rect = tv->content_rect;
+    if (data) {
+        if (data->keyboard.is_open) ui_keyboard_close(&data->keyboard);
+        data->dirty_rect = tv->content_rect;
+    }
 }
 
-/* ================= 4. App 标准生命周期 ================= */
+/* ================= App 标准生命周期 ================= */
 static void app_script_init(app_t *self) {
     self->user_data = g_static_app_ram;
 }
@@ -263,17 +302,33 @@ static void app_script_enter(app_t *self) {
 
     ui_terminal_init(&data->terminal, TERM_X, TERM_Y, TERM_W, TERM_H);
     data->terminal.color_bg = 0x10A2;
-    term_write_utf8(&data->terminal, "DSL 脚本引擎就绪", 0x07E0);
+    term_write_utf8(&data->terminal, "交互式 DSL 引擎就绪, 输入 help 查看指令", 0x07E0);
 
-    ui_btn_init(&data->btn_run, BTN_RUN_X, BTN_RUN_Y, BTN_RUN_W, BTN_RUN_H, "运行", on_run_click);
+    // 交互输入框
+    ui_input_init(&data->input_cmd, INPUT_CMD_X, INPUT_CMD_Y, INPUT_CMD_W, INPUT_CMD_H, "输入原语命令", on_input_focus);
+    data->input_cmd.user_data = data;
+    data->input_cmd.color_bg = 0xDEFB;
+    data->input_cmd.color_border = 0xCE59;
+    data->input_cmd.color_text = 0x4208;
+
+    ui_btn_init(&data->btn_exec, BTN_EXEC_X, BTN_EXEC_Y, BTN_EXEC_W, BTN_EXEC_H, "执行", on_btn_exec_click);
+    data->btn_exec.user_data = data;
+    data->btn_exec.style = UI_BTN_STYLE_ROUND;
+    ui_btn_set_color(&data->btn_exec, 0x03DF, 0x0275, 0xFFFF);
+
+    ui_btn_init(&data->btn_run, BTN_RUN_X, BTN_RUN_Y, BTN_RUN_W, BTN_RUN_H, "文件", on_run_click);
     data->btn_run.user_data = data;
     data->btn_run.style = UI_BTN_STYLE_ROUND;
-    ui_btn_set_color(&data->btn_run, 0x03DF, 0x0275, 0xFFFF);
+    ui_btn_set_color(&data->btn_run, 0xDEFB, 0xCE59, 0x4208);
 
     ui_btn_init(&data->btn_clear, BTN_CLEAR_X, BTN_CLEAR_Y, BTN_CLEAR_W, BTN_CLEAR_H, "清屏", on_clear_click);
     data->btn_clear.user_data = data;
     data->btn_clear.style = UI_BTN_STYLE_ROUND;
     ui_btn_set_color(&data->btn_clear, 0xDEFB, 0x630C, 0xFFFF);
+
+    ui_keyboard_init(&data->keyboard, on_keyboard_submit);
+    data->keyboard.user_data = data;
+    ui_input_bind_btn(&data->input_cmd, &data->btn_exec);
 
     ui_toast_init(&data->toast);
 }
@@ -300,11 +355,9 @@ static void app_script_update(app_t *self, uint32_t now_tick) {
         data->dirty_rect = rect_union_box(data->dirty_rect, ui_toast_get_dirty_union(&data->toast));
     }
 
-    // 从无锁环形队列中消费 Core1 传递过来的日志
     bool term_updated = false;
     while (data->log_tail != data->log_head) {
         script_log_msg_t *msg = &data->log_queue[data->log_tail];
-        // 队列里的文本已经转为 GBK，直接写入终端
         ui_terminal_write_line(&data->terminal, msg->text, msg->color);
         data->log_tail = (data->log_tail + 1) % SCRIPT_QUEUE_SIZE;
         term_updated = true;
@@ -314,10 +367,9 @@ static void app_script_update(app_t *self, uint32_t now_tick) {
         data->dirty_rect = rect_union_box(data->dirty_rect, data->terminal.rect);
     }
 
-    // 脚本自然执行结束后，将按键文字自动还原为“运行”
-    if (!data->core1_running && strcmp(data->btn_run.text, "运行") != 0) {
-        data->btn_run.text = "运行";
-        ui_btn_set_color(&data->btn_run, 0x03DF, 0x0275, 0xFFFF);
+    if (!data->core1_running && strcmp(data->btn_run.text, "文件") != 0) {
+        data->btn_run.text = "文件";
+        ui_btn_set_color(&data->btn_run, 0xDEFB, 0xCE59, 0x4208);
         data->dirty_rect = rect_union_box(data->dirty_rect, data->btn_run.rect);
     }
 }
@@ -325,6 +377,14 @@ static void app_script_update(app_t *self, uint32_t now_tick) {
 static bool app_script_process_touch(app_t *self, bool touching, int16_t tx, int16_t ty, uint32_t now_tick) {
     script_app_data_t *data = (script_app_data_t *)self->user_data;
     if (!data) return false;
+
+    if (data->keyboard.is_open) {
+        bool handled = ui_keyboard_process_touch(&data->keyboard, touching, tx, ty, now_tick);
+        if (handled || !data->keyboard.is_open) {
+            data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
+        }
+        return true;
+    }
 
     if (ui_tabview_process_touch(&data->tabview, touching, tx, ty, now_tick)) {
         if (data->tabview.active_tab_idx != data->last_tab_idx) {
@@ -338,7 +398,15 @@ static bool app_script_process_touch(app_t *self, bool touching, int16_t tx, int
 
     bool handled = false;
     if (data->tabview.active_tab_idx == 0) {
-        if (ui_btn_process_touch(&data->btn_run, touching, tx, ty, now_tick)) {
+        if (ui_input_process_touch(&data->input_cmd, touching, tx, ty, now_tick)) {
+            data->dirty_rect = rect_union_box(data->dirty_rect, data->input_cmd.rect);
+            handled = true;
+        }
+        else if (ui_btn_process_touch(&data->btn_exec, touching, tx, ty, now_tick)) {
+            data->dirty_rect = rect_union_box(data->dirty_rect, data->btn_exec.rect);
+            handled = true;
+        }
+        else if (ui_btn_process_touch(&data->btn_run, touching, tx, ty, now_tick)) {
             data->dirty_rect = rect_union_box(data->dirty_rect, data->btn_run.rect);
             handled = true;
         }
@@ -370,19 +438,25 @@ static void app_script_draw(app_t *self, ui_tile_t *tile) {
     if (ui_rect_intersect(&tile->rect, &data->tabview.content_rect, &ov)) {
         if (data->tabview.active_tab_idx == 0) {
             ui_terminal_draw(tile, &data->terminal);
+            ui_input_draw(tile, &data->input_cmd);
+            ui_btn_draw(tile, &data->btn_exec);
             ui_btn_draw(tile, &data->btn_run);
             ui_btn_draw(tile, &data->btn_clear);
         } else if (data->tabview.active_tab_idx == 1) {
             ui_draw_string(tile, 130, 60, "脚本存放路径: 0:/scripts/run.txt", FONT_16, 0x4208, 0xFFFF);
-            ui_draw_string(tile, 130, 90, "支持原语: pin.write, delay, goto", FONT_16, 0x8410, 0xFFFF);
+            ui_draw_string(tile, 130, 90, "支持原语: pin.write, ir.send, delay", FONT_16, 0x8410, 0xFFFF);
             ui_draw_string(tile, 130, 120, "支持变量: $0 ~ $7, $?", FONT_16, 0x8410, 0xFFFF);
+            ui_draw_string(tile, 130, 150, "交互控制: 终端输入 help 查看原语表", FONT_16, 0x03DF, 0xFFFF);
         }
+    }
+
+    if (data->keyboard.is_open) {
+        ui_keyboard_draw(tile, &data->keyboard);
     }
 
     ui_toast_draw(tile, &data->toast);
 }
 
-/* ================= 5. 实例导出 ================= */
 app_t *app_script_get_instance(void) {
     s_app_script.id            = APP_ID_CUSTOM_0 + 4;
     s_app_script.name          = "脚本引擎";
