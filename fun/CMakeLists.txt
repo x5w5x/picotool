@@ -10,7 +10,8 @@ add_library(fun STATIC
     thumb_disasm.c
     sym_loader.c
     fun_script_engine.c
-     fun_ir.c
+    fun_ir.c
+    fun_task_flow.c
     
 )
 
