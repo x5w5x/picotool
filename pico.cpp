@@ -127,7 +127,7 @@ static void on_status_bar_click(ui_status_bar_t *sb, ui_sb_hit_t hit_area, void 
     }
 }
 
-// 按键点击直接进入 BOOTSEL 模式
+// 按键点击直接进入 BOOTSEL 模式`                                                   
 static void on_btn_click(ui_btn_t *btn, void *user_data)
 {
     (void)btn;
@@ -160,13 +160,13 @@ void app_ui_custom_init(void)
     // app_manager_register(&g_app_mgr, app_loader_get_instance());
     // 3. 初始化顶部状态栏 (X:0, Y:0, W:480, H:32)
 
-  
-    app_manager_register(&g_app_mgr, app_ir_get_instance());
+   
+    // app_manager_register(&g_app_mgr, app_ir_get_instance());
     app_manager_register(&g_app_mgr, app_script_get_instance());
     app_manager_register(&g_app_mgr, app_esp_get_instance());
     app_manager_register(&g_app_mgr, app_uart_get_instance());
     app_manager_register(&g_app_mgr, app_dap_get_instance());
-    app_manager_register(&g_app_mgr, app_hid_km_get_instance());
+    // app_manager_register(&g_app_mgr, app_hid_km_get_instance());
     ui_status_bar_init(&g_status_bar, 0, 0, LCD_WIDTH, 32, "多功能嵌入式终端", on_status_bar_click);
 
     // 4. 初始化更新按键 (X:54, Y:280, W:75, H:36)
@@ -248,7 +248,7 @@ static void render_custom_scene(ui_tile_t *tile)
                 ui_draw_string(tile, 75, text_y, "Flash [未连接]", FONT_16, 0xF800, SCREEN_BG_COLOR);
             }
         }
-
+ 
         // 6. 触控芯片状态 (Y: 114)
         text_y = 114; //
         if ((text_y + 16) > tile->rect.y && text_y < (tile->rect.y + tile->rect.h))
@@ -256,7 +256,7 @@ static void render_custom_scene(ui_tile_t *tile)
             ui_draw_string(tile, 30, text_y, "触控:", FONT_20, 0x4208, SCREEN_BG_COLOR);
             ui_draw_string(tile, 75, text_y, " FT6336 [就绪]", FONT_16, 0x05E0, SCREEN_BG_COLOR);
         }
-
+ 
         // 7. 系统主频 (Y: 140)
         text_y = 140;
         if ((text_y + 16) > tile->rect.y && text_y < (tile->rect.y + tile->rect.h))
@@ -291,6 +291,7 @@ static void render_custom_scene(ui_tile_t *tile)
     // ---------------- 图层 3: 顶部常驻状态栏 (最顶层保护) ----------------
     ui_status_bar_draw(tile, &g_status_bar);
 }
+ 
 static void sys_process_keyboard_line(const char *line)
 {
     if (strncmp(line, "#KB:D,", 6) != 0) return;

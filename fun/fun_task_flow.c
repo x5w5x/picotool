@@ -1,7 +1,7 @@
 /*
  * @Author: 轩
  * @Date: 2026-10-07 15:44:34
- * @LastEditTime: 2026-10-07 15:44:42
+ * @LastEditTime: 2026-10-08 13:22:09
  * @FilePath: \pico\fun\fun_task_flow.c
  */
 #include "fun_task_flow.h"
@@ -28,9 +28,10 @@ void flow_step_set_default_args(flow_card_step_t *st, const char *prim_name) {
         strcpy(st->args[1], "50");
     } else if (strcmp(prim_name, "ir.send") == 0) {
         strcpy(st->args[0], "0:/ir/p.ir");
-    } else if (strcmp(prim_name, "print") == 0) {
-        strcpy(st->args[0], "\"触发\"");
-    }
+    } 
+    // else if (strcmp(prim_name, "print") == 0) {
+    //     strcpy(st->args[0], "\"触发\"");
+    // }
 }
 
 int flow_export_to_script(const flow_card_seq_t *seq, char *out_buf, size_t max_len) {

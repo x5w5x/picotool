@@ -1,7 +1,7 @@
 /*
  * @Author: 轩
  * @Date: 2026-10-06 14:09:35
- * @LastEditTime: 2026-10-07 14:46:38
+ * @LastEditTime: 2026-10-08 11:32:18
  * @FilePath: \pico\fun\fun_script_engine.h
  */
 
@@ -17,11 +17,13 @@
 #define SCRIPT_MAX_LABELS    16
 #define SCRIPT_MAX_DYN_PRIMS 16
 #define SCRIPT_MAX_LOOPS     8
+#define SCRIPT_MAX_VARS      16
 
 typedef enum {
     LOOP_TYPE_REPEAT,
     LOOP_TYPE_WHILE,
-    LOOP_TYPE_LOOP
+    LOOP_TYPE_LOOP,
+    LOOP_TYPE_FOR         // 新增 Python 风格 for 循环
 } script_loop_type_t;
 
 typedef struct {
@@ -30,10 +32,18 @@ typedef struct {
 } script_label_t;
 
 typedef struct {
-    uint32_t           start_pc;   // 循环语句起点 (while语句行首 / repeat循环体首行)
-    script_loop_type_t type;       // 循环类型
-    int32_t            remaining;  // repeat 剩余计数
+    uint32_t           start_pc;
+    script_loop_type_t type;
+    int32_t            remaining;
+    int32_t            end_val;       // 终止值
+    int32_t            step;          // 步长
+    char               var_name[12];  // 循环变量名 (如 "i", "pin")
 } script_loop_frame_t;
+
+typedef struct {
+    char    name[12];
+    int32_t val;
+} script_var_t;
 
 typedef struct script_vm script_vm_t;
 
@@ -58,7 +68,7 @@ typedef struct {
 struct script_vm {
     const char          *src;
     uint32_t             pc;
-    int32_t              regs[8];
+    int32_t              regs[8];             // 保持对 $0~$7 的向下兼容
     int32_t              last_ret;
     bool                 is_running;
     volatile bool        abort_req;
@@ -68,9 +78,15 @@ struct script_vm {
     script_label_t       labels[SCRIPT_MAX_LABELS];
     uint8_t              label_count;
 
-    // 结构化多模式循环栈 (支持 repeat / while / loop 及 break / continue)
     script_loop_frame_t  loop_stack[SCRIPT_MAX_LOOPS];
     uint8_t              loop_sp;
+
+    // 命名变量符号槽
+    script_var_t         vars[SCRIPT_MAX_VARS];
+    uint8_t              var_count;
+
+    // if/elif 链匹配标志
+    bool                 if_matched;
 };
 
 void     script_vm_init(script_vm_t *vm);
@@ -85,6 +101,7 @@ void     script_unregister_dyn_primitives(void *owner_token);
 
 int32_t  script_vm_exec_line(script_vm_t *vm, char *line, char *out_msg, size_t out_len);
 void     script_vm_print_help(script_vm_t *vm);
-uint8_t                    script_prim_get_count(void);
+uint8_t  script_prim_get_count(void);
 const script_prim_entry_t *script_prim_get_by_index(uint8_t index);
+
 #endif // FUN_SCRIPT_ENGINE_H

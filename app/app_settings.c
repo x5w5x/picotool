@@ -105,6 +105,7 @@ static inline ui_rect_t rect_union_box(ui_rect_t a, ui_rect_t b)
     int16_t y2 = ((a.y + a.h) > (b.y + b.h)) ? (a.y + a.h) : (b.y + b.h);
     return ui_rect_make(x1, y1, x2 - x1, y2 - y1);
 }
+
 static void format_build_date(char *out, size_t out_size)
 {
     static const char *months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -142,6 +143,26 @@ static void format_build_date(char *out, size_t out_size)
     snprintf(out, out_size, "%s", FW_BUILD_DATE);
 }
 
+// static void format_build_date(char *out, size_t out_size)
+// {
+//     static const char *months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+//                                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+//     char month[4] = {0};
+//     int day = 0, year = 0, month_idx = 0;
+//     if (sscanf(FW_BUILD_DATE, "%3s %d %d", month, &day, &year) == 3)
+//     {
+//         for (int i = 0; i < 12; ++i)
+//             if (strcmp(month, months[i]) == 0)
+//             {
+//                 month_idx = i + 1;
+//                 break;
+//             }
+//     }
+//     if (month_idx)
+//         snprintf(out, out_size, "%04d年%02d月%02d日", year, month_idx, day);
+//     else
+//         snprintf(out, out_size, "%s", FW_BUILD_DATE);
+// }
 /* =========================================================================
  * 2. 交互回调函数
  *
