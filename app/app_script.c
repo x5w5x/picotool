@@ -83,7 +83,7 @@ static const char *s_script_tabs[] = { "执行终端", "脚本管理", "代码�
 #define FLOW_SCROLL_W       348
 #define FLOW_SCROLL_H       232
 #define FLOW_CARD_H         44
-#define FLOW_MAX_STEPS      16
+#define FLOW_MAX_STEPS      24
 #define FLOW_MAX_ARGS       2
 
 #define SCRIPT_QUEUE_SIZE   16
@@ -92,12 +92,12 @@ static const char *s_script_tabs[] = { "执行终端", "脚本管理", "代码�
 static const char *k_fallback_script =
     "# 默认硬件自测脚本\n"
     "print(\"=== 脚本引擎启动 ===\")\n"
-    "pin.mode(4, out)\n"
+    "pin.mode(25, out)\n"
     "for count in range(3):\n"
     "    print(\"倒计时:\", count)\n"
-    "    pin.write(4, 1)\n"
+    "    pin.write(25, 1)\n"
     "    delay(150)\n"
-    "    pin.write(4, 0)\n"
+    "    pin.write(25, 0)\n"
     "    delay(150)\n"
     "end\n"
     "print(\"=== 脚本自检完成 ===\")\n";
@@ -116,16 +116,25 @@ typedef struct {
     uint32_t size;
 } script_file_item_t;
 
+typedef enum {
+    FLOW_TYPE_CALL = 0,    // 0: 硬件原语动作 [$0 = ] pin.write(25, 1)
+    FLOW_TYPE_IF,          // 1: 条件分支     if $0 == 1:
+    FLOW_TYPE_ELSE,        // 2: 备选分支     else:
+    FLOW_TYPE_FOR,         // 3: 计数循环     for i in range(3):
+    FLOW_TYPE_END          // 4: 块闭合标记   end
+} flow_step_type_t;
+
 typedef struct {
-    int8_t out_reg;               // -1: 动作类无赋值; 0~7: 赋值给 $0~$7
-    char   prim_name[16];
-    char   args[FLOW_MAX_ARGS][24];
+    uint8_t type;          // flow_step_type_t
+    int8_t  out_reg;       // 仅 CALL: -1(无), 0~7($0~$7)
+    char    op[4];         // 比较运算符 (==, !=, >, <, >=, <=)
+    char    name[16];      // CALL: 原语名; FOR: 循环变量名
+    char    args[FLOW_MAX_ARGS][24]; // 参数槽
 } flow_card_step_t;
 
 typedef struct {
     flow_card_step_t steps[FLOW_MAX_STEPS];
     uint8_t          step_count;
-    uint8_t          repeat_times;
 } flow_card_seq_t;
 
 typedef struct {
@@ -162,16 +171,18 @@ typedef struct {
     int16_t             selected_line_idx;
     bool                is_dirty;
 
-    // Tab 3 动作向导控件
-    ui_btn_t            btn_flow_add;
-    ui_btn_t            btn_flow_loop;
-    ui_btn_t            btn_flow_to_code;
-    ui_btn_t            btn_flow_run;
+    // Tab 3 动作向导控件 (6 大独立顶栏控制)
+    ui_btn_t            btn_flow_add;      // [+动作]
+    ui_btn_t            btn_flow_if;       // [+判断]
+    ui_btn_t            btn_flow_for;      // [+循环]
+    ui_btn_t            btn_flow_del;      // [删除]
+    ui_btn_t            btn_flow_to_code;  // [转代码]
+    ui_btn_t            btn_flow_run;      // [运行]
     ui_scrollview_t     flow_scroll;
     flow_card_seq_t     flow_seq;
 
     ui_input_t          input_flow_arg;
-    int8_t              target_step_idx;
+    int8_t              target_step_idx;   // 当前高亮选中的卡片索引
     uint8_t             target_arg_idx;
 
     ui_modal_t          modal_prim;
@@ -203,6 +214,7 @@ static inline ui_rect_t rect_union_box(ui_rect_t a, ui_rect_t b) {
 }
 
 /* ================= 1. 字符编码转换 ================= */
+
 static void utf8_to_gbk_string(const char *utf8, char *gbk_out, size_t max_out_len) {
     if (!utf8 || !gbk_out || max_out_len == 0) return;
     size_t in_idx = 0, out_idx = 0;
@@ -287,17 +299,50 @@ static bool check_txt_ext(const char *name) {
            (ext[3] == 't' || ext[3] == 'T'));
 }
 
-/* ================= 2. 卡片与参数缺省逻辑 ================= */
+/* ================= 2. 插入与删除核心状态函数 ================= */
+
+static void flow_insert_step_at(script_app_data_t *data, int pos, const flow_card_step_t *st) {
+    if (!data || data->flow_seq.step_count >= FLOW_MAX_STEPS) return;
+    if (pos < 0) pos = 0;
+    if (pos > data->flow_seq.step_count) pos = data->flow_seq.step_count;
+
+    for (int i = data->flow_seq.step_count; i > pos; i--) {
+        data->flow_seq.steps[i] = data->flow_seq.steps[i - 1];
+    }
+    data->flow_seq.steps[pos] = *st;
+    data->flow_seq.step_count++;
+    data->target_step_idx = pos;
+    data->flow_scroll.content_h = data->flow_seq.step_count * FLOW_CARD_H + 8;
+}
+
+static void flow_delete_step_at(script_app_data_t *data, int idx) {
+    if (!data || idx < 0 || idx >= data->flow_seq.step_count) return;
+
+    for (uint8_t k = idx; k < data->flow_seq.step_count - 1; k++) {
+        data->flow_seq.steps[k] = data->flow_seq.steps[k + 1];
+    }
+    data->flow_seq.step_count--;
+
+    if (data->target_step_idx >= data->flow_seq.step_count) {
+        data->target_step_idx = data->flow_seq.step_count - 1;
+    }
+    data->flow_scroll.content_h = (data->flow_seq.step_count > 0 ? data->flow_seq.step_count : 1) * FLOW_CARD_H + 8;
+}
+
 static void flow_step_set_default_args(flow_card_step_t *st, const char *prim_name) {
     if (!st || !prim_name) return;
-    strncpy(st->prim_name, prim_name, sizeof(st->prim_name) - 1);
-    st->prim_name[sizeof(st->prim_name) - 1] = '\0';
+    st->type = FLOW_TYPE_CALL;
+    st->op[0] = '\0';
+    strncpy(st->name, prim_name, sizeof(st->name) - 1);
+    st->name[sizeof(st->name) - 1] = '\0';
     memset(st->args, 0, sizeof(st->args));
 
-    // 智能推导输出寄存器
-    if (strcmp(prim_name, "pin.read") == 0 || strcmp(prim_name, "adc.volt") == 0 || strcmp(prim_name, "adc.read") == 0) {
-        st->out_reg = 0; // 默认保存到 $0
+    if (strcmp(prim_name, "pin.read") == 0) {
+        st->out_reg = 0;
         strcpy(st->args[0], "25");
+    } else if (strcmp(prim_name, "adc.volt") == 0 || strcmp(prim_name, "adc.read") == 0) {
+        st->out_reg = 0;
+        strcpy(st->args[0], "26");
     } else {
         st->out_reg = -1;
         if (strcmp(prim_name, "pin.write") == 0) {
@@ -311,10 +356,10 @@ static void flow_step_set_default_args(flow_card_step_t *st, const char *prim_na
         } else if (strcmp(prim_name, "pwm.set") == 0) {
             strcpy(st->args[0], "25");
             strcpy(st->args[1], "50");
-        } else if (strcmp(prim_name, "ir.send") == 0) {
-            strcpy(st->args[0], "0:/ir/p.ir");
+        } else if (strcmp(prim_name, "esp.send") == 0) {
+            strcpy(st->args[0], "\"#IP?\"");
         } else if (strcmp(prim_name, "print") == 0) {
-            strcpy(st->args[0], "\"运行完成\"");
+            strcpy(st->args[0], "\"完成\"");
         }
     }
 }
@@ -323,44 +368,75 @@ static int flow_export_to_script(const flow_card_seq_t *seq, char *out_buf, size
     if (!seq || !out_buf || max_len == 0) return 0;
     out_buf[0] = '\0';
 
-    snprintf(out_buf, max_len, "# 动作向导生成脚本\n");
+    snprintf(out_buf, max_len, "# 动作向导生成脚本 (含逻辑控制)\n");
 
-    const char *indent = "";
-    if (seq->repeat_times > 1) {
-        char rep_hdr[32];
-        snprintf(rep_hdr, sizeof(rep_hdr), "for rep in range(%u):\n", seq->repeat_times);
-        strncat(out_buf, rep_hdr, max_len - strlen(out_buf) - 1);
-        indent = "    ";
-    }
+    int indent = 0;
+    char pad[32];
+    char line[128];
 
-    char line[96];
     for (uint8_t i = 0; i < seq->step_count; i++) {
         const flow_card_step_t *st = &seq->steps[i];
-        if (st->prim_name[0] == '\0') continue;
 
-        char pfx[16] = "";
-        if (st->out_reg >= 0 && st->out_reg <= 7) {
-            snprintf(pfx, sizeof(pfx), "$%d = ", st->out_reg);
+        int cur_indent = indent;
+        if (st->type == FLOW_TYPE_ELSE || st->type == FLOW_TYPE_END) {
+            if (cur_indent > 0) cur_indent--;
+        }
+        int spaces = cur_indent * 4;
+        if (spaces > 28) spaces = 28;
+        memset(pad, ' ', spaces);
+        pad[spaces] = '\0';
+
+        switch (st->type) {
+        case FLOW_TYPE_CALL: {
+            if (st->name[0] == '\0') break;
+            char pfx[16] = "";
+            if (st->out_reg >= 0 && st->out_reg <= 7) {
+                snprintf(pfx, sizeof(pfx), "$%d = ", st->out_reg);
+            }
+            if (st->args[1][0] != '\0') {
+                snprintf(line, sizeof(line), "%s%s%s(%s, %s)\n", pad, pfx, st->name, st->args[0], st->args[1]);
+            } else if (st->args[0][0] != '\0') {
+                snprintf(line, sizeof(line), "%s%s%s(%s)\n", pad, pfx, st->name, st->args[0]);
+            } else {
+                snprintf(line, sizeof(line), "%s%s%s()\n", pad, pfx, st->name);
+            }
+            break;
         }
 
-        if (st->args[1][0] != '\0') {
-            snprintf(line, sizeof(line), "%s%s%s(%s, %s)\n", indent, pfx, st->prim_name, st->args[0], st->args[1]);
-        } else if (st->args[0][0] != '\0') {
-            snprintf(line, sizeof(line), "%s%s%s(%s)\n", indent, pfx, st->prim_name, st->args[0]);
-        } else {
-            snprintf(line, sizeof(line), "%s%s%s()\n", indent, pfx, st->prim_name);
+        case FLOW_TYPE_IF:
+            snprintf(line, sizeof(line), "%sif %s %s %s:\n", pad,
+                     st->args[0][0] ? st->args[0] : "$0",
+                     st->op[0] ? st->op : "==",
+                     st->args[1][0] ? st->args[1] : "1");
+            indent++;
+            break;
+
+        case FLOW_TYPE_ELSE:
+            snprintf(line, sizeof(line), "%selse:\n", pad);
+            break;
+
+        case FLOW_TYPE_FOR:
+            snprintf(line, sizeof(line), "%sfor %s in range(%s):\n", pad,
+                     st->name[0] ? st->name : "i",
+                     st->args[0][0] ? st->args[0] : "3");
+            indent++;
+            break;
+
+        case FLOW_TYPE_END:
+            snprintf(line, sizeof(line), "%send\n", pad);
+            if (indent > 0) indent--;
+            break;
         }
+
         strncat(out_buf, line, max_len - strlen(out_buf) - 1);
     }
 
-    if (seq->repeat_times > 1) {
-        strncat(out_buf, "end\n", max_len - strlen(out_buf) - 1);
-    }
     strncat(out_buf, "print(\"=== 向导流程执行完毕 ===\")\n", max_len - strlen(out_buf) - 1);
     return (int)strlen(out_buf);
 }
 
 /* ================= 3. 弹窗回调绑定 ================= */
+
 static void on_modal_prim_draw_content(ui_tile_t *tile, const ui_rect_t *viewport, int16_t scroll_y, void *user_data) {
     (void)user_data;
     uint8_t count = script_prim_get_count();
@@ -424,6 +500,7 @@ static bool on_modal_prim_touch_content(ui_modal_t *modal, bool is_touching, int
 }
 
 /* ================= 4. 文件加载与异步执行 ================= */
+
 static void scan_script_files(script_app_data_t *data) {
     data->file_count = 0;
     if (!data->fs_mounted) return;
@@ -590,6 +667,7 @@ static void stop_script_exec(script_app_data_t *data) {
 }
 
 /* ================= 5. 交互回调 ================= */
+
 static void on_exec_line_submit(script_app_data_t *data) {
     if (!data || data->input_cmd.text[0] == '\0') return;
 
@@ -787,33 +865,88 @@ static void on_input_focus(ui_input_t *input, void *user_data) {
     data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
 }
 
-/* ================= 6. 向导专属操作回调 (Touch-Up 驱动) ================= */
+/* ================= 6. 向导专属操作回调 (点操作符修复) ================= */
+
 static void on_flow_add_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     script_app_data_t *data = (script_app_data_t *)user_data;
-    if (!data) return;
-    if (data->flow_seq.step_count < FLOW_MAX_STEPS) {
-        flow_step_set_default_args(&data->flow_seq.steps[data->flow_seq.step_count], "delay");
-        data->flow_seq.step_count++;
-        data->flow_scroll.content_h = data->flow_seq.step_count * FLOW_CARD_H + 8;
-        data->dirty_rect = data->tabview.content_rect;
-    }
+    if (!data || data->flow_seq.step_count >= FLOW_MAX_STEPS) return;
+
+    int pos = (data->target_step_idx >= 0 && data->target_step_idx < data->flow_seq.step_count) ?
+              (data->target_step_idx + 1) : data->flow_seq.step_count;
+
+    flow_card_step_t st;
+    memset(&st, 0, sizeof(st));
+    st.type = FLOW_TYPE_CALL;
+    st.out_reg = -1;
+    strcpy(st.name, "delay");
+    strcpy(st.args[0], "150");
+
+    flow_insert_step_at(data, pos, &st);
+    data->dirty_rect = data->tabview.content_rect;
 }
 
-static void on_flow_loop_click(ui_btn_t *btn, void *user_data) {
+static void on_flow_if_click(ui_btn_t *btn, void *user_data) {
     (void)btn;
     script_app_data_t *data = (script_app_data_t *)user_data;
-    if (!data) return;
-    static const uint8_t s_repeats[] = { 1, 3, 5, 10, 20 };
-    static uint8_t s_r_idx = 0;
-    s_r_idx = (s_r_idx + 1) % 5;
-    data->flow_seq.repeat_times = s_repeats[s_r_idx];
-    if (data->flow_seq.repeat_times == 1) data->btn_flow_loop.text = "单次";
-    else if (data->flow_seq.repeat_times == 3) data->btn_flow_loop.text = "3次";
-    else if (data->flow_seq.repeat_times == 5) data->btn_flow_loop.text = "5次";
-    else if (data->flow_seq.repeat_times == 10) data->btn_flow_loop.text = "10次";
-    else data->btn_flow_loop.text = "20次";
-    data->dirty_rect = data->btn_flow_loop.rect;
+    if (!data || data->flow_seq.step_count + 3 > FLOW_MAX_STEPS) return;
+
+    int pos = (data->target_step_idx >= 0 && data->target_step_idx < data->flow_seq.step_count) ?
+              (data->target_step_idx + 1) : data->flow_seq.step_count;
+
+    flow_card_step_t s_if, s_else, s_end;
+    memset(&s_if, 0, sizeof(s_if));
+    s_if.type = FLOW_TYPE_IF;
+    strcpy(s_if.args[0], "$0");
+    strcpy(s_if.op, "==");
+    strcpy(s_if.args[1], "1");
+
+    memset(&s_else, 0, sizeof(s_else));
+    s_else.type = FLOW_TYPE_ELSE;
+
+    memset(&s_end, 0, sizeof(s_end));
+    s_end.type = FLOW_TYPE_END;
+
+    flow_insert_step_at(data, pos, &s_end);
+    flow_insert_step_at(data, pos, &s_else);
+    flow_insert_step_at(data, pos, &s_if);
+
+    data->target_step_idx = pos;
+    data->dirty_rect = data->tabview.content_rect;
+}
+
+static void on_flow_for_click(ui_btn_t *btn, void *user_data) {
+    (void)btn;
+    script_app_data_t *data = (script_app_data_t *)user_data;
+    if (!data || data->flow_seq.step_count + 2 > FLOW_MAX_STEPS) return;
+
+    int pos = (data->target_step_idx >= 0 && data->target_step_idx < data->flow_seq.step_count) ?
+              (data->target_step_idx + 1) : data->flow_seq.step_count;
+
+    flow_card_step_t s_for, s_end;
+    memset(&s_for, 0, sizeof(s_for));
+    s_for.type = FLOW_TYPE_FOR;
+    strcpy(s_for.name, "i");
+    strcpy(s_for.args[0], "3");
+
+    memset(&s_end, 0, sizeof(s_end));
+    s_end.type = FLOW_TYPE_END;
+
+    flow_insert_step_at(data, pos, &s_end);
+    flow_insert_step_at(data, pos, &s_for);
+
+    data->target_step_idx = pos;
+    data->dirty_rect = data->tabview.content_rect;
+}
+
+static void on_flow_del_click(ui_btn_t *btn, void *user_data) {
+    (void)btn;
+    script_app_data_t *data = (script_app_data_t *)user_data;
+    if (!data || data->flow_seq.step_count == 0 || data->target_step_idx < 0) return;
+
+    flow_delete_step_at(data, data->target_step_idx);
+    ui_toast_show(&data->toast, "已删除卡片", UI_TOAST_INFO, to_ms_since_boot(get_absolute_time()));
+    data->dirty_rect = data->tabview.content_rect;
 }
 
 static void on_flow_to_code_click(ui_btn_t *btn, void *user_data) {
@@ -851,7 +984,6 @@ static void on_flow_run_click(ui_btn_t *btn, void *user_data) {
     data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
 }
 
-// 全键盘提交事件 (支持向导参数输入)
 static void on_keyboard_submit(ui_keyboard_t *kb, const char *text, void *user_data) {
     (void)kb;
     script_app_data_t *data = (script_app_data_t *)user_data;
@@ -864,8 +996,13 @@ static void on_keyboard_submit(ui_keyboard_t *kb, const char *text, void *user_d
     } else if (data->tabview.active_tab_idx == 3) {
         if (data->target_step_idx >= 0 && data->target_step_idx < data->flow_seq.step_count) {
             flow_card_step_t *st = &data->flow_seq.steps[data->target_step_idx];
-            strncpy(st->args[data->target_arg_idx], text ? text : "", sizeof(st->args[0]) - 1);
-            st->args[data->target_arg_idx][sizeof(st->args[0]) - 1] = '\0';
+            if (data->target_arg_idx == 0) {
+                strncpy(st->args[0], text ? text : "", sizeof(st->args[0]) - 1);
+                st->args[0][sizeof(st->args[0]) - 1] = '\0';
+            } else if (data->target_arg_idx == 1) {
+                strncpy(st->args[1], text ? text : "", sizeof(st->args[1]) - 1);
+                st->args[1][sizeof(st->args[1]) - 1] = '\0';
+            }
             ui_keyboard_close(&data->keyboard);
             data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
         }
@@ -879,11 +1016,12 @@ static void on_tab_changed(ui_tabview_t *tv, uint8_t old_tab, uint8_t new_tab, v
         if (data->keyboard.is_open) ui_keyboard_close(&data->keyboard);
         if (data->modal_prim.is_open) ui_modal_hide(&data->modal_prim);
 
-        // 切换 Tab 时复位向导按钮状态，防止悬空按压标志导致二次虚假触发
         data->btn_flow_run.is_pressed = false;
         data->btn_flow_to_code.is_pressed = false;
         data->btn_flow_add.is_pressed = false;
-        data->btn_flow_loop.is_pressed = false;
+        data->btn_flow_if.is_pressed = false;
+        data->btn_flow_for.is_pressed = false;
+        data->btn_flow_del.is_pressed = false;
 
         if (new_tab == 1) {
             scan_script_files(data);
@@ -893,6 +1031,7 @@ static void on_tab_changed(ui_tabview_t *tv, uint8_t old_tab, uint8_t new_tab, v
 }
 
 /* ================= 7. 视口光栅化绘制回调 ================= */
+
 static void on_file_scroll_draw_content(ui_tile_t *tile, const ui_rect_t *viewport, int16_t scroll_y, void *user_data) {
     script_app_data_t *data = (script_app_data_t *)user_data;
     if (!data) return;
@@ -960,70 +1099,181 @@ static void on_flow_scroll_draw_content(ui_tile_t *tile, const ui_rect_t *viewpo
     if (!data) return;
 
     if (data->flow_seq.step_count == 0) {
-        ui_draw_string(tile, viewport->x + 20, viewport->y + 30 - scroll_y, "当前无步骤，点击顶部 [+步骤] 添加", FONT_16, 0x8410, 0xFFFF);
+        ui_draw_string(tile, viewport->x + 20, viewport->y + 30 - scroll_y, "当前无步骤，点击顶部添加", FONT_16, 0x8410, 0xFFFF);
         return;
     }
 
+    int nest_level = 0;
     for (uint8_t i = 0; i < data->flow_seq.step_count; i++) {
-        int16_t iy = viewport->y + i * FLOW_CARD_H - scroll_y;
-        if (iy + FLOW_CARD_H < tile->rect.y || iy > tile->rect.y + tile->rect.h) continue;
-
-        ui_rect_t card = ui_rect_make(viewport->x + 2, iy + 2, viewport->w - 4, FLOW_CARD_H - 4);
-        ui_rect_t overlap;
-        if (ui_rect_intersect(&tile->rect, &card, &overlap)) {
-            ui_draw_fill_rect(tile, &overlap, 0xDEFB);
-            ui_draw_rect(tile, &card, 0xCE59);
-        }
-
-        // 步号 (X: +4)
-        char step_num[8];
-        snprintf(step_num, sizeof(step_num), "%02u.", i + 1);
-        ui_draw_string(tile, card.x + 4, card.y + 12, step_num, FONT_16, 0x03DF, 0xDEFB);
-
         flow_card_step_t *st = &data->flow_seq.steps[i];
+        int16_t iy = viewport->y + i * FLOW_CARD_H - scroll_y;
 
-        // 1. 输出赋值目标插槽 (X: 28 ~ 68)
-        ui_rect_t b_reg = ui_rect_make(card.x + 28, card.y + 7, 38, 26);
-        if (ui_rect_intersect(&tile->rect, &b_reg, &overlap)) {
-            uint16_t reg_bg = (st->out_reg >= 0) ? 0x03DF : 0xCE59;
-            uint16_t reg_fg = (st->out_reg >= 0) ? 0xFFFF : 0x4208;
-            ui_draw_fill_rect(tile, &overlap, reg_bg);
-            char reg_str[8];
-            if (st->out_reg >= 0) snprintf(reg_str, sizeof(reg_str), "$%d=", st->out_reg);
-            else strcpy(reg_str, "执行");
-            ui_draw_string(tile, b_reg.x + 2, b_reg.y + 5, reg_str, FONT_16, reg_fg, reg_bg);
+        int cur_level = nest_level;
+        if (st->type == FLOW_TYPE_ELSE || st->type == FLOW_TYPE_END) {
+            if (cur_level > 0) cur_level--;
         }
 
-        // 2. 原语名按钮 (X: 70 ~ 150)
-        ui_rect_t b_prim = ui_rect_make(card.x + 70, card.y + 7, 80, 26);
-        if (ui_rect_intersect(&tile->rect, &b_prim, &overlap)) {
-            ui_draw_fill_rect(tile, &overlap, 0xFFFF);
-            ui_draw_rect(tile, &b_prim, 0x03DF);
+        // 树状层级导引线
+        if (iy + FLOW_CARD_H >= tile->rect.y && iy <= tile->rect.y + tile->rect.h) {
+            for (int lvl = 0; lvl < cur_level; lvl++) {
+                int16_t gx = viewport->x + 8 + lvl * 12;
+                ui_rect_t r_line = ui_rect_make(gx, iy, 1, FLOW_CARD_H);
+                ui_rect_t ov_line;
+                if (ui_rect_intersect(&tile->rect, &r_line, &ov_line)) {
+                    ui_draw_fill_rect(tile, &ov_line, 0xCE59);
+                }
+            }
+            if (cur_level > 0) {
+                int16_t gx = viewport->x + 8 + (cur_level - 1) * 12;
+                ui_rect_t r_branch = ui_rect_make(gx, iy + FLOW_CARD_H / 2, 6, 1);
+                ui_rect_t ov_br;
+                if (ui_rect_intersect(&tile->rect, &r_branch, &ov_br)) {
+                    ui_draw_fill_rect(tile, &ov_br, 0xCE59);
+                }
+            }
         }
-        ui_draw_string(tile, b_prim.x + 4, b_prim.y + 5, st->prim_name, FONT_16, 0x03DF, 0xFFFF);
 
-        // 3. 参数 1 (X: 154 ~ 224)
-        ui_rect_t b_arg0 = ui_rect_make(card.x + 154, card.y + 7, 70, 26);
-        if (ui_rect_intersect(&tile->rect, &b_arg0, &overlap)) {
-            ui_draw_fill_rect(tile, &overlap, 0xFFFF);
-            ui_draw_rect(tile, &b_arg0, 0x8410);
+        int16_t indent_x = cur_level * 12;
+        ui_rect_t card = ui_rect_make(viewport->x + 4 + indent_x, iy + 2, viewport->w - 8 - indent_x, FLOW_CARD_H - 4);
+        ui_rect_t overlap;
+
+        if (iy + FLOW_CARD_H >= tile->rect.y && iy <= tile->rect.y + tile->rect.h) {
+            bool is_selected = (i == (uint8_t)data->target_step_idx);
+
+            uint16_t bg_col = 0xDEFB;
+            uint16_t bd_col = is_selected ? 0x03DF : 0xCE59;
+
+            if (st->type == FLOW_TYPE_IF || st->type == FLOW_TYPE_ELSE) {
+                bg_col = is_selected ? 0xDF5F : 0xEF5D;
+                bd_col = is_selected ? 0x001F : 0x03DF;
+            } else if (st->type == FLOW_TYPE_FOR) {
+                bg_col = is_selected ? 0xFCE0 : 0xFDE0;
+                bd_col = is_selected ? 0xF800 : 0xFD20;
+            } else if (st->type == FLOW_TYPE_END) {
+                bg_col = 0xDEFB;
+                bd_col = is_selected ? 0x03DF : 0x8410;
+            }
+
+            if (ui_rect_intersect(&tile->rect, &card, &overlap)) {
+                ui_draw_fill_rect(tile, &overlap, bg_col);
+                ui_draw_rect(tile, &card, bd_col);
+                if (is_selected) {
+                    ui_rect_t inner = ui_rect_make(card.x + 1, card.y + 1, card.w - 2, card.h - 2);
+                    ui_draw_rect(tile, &inner, bd_col);
+                }
+            }
+
+            char step_num[10];
+            snprintf(step_num, sizeof(step_num), "%s%02u.", is_selected ? ">" : " ", i + 1);
+            ui_draw_string(tile, card.x + 2, card.y + 12, step_num, FONT_16, is_selected ? 0x03DF : 0x4208, bg_col);
+
+            switch (st->type) {
+            case FLOW_TYPE_CALL: {
+                ui_rect_t b_reg = ui_rect_make(card.x + 28, card.y + 7, 36, 24);
+                if (ui_rect_intersect(&tile->rect, &b_reg, &overlap)) {
+                    uint16_t reg_bg = (st->out_reg >= 0) ? 0x03DF : 0xCE59;
+                    ui_draw_fill_rect(tile, &overlap, reg_bg);
+                    char reg_str[8];
+                    if (st->out_reg >= 0) snprintf(reg_str, sizeof(reg_str), "$%d=", st->out_reg);
+                    else strcpy(reg_str, "执行");
+                    ui_draw_string(tile, b_reg.x + 2, b_reg.y + 4, reg_str, FONT_16, 0xFFFF, reg_bg);
+                }
+
+                ui_rect_t b_prim = ui_rect_make(card.x + 68, card.y + 7, 72, 24);
+                if (ui_rect_intersect(&tile->rect, &b_prim, &overlap)) {
+                    ui_draw_fill_rect(tile, &overlap, 0xFFFF);
+                    ui_draw_rect(tile, &b_prim, 0x03DF);
+                }
+                ui_draw_string(tile, b_prim.x + 4, b_prim.y + 4, st->name, FONT_16, 0x03DF, 0xFFFF);
+
+                ui_rect_t b_arg0 = ui_rect_make(card.x + 144, card.y + 7, 56, 24);
+                if (ui_rect_intersect(&tile->rect, &b_arg0, &overlap)) {
+                    ui_draw_fill_rect(tile, &overlap, 0xFFFF);
+                    ui_draw_rect(tile, &b_arg0, 0x8410);
+                }
+                ui_draw_string(tile, b_arg0.x + 4, b_arg0.y + 4, st->args[0][0] ? st->args[0] : "---", FONT_16, 0x4208, 0xFFFF);
+
+                ui_rect_t b_arg1 = ui_rect_make(card.x + 204, card.y + 7, 52, 24);
+                if (ui_rect_intersect(&tile->rect, &b_arg1, &overlap)) {
+                    ui_draw_fill_rect(tile, &overlap, 0xFFFF);
+                    ui_draw_rect(tile, &b_arg1, 0x8410);
+                }
+                ui_draw_string(tile, b_arg1.x + 4, b_arg1.y + 4, st->args[1][0] ? st->args[1] : "---", FONT_16, 0x4208, 0xFFFF);
+                break;
+            }
+
+            case FLOW_TYPE_IF: {
+                ui_draw_string(tile, card.x + 28, card.y + 12, "IF", FONT_16, 0x03DF, bg_col);
+
+                ui_rect_t b_arg0 = ui_rect_make(card.x + 50, card.y + 7, 54, 24);
+                if (ui_rect_intersect(&tile->rect, &b_arg0, &overlap)) {
+                    ui_draw_fill_rect(tile, &overlap, 0xFFFF);
+                    ui_draw_rect(tile, &b_arg0, 0x03DF);
+                }
+                ui_draw_string(tile, b_arg0.x + 4, b_arg0.y + 4, st->args[0][0] ? st->args[0] : "$0", FONT_16, 0x4208, 0xFFFF);
+
+                ui_rect_t b_op = ui_rect_make(card.x + 108, card.y + 7, 34, 24);
+                if (ui_rect_intersect(&tile->rect, &b_op, &overlap)) {
+                    ui_draw_fill_rect(tile, &overlap, 0x03DF);
+                }
+                ui_draw_string(tile, b_op.x + 6, b_op.y + 4, st->op[0] ? st->op : "==", FONT_16, 0xFFFF, 0x03DF);
+
+                ui_rect_t b_arg1 = ui_rect_make(card.x + 146, card.y + 7, 54, 24);
+                if (ui_rect_intersect(&tile->rect, &b_arg1, &overlap)) {
+                    ui_draw_fill_rect(tile, &overlap, 0xFFFF);
+                    ui_draw_rect(tile, &b_arg1, 0x03DF);
+                }
+                ui_draw_string(tile, b_arg1.x + 4, b_arg1.y + 4, st->args[1][0] ? st->args[1] : "1", FONT_16, 0x4208, 0xFFFF);
+                break;
+            }
+
+            case FLOW_TYPE_ELSE:
+                ui_draw_string(tile, card.x + 28, card.y + 12, "[ELSE 否则备选分支]", FONT_16, 0x4208, bg_col);
+                break;
+
+            case FLOW_TYPE_FOR: {
+                ui_draw_string(tile, card.x + 28, card.y + 12, "FOR", FONT_16, 0xFD20, bg_col);
+
+                ui_rect_t b_var = ui_rect_make(card.x + 60, card.y + 7, 30, 24);
+                if (ui_rect_intersect(&tile->rect, &b_var, &overlap)) {
+                    ui_draw_fill_rect(tile, &overlap, 0xFFFF);
+                    ui_draw_rect(tile, &b_var, 0xFD20);
+                }
+                ui_draw_string(tile, b_var.x + 8, b_var.y + 4, st->name[0] ? st->name : "i", FONT_16, 0x4208, 0xFFFF);
+
+                ui_draw_string(tile, card.x + 94, card.y + 12, "循环:", FONT_16, 0x4208, bg_col);
+
+                ui_rect_t b_cnt = ui_rect_make(card.x + 138, card.y + 7, 50, 24);
+                if (ui_rect_intersect(&tile->rect, &b_cnt, &overlap)) {
+                    ui_draw_fill_rect(tile, &overlap, 0xFFFF);
+                    ui_draw_rect(tile, &b_cnt, 0xFD20);
+                }
+                ui_draw_string(tile, b_cnt.x + 6, b_cnt.y + 4, st->args[0][0] ? st->args[0] : "3", FONT_16, 0x4208, 0xFFFF);
+                break;
+            }
+
+            case FLOW_TYPE_END:
+                ui_draw_string(tile, card.x + 28, card.y + 12, "[END 块结束标记]", FONT_16, 0x8410, bg_col);
+                break;
+            }
+
+            ui_rect_t b_del = ui_rect_make(card.x + card.w - 36, card.y + 7, 32, 24);
+            if (ui_rect_intersect(&tile->rect, &b_del, &overlap)) {
+                ui_draw_fill_rect(tile, &overlap, 0xF800);
+            }
+            ui_draw_string(tile, b_del.x + 11, b_del.y + 4, "X", FONT_16, 0xFFFF, 0xF800);
         }
-        ui_draw_string(tile, b_arg0.x + 4, b_arg0.y + 5, st->args[0][0] ? st->args[0] : "---", FONT_16, 0x4208, 0xFFFF);
 
-        // 4. 参数 2 (X: 228 ~ 296)
-        ui_rect_t b_arg1 = ui_rect_make(card.x + 228, card.y + 7, 68, 26);
-        if (ui_rect_intersect(&tile->rect, &b_arg1, &overlap)) {
-            ui_draw_fill_rect(tile, &overlap, 0xFFFF);
-            ui_draw_rect(tile, &b_arg1, 0x8410);
+        if (st->type == FLOW_TYPE_IF || st->type == FLOW_TYPE_FOR) {
+            nest_level++;
+        } else if (st->type == FLOW_TYPE_END) {
+            if (nest_level > 0) nest_level--;
         }
-        ui_draw_string(tile, b_arg1.x + 4, b_arg1.y + 5, st->args[1][0] ? st->args[1] : "---", FONT_16, 0x4208, 0xFFFF);
-
-        // 5. 删除按钮 [X]
-        ui_draw_string(tile, card.x + card.w - 32, card.y + 12, "[X]", FONT_16, 0xF800, 0xDEFB);
     }
 }
 
 /* ================= 8. App 标准生命周期 ================= */
+
 static void app_script_init(app_t *self) {
     self->user_data = g_static_app_ram;
 }
@@ -1138,30 +1388,30 @@ static void app_script_enter(app_t *self) {
     ui_btn_set_color(&data->btn_update_line, 0x03E0, 0x02E0, 0xFFFF);
     ui_input_bind_btn(&data->input_edit_line, &data->btn_update_line);
 
-    // Tab 3 动作向导控件初始化 (绑定标准 Touch-Up 回调)
-    ui_btn_init(&data->btn_flow_add, 126, 36, 52, 28, "+步骤", on_flow_add_click);
-    data->btn_flow_add.user_data = data;
-    data->btn_flow_add.style = UI_BTN_STYLE_ROUND;
-    data->btn_flow_add.font_size = FONT_16;
+    // Tab 3 动作向导顶栏 6 大控制按钮
+    ui_btn_init(&data->btn_flow_add, 126, 36, 44, 28, "+动作", on_flow_add_click);
+    data->btn_flow_add.user_data = data; data->btn_flow_add.style = UI_BTN_STYLE_ROUND; data->btn_flow_add.font_size = FONT_16;
     ui_btn_set_color(&data->btn_flow_add, 0x03E0, 0x02E0, 0xFFFF);
 
-    ui_btn_init(&data->btn_flow_loop, 184, 36, 64, 28, "单次", on_flow_loop_click);
-    data->btn_flow_loop.user_data = data;
-    data->btn_flow_loop.style = UI_BTN_STYLE_ROUND;
-    data->btn_flow_loop.font_size = FONT_16;
-    ui_btn_set_color(&data->btn_flow_loop, 0xDEFB, 0xCE59, 0x4208);
+    ui_btn_init(&data->btn_flow_if, 174, 36, 44, 28, "+判断", on_flow_if_click);
+    data->btn_flow_if.user_data = data; data->btn_flow_if.style = UI_BTN_STYLE_ROUND; data->btn_flow_if.font_size = FONT_16;
+    ui_btn_set_color(&data->btn_flow_if, 0x03DF, 0x0275, 0xFFFF);
 
-    ui_btn_init(&data->btn_flow_to_code, 254, 36, 64, 28, "转代码", on_flow_to_code_click);
-    data->btn_flow_to_code.user_data = data;
-    data->btn_flow_to_code.style = UI_BTN_STYLE_ROUND;
-    data->btn_flow_to_code.font_size = FONT_16;
-    ui_btn_set_color(&data->btn_flow_to_code, 0x03DF, 0x0275, 0xFFFF);
+    ui_btn_init(&data->btn_flow_for, 222, 36, 44, 28, "+循环", on_flow_for_click);
+    data->btn_flow_for.user_data = data; data->btn_flow_for.style = UI_BTN_STYLE_ROUND; data->btn_flow_for.font_size = FONT_16;
+    ui_btn_set_color(&data->btn_flow_for, 0xFD20, 0xFA60, 0xFFFF);
 
-    ui_btn_init(&data->btn_flow_run, 324, 36, 56, 28, "运行", on_flow_run_click);
-    data->btn_flow_run.user_data = data;
-    data->btn_flow_run.style = UI_BTN_STYLE_ROUND;
-    data->btn_flow_run.font_size = FONT_16;
-    ui_btn_set_color(&data->btn_flow_run, 0xF800, 0x8000, 0xFFFF);
+    ui_btn_init(&data->btn_flow_del, 270, 36, 44, 28, "删除", on_flow_del_click);
+    data->btn_flow_del.user_data = data; data->btn_flow_del.style = UI_BTN_STYLE_ROUND; data->btn_flow_del.font_size = FONT_16;
+    ui_btn_set_color(&data->btn_flow_del, 0xF800, 0x8000, 0xFFFF);
+
+    ui_btn_init(&data->btn_flow_to_code, 344, 36, 58, 28, "转代码", on_flow_to_code_click);
+    data->btn_flow_to_code.user_data = data; data->btn_flow_to_code.style = UI_BTN_STYLE_ROUND; data->btn_flow_to_code.font_size = FONT_16;
+    ui_btn_set_color(&data->btn_flow_to_code, 0xDEFB, 0xCE59, 0x4208);
+
+    ui_btn_init(&data->btn_flow_run, 406, 36, 58, 28, "运行", on_flow_run_click);
+    data->btn_flow_run.user_data = data; data->btn_flow_run.style = UI_BTN_STYLE_ROUND; data->btn_flow_run.font_size = FONT_16;
+    ui_btn_set_color(&data->btn_flow_run, 0x03E0, 0x02E0, 0xFFFF);
 
     ui_scrollview_init(&data->flow_scroll, FLOW_SCROLL_X, FLOW_SCROLL_Y, FLOW_SCROLL_W, FLOW_SCROLL_H,
                        FLOW_SCROLL_H, on_flow_scroll_draw_content);
@@ -1170,20 +1420,19 @@ static void app_script_enter(app_t *self) {
     data->flow_scroll.color_scrollbar = 0xCE59;
     data->flow_scroll.show_scrollbar = true;
 
-    // 参数编辑输入框
     ui_input_init(&data->input_flow_arg, 126, 68, 344, 36, "输入参数值", on_input_focus);
     data->input_flow_arg.user_data = data;
     data->input_flow_arg.color_bg = 0xDEFB;
     data->input_flow_arg.color_border = 0x03DF;
     data->input_flow_arg.color_text = 0x4208;
 
+    // 默认预置步骤
     data->flow_seq.step_count = 2;
-    data->flow_seq.repeat_times = 1;
     flow_step_set_default_args(&data->flow_seq.steps[0], "pin.write");
     flow_step_set_default_args(&data->flow_seq.steps[1], "delay");
+    data->target_step_idx = 0;
     data->flow_scroll.content_h = data->flow_seq.step_count * FLOW_CARD_H + 8;
 
-    // 弹窗初始化 (使用常驻 GBK 字符标题)
     utf8_to_gbk_string("选择硬件原语", data->modal_title_gbk, sizeof(data->modal_title_gbk));
     ui_modal_init(&data->modal_prim, LCD_WIDTH, LCD_HEIGHT, 380, 250, 280,
                   data->modal_title_gbk, UI_MODAL_BTN_NONE,
@@ -1242,7 +1491,6 @@ static bool app_script_process_touch(app_t *self, bool touching, int16_t tx, int
     script_app_data_t *data = (script_app_data_t *)self->user_data;
     if (!data) return false;
 
-    // 1. 优先捕获原语选择弹窗
     if (data->modal_prim.is_open) {
         bool handled = ui_modal_process_touch(&data->modal_prim, touching, tx, ty, now_tick);
         if (handled || !data->modal_prim.is_open) {
@@ -1251,7 +1499,6 @@ static bool app_script_process_touch(app_t *self, bool touching, int16_t tx, int
         return true;
     }
 
-    // 2. 键盘输入捕获
     if (data->keyboard.is_open) {
         bool handled = ui_keyboard_process_touch(&data->keyboard, touching, tx, ty, now_tick);
         if (handled || !data->keyboard.is_open) {
@@ -1260,7 +1507,6 @@ static bool app_script_process_touch(app_t *self, bool touching, int16_t tx, int
         return true;
     }
 
-    // 3. Tab 标签栏切换
     if (ui_tabview_process_touch(&data->tabview, touching, tx, ty, now_tick)) {
         if (data->tabview.active_tab_idx != data->last_tab_idx) {
             data->last_tab_idx = data->tabview.active_tab_idx;
@@ -1299,7 +1545,7 @@ static bool app_script_process_touch(app_t *self, bool touching, int16_t tx, int
     // Tab 1
     else if (data->tabview.active_tab_idx == 1) {
         if (ui_btn_process_touch(&data->btn_new_file, touching, tx, ty, now_tick)) {
-            data->dirty_rect = rect_union_box(data->dirty_rect, data->btn_new_file.rect);
+            data->dirty_rect = rect_union_box(data->btn_new_file.rect, data->btn_new_file.rect);
             return true;
         }
         if (ui_btn_process_touch(&data->btn_refresh, touching, tx, ty, now_tick)) {
@@ -1367,15 +1613,15 @@ static bool app_script_process_touch(app_t *self, bool touching, int16_t tx, int
     // Tab 2
     else if (data->tabview.active_tab_idx == 2) {
         if (ui_btn_process_touch(&data->btn_save_file, touching, tx, ty, now_tick)) {
-            data->dirty_rect = rect_union_box(data->dirty_rect, data->btn_save_file.rect);
+            data->dirty_rect = rect_union_box(data->btn_save_file.rect, data->btn_save_file.rect);
             return true;
         }
         if (ui_btn_process_touch(&data->btn_insert_line, touching, tx, ty, now_tick)) {
-            data->dirty_rect = rect_union_box(data->dirty_rect, data->btn_insert_line.rect);
+            data->dirty_rect = rect_union_box(data->btn_insert_line.rect, data->btn_insert_line.rect);
             return true;
         }
         if (ui_btn_process_touch(&data->btn_delete_line, touching, tx, ty, now_tick)) {
-            data->dirty_rect = rect_union_box(data->dirty_rect, data->btn_delete_line.rect);
+            data->dirty_rect = rect_union_box(data->btn_delete_line.rect, data->btn_delete_line.rect);
             return true;
         }
         if (ui_input_process_touch(&data->input_edit_line, touching, tx, ty, now_tick)) {
@@ -1383,7 +1629,7 @@ static bool app_script_process_touch(app_t *self, bool touching, int16_t tx, int
             handled = true;
         }
         if (ui_btn_process_touch(&data->btn_update_line, touching, tx, ty, now_tick)) {
-            data->dirty_rect = rect_union_box(data->dirty_rect, data->btn_update_line.rect);
+            data->dirty_rect = rect_union_box(data->btn_update_line.rect, data->btn_update_line.rect);
             return true;
         }
 
@@ -1428,22 +1674,12 @@ static bool app_script_process_touch(app_t *self, bool touching, int16_t tx, int
     }
     // Tab 3 动作向导
     else if (data->tabview.active_tab_idx == 3) {
-        if (ui_btn_process_touch(&data->btn_flow_add, touching, tx, ty, now_tick)) {
-            data->dirty_rect = rect_union_box(data->dirty_rect, data->btn_flow_add.rect);
-            return true;
-        }
-        if (ui_btn_process_touch(&data->btn_flow_loop, touching, tx, ty, now_tick)) {
-            data->dirty_rect = rect_union_box(data->dirty_rect, data->btn_flow_loop.rect);
-            return true;
-        }
-        if (ui_btn_process_touch(&data->btn_flow_to_code, touching, tx, ty, now_tick)) {
-            data->dirty_rect = rect_union_box(data->dirty_rect, data->btn_flow_to_code.rect);
-            return true;
-        }
-        if (ui_btn_process_touch(&data->btn_flow_run, touching, tx, ty, now_tick)) {
-            data->dirty_rect = rect_union_box(data->dirty_rect, data->btn_flow_run.rect);
-            return true;
-        }
+        if (ui_btn_process_touch(&data->btn_flow_add, touching, tx, ty, now_tick)) return true;
+        if (ui_btn_process_touch(&data->btn_flow_if, touching, tx, ty, now_tick)) return true;
+        if (ui_btn_process_touch(&data->btn_flow_for, touching, tx, ty, now_tick)) return true;
+        if (ui_btn_process_touch(&data->btn_flow_del, touching, tx, ty, now_tick)) return true;
+        if (ui_btn_process_touch(&data->btn_flow_to_code, touching, tx, ty, now_tick)) return true;
+        if (ui_btn_process_touch(&data->btn_flow_run, touching, tx, ty, now_tick)) return true;
 
         bool scroll_handled = ui_scrollview_process_touch(&data->flow_scroll, touching, tx, ty, now_tick);
         if (scroll_handled) data->dirty_rect = rect_union_box(data->dirty_rect, data->flow_scroll.view_rect);
@@ -1458,67 +1694,114 @@ static bool app_script_process_touch(app_t *self, bool touching, int16_t tx, int
         if (!touching && s_f_down) {
             s_f_down = false;
             int16_t dx = tx - s_fx, dy = ty - s_fy;
-            if (abs(dx) <= 6 && abs(dy) <= 6 && !data->flow_scroll.is_dragged) {
+            int16_t dscroll = data->flow_scroll.scroll_y - s_f_scroll;
+            if (abs(dx) <= 6 && abs(dy) <= 6 && dscroll == 0 && !data->flow_scroll.is_dragged) {
                 ui_rect_t vr = data->flow_scroll.view_rect;
                 if (tx >= vr.x && tx <= vr.x + vr.w && ty >= vr.y && ty <= vr.y + vr.h) {
                     int idx = (ty - vr.y + data->flow_scroll.scroll_y) / FLOW_CARD_H;
                     if (idx >= 0 && idx < data->flow_seq.step_count) {
-                        int16_t rx = tx - vr.x;
                         flow_card_step_t *st = &data->flow_seq.steps[idx];
 
-                        // A. 输出插槽选择 (X: 28 ~ 68)
-                        if (rx >= 28 && rx <= 68) {
-                            if (st->out_reg < 0) st->out_reg = 0;
-                            else if (st->out_reg < 1) st->out_reg++;
-                            else st->out_reg = -1;
+                        int nest = 0;
+                        for (int k = 0; k < idx; k++) {
+                            if (data->flow_seq.steps[k].type == FLOW_TYPE_IF || data->flow_seq.steps[k].type == FLOW_TYPE_FOR) nest++;
+                            else if (data->flow_seq.steps[k].type == FLOW_TYPE_END && nest > 0) nest--;
+                        }
+                        if ((st->type == FLOW_TYPE_ELSE || st->type == FLOW_TYPE_END) && nest > 0) nest--;
+                        int16_t indent_x = nest * 12;
+                        int16_t card_x = vr.x + 4 + indent_x;
+                        int16_t card_w = vr.w - 8 - indent_x;
+                        int16_t rx = tx - card_x;
+
+                        // 实体红色删除按钮 [X] (右侧 38px 范围)
+                        if (rx >= card_w - 38) {
+                            flow_delete_step_at(data, idx);
+                            ui_toast_show(&data->toast, "已删除卡片", UI_TOAST_INFO, to_ms_since_boot(get_absolute_time()));
                             data->dirty_rect = data->flow_scroll.view_rect;
                             return true;
                         }
-                        // B. 原语名按钮 (X: 70 ~ 150)
-                        else if (rx >= 70 && rx <= 150) {
-                            data->target_step_idx = idx;
-                            uint8_t total_prims = script_prim_get_count();
-                            data->modal_prim.sv_body.content_h = total_prims * 36 + 8;
-                            ui_modal_show(&data->modal_prim, data->modal_title_gbk, data);
-                            data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
-                            return true;
-                        }
-                        // C. 参数 1 (X: 154 ~ 224)
-                        else if (rx >= 154 && rx <= 224) {
-                            data->target_step_idx = idx;
-                            data->target_arg_idx = 0;
-                            ui_input_set_text(&data->input_flow_arg, st->args[0]);
-                            ui_keyboard_open(&data->keyboard, &data->input_flow_arg);
-                            data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
-                            return true;
-                        }
-                        // D. 参数 2 (X: 228 ~ 296)
-                        else if (rx >= 228 && rx <= 296) {
-                            if (strcmp(st->prim_name, "pin.write") == 0) {
-                                strcpy(st->args[1], (strcmp(st->args[1], "1") == 0) ? "0" : "1");
+
+                        // 将当前卡片设为插入锚点 (高亮当前行)
+                        data->target_step_idx = idx;
+
+                        if (st->type == FLOW_TYPE_CALL) {
+                            if (rx >= 28 && rx <= 64) {
+                                if (st->out_reg < 0) st->out_reg = 0;
+                                else if (st->out_reg < 1) st->out_reg++;
+                                else st->out_reg = -1;
                                 data->dirty_rect = data->flow_scroll.view_rect;
-                            } else if (strcmp(st->prim_name, "pin.mode") == 0) {
-                                strcpy(st->args[1], (strcmp(st->args[1], "out") == 0) ? "in" : "out");
+                                return true;
+                            } else if (rx >= 68 && rx <= 140) {
+                                uint8_t total_prims = script_prim_get_count();
+                                data->modal_prim.sv_body.content_h = total_prims * 36 + 8;
+                                ui_modal_show(&data->modal_prim, data->modal_title_gbk, data);
+                                data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
+                                return true;
+                            } else if (rx >= 144 && rx <= 200) {
+                                data->target_arg_idx = 0;
+                                ui_input_set_text(&data->input_flow_arg, st->args[0]);
+                                ui_keyboard_open(&data->keyboard, &data->input_flow_arg);
+                                data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
+                                return true;
+                            } else if (rx >= 204 && rx <= 256) {
+                                if (strcmp(st->name, "pin.write") == 0) {
+                                    strcpy(st->args[1], (strcmp(st->args[1], "1") == 0) ? "0" : "1");
+                                    data->dirty_rect = data->flow_scroll.view_rect;
+                                } else if (strcmp(st->name, "pin.mode") == 0) {
+                                    strcpy(st->args[1], (strcmp(st->args[1], "out") == 0) ? "in" : "out");
+                                    data->dirty_rect = data->flow_scroll.view_rect;
+                                } else if (st->args[1][0] != '\0' || strcmp(st->name, "pwm.set") == 0) {
+                                    data->target_arg_idx = 1;
+                                    ui_input_set_text(&data->input_flow_arg, st->args[1]);
+                                    ui_keyboard_open(&data->keyboard, &data->input_flow_arg);
+                                    data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
+                                }
+                                return true;
+                            }
+                        }
+                        else if (st->type == FLOW_TYPE_IF) {
+                            if (rx >= 50 && rx <= 104) {
+                                data->target_arg_idx = 0;
+                                ui_input_set_text(&data->input_flow_arg, st->args[0]);
+                                ui_keyboard_open(&data->keyboard, &data->input_flow_arg);
+                                data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
+                                return true;
+                            } else if (rx >= 108 && rx <= 142) {
+                                if (strcmp(st->op, "==") == 0) strcpy(st->op, "!=");
+                                else if (strcmp(st->op, "!=") == 0) strcpy(st->op, ">");
+                                else if (strcmp(st->op, ">") == 0) strcpy(st->op, "<");
+                                else if (strcmp(st->op, "<") == 0) strcpy(st->op, ">=");
+                                else if (strcmp(st->op, ">=") == 0) strcpy(st->op, "<=");
+                                else strcpy(st->op, "==");
                                 data->dirty_rect = data->flow_scroll.view_rect;
-                            } else if (st->args[1][0] != '\0' || strcmp(st->prim_name, "pwm.set") == 0) {
-                                data->target_step_idx = idx;
+                                return true;
+                            } else if (rx >= 146 && rx <= 200) {
                                 data->target_arg_idx = 1;
                                 ui_input_set_text(&data->input_flow_arg, st->args[1]);
                                 ui_keyboard_open(&data->keyboard, &data->input_flow_arg);
                                 data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
+                                return true;
                             }
-                            return true;
                         }
-                        // E. 删除按钮 [X]
-                        else if (rx >= vr.w - 44) {
-                            for (uint8_t k = idx; k < data->flow_seq.step_count - 1; k++) {
-                                data->flow_seq.steps[k] = data->flow_seq.steps[k + 1];
+                        else if (st->type == FLOW_TYPE_FOR) {
+                            if (rx >= 60 && rx <= 90) {
+                                if (strcmp(st->name, "i") == 0) strcpy(st->name, "j");
+                                else if (strcmp(st->name, "j") == 0) strcpy(st->name, "k");
+                                else if (strcmp(st->name, "k") == 0) strcpy(st->name, "cnt");
+                                else strcpy(st->name, "i");
+                                data->dirty_rect = data->flow_scroll.view_rect;
+                                return true;
+                            } else if (rx >= 138 && rx <= 188) {
+                                data->target_arg_idx = 0;
+                                ui_input_set_text(&data->input_flow_arg, st->args[0]);
+                                ui_keyboard_open(&data->keyboard, &data->input_flow_arg);
+                                data->dirty_rect = ui_rect_make(0, 32, LCD_WIDTH, LCD_HEIGHT - 32);
+                                return true;
                             }
-                            data->flow_seq.step_count--;
-                            data->flow_scroll.content_h = data->flow_seq.step_count * FLOW_CARD_H + 8;
-                            data->dirty_rect = data->flow_scroll.view_rect;
-                            return true;
                         }
+
+                        data->dirty_rect = data->flow_scroll.view_rect;
+                        return true;
                     }
                 }
             }
@@ -1576,7 +1859,9 @@ static void app_script_draw(app_t *self, ui_tile_t *tile) {
 
         case 3:
             ui_btn_draw(tile, &data->btn_flow_add);
-            ui_btn_draw(tile, &data->btn_flow_loop);
+            ui_btn_draw(tile, &data->btn_flow_if);
+            ui_btn_draw(tile, &data->btn_flow_for);
+            ui_btn_draw(tile, &data->btn_flow_del);
             ui_btn_draw(tile, &data->btn_flow_to_code);
             ui_btn_draw(tile, &data->btn_flow_run);
             ui_scrollview_draw(tile, &data->flow_scroll);

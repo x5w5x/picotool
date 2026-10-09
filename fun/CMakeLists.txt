@@ -12,6 +12,8 @@ add_library(fun STATIC
     fun_script_engine.c
     fun_ir.c
     fun_task_flow.c
+    fun_i2c.c
+
     
 )
 
@@ -33,6 +35,9 @@ target_link_libraries(fun PUBLIC
     hardware_gpio
     hardware_pio
     hardware_pwm
+    hardware_i2c
+    hardware_spi
+    hardware_adc
     hardware_clocks
     pio_manager
    

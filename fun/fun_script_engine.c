@@ -1,9 +1,12 @@
 #include "fun_script_engine.h"
 #include "pico/stdlib.h"
+#include "hardware/adc.h"
+#include "hardware/pwm.h"
+#include "fun_esp.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-
+#include "fun_i2c.h"
 extern const script_prim_entry_t __start_script_prims[];
 extern const script_prim_entry_t __stop_script_prims[];
 
@@ -171,7 +174,7 @@ static int tokenize_line(char *line, char *argv[], int max_args) {
     char *p = line;
 
     while (*p == ' ' || *p == '\t') p++;
-    if (*p == ':') return 0; // 标签行不作为指令切分
+    if (*p == ':') return 0;
 
     while (*p && argc < max_args) {
         while (*p && is_python_delim(*p)) p++;
@@ -191,7 +194,7 @@ static int tokenize_line(char *line, char *argv[], int max_args) {
     return argc;
 }
 
-/* ================= 3. 统一条件求值器 (支持内联原语) ================= */
+/* ================= 3. 条件求值器 ================= */
 
 static bool eval_condition(script_vm_t *vm, int argc, char *argv[]) {
     int op_idx = -1;
@@ -342,7 +345,6 @@ static int32_t exec_tokens(script_vm_t *vm, int argc, char *argv[], char *out_ms
         return 0;
     }
 
-    // 变量赋值支持 (如: count = 5 或 val = adc.volt(26) 或 a = b + 1)
     if (argc >= 3 && strcmp(argv[1], "=") == 0) {
         const char *var_name = argv[0];
         if (argc == 5) {
@@ -372,7 +374,6 @@ static int32_t exec_tokens(script_vm_t *vm, int argc, char *argv[], char *out_ms
         return 0;
     }
 
-    // 原语直接调用
     const script_prim_entry_t *prim = find_primitive(argv[0]);
     if (prim) {
         if ((argc - 1) < prim->min_args) {
@@ -455,7 +456,7 @@ void script_vm_run(script_vm_t *vm) {
         int argc = tokenize_line(line, argv, SCRIPT_MAX_ARGS);
         if (argc == 0) continue;
 
-        // ---------------- 1. 结构化循环控制 ----------------
+        // 1. 结构化循环控制
         if (strcmp(argv[0], "for") == 0 && argc >= 4) {
             const char *var_name = argv[1];
             int32_t start_val = 0;
@@ -541,7 +542,6 @@ void script_vm_run(script_vm_t *vm) {
         }
 
         if (strcmp(argv[0], "end") == 0) {
-            // 先尝试匹配循环块
             if (vm->loop_sp > 0) {
                 script_loop_frame_t *frame = &vm->loop_stack[vm->loop_sp - 1];
                 if (frame->type == LOOP_TYPE_FOR) {
@@ -569,7 +569,6 @@ void script_vm_run(script_vm_t *vm) {
                     continue;
                 }
             }
-            // 否则视为 if 分支块闭合
             vm->if_matched = false;
             continue;
         }
@@ -581,26 +580,25 @@ void script_vm_run(script_vm_t *vm) {
             }
             continue;
         }
+
         if (strcmp(argv[0], "continue") == 0) {
             if (vm->loop_sp > 0) {
                 script_loop_frame_t *frame = &vm->loop_stack[vm->loop_sp - 1];
-                vm->if_matched = false; // 复位分支命中标志，防止污染下轮循环
+                vm->if_matched = false;
 
                 if (frame->type == LOOP_TYPE_FOR) {
-                    // 1. for 循环：步进循环变量并判断是否越界
                     int32_t cur = resolve_val(vm, frame->var_name);
                     cur += frame->step;
                     set_var_val(vm, frame->var_name, cur);
 
                     if ((frame->step > 0 && cur < frame->end_val) || 
                         (frame->step < 0 && cur > frame->end_val)) {
-                        vm->pc = frame->start_pc; // 回跳到循环体首行
+                        vm->pc = frame->start_pc;
                     } else {
-                        vm->loop_sp--;            // 循环结束出栈并跳过循环体
+                        vm->loop_sp--;
                         skip_loop_block(vm);
                     }
                 } else if (frame->type == LOOP_TYPE_REPEAT) {
-                    // 2. repeat 计数循环
                     frame->remaining--;
                     if (frame->remaining > 0) {
                         vm->pc = frame->start_pc;
@@ -608,18 +606,14 @@ void script_vm_run(script_vm_t *vm) {
                         vm->loop_sp--;
                         skip_loop_block(vm);
                     }
-                } else if (frame->type == LOOP_TYPE_WHILE) {
-                    // 3. while 条件循环：直接跳回 while 语句行重新评估条件
-                    vm->pc = frame->start_pc;
-                } else if (frame->type == LOOP_TYPE_LOOP) {
-                    // 4. 无限循环：直接跳回首行
+                } else if (frame->type == LOOP_TYPE_WHILE || frame->type == LOOP_TYPE_LOOP) {
                     vm->pc = frame->start_pc;
                 }
             }
             continue;
         }
 
-        // ---------------- 2. 条件分支控制: if / elif / else / end ----------------
+        // 2. 条件分支控制
         if (strcmp(argv[0], "if") == 0) {
             bool is_classic_goto = false;
             for (int k = 1; k < argc; k++) {
@@ -637,14 +631,14 @@ void script_vm_run(script_vm_t *vm) {
                 vm->if_matched = true;
             } else {
                 vm->if_matched = false;
-                skip_if_block(vm, true); // 跳到 elif 或 else
+                skip_if_block(vm, true);
             }
             continue;
         }
 
         if (strcmp(argv[0], "elif") == 0) {
             if (vm->if_matched) {
-                skip_if_block(vm, false); // 前面已命中，直接跳到当前 if 链 end
+                skip_if_block(vm, false);
             } else {
                 if (eval_condition(vm, argc, argv)) {
                     vm->if_matched = true;
@@ -672,7 +666,7 @@ void script_vm_run(script_vm_t *vm) {
             continue;
         }
 
-        // ---------------- 3. 原语与通用赋值派发 ----------------
+        // 3. 原语与通用赋值派发
         char err_msg[64] = {0};
         int32_t ret = exec_tokens(vm, argc, argv, err_msg, sizeof(err_msg));
         if (ret == -1 && vm->log_cb && err_msg[0]) {
@@ -763,3 +757,124 @@ static int32_t prim_help(script_vm_t *vm, int argc, const char *argv[]) {
     return 0;
 }
 SCRIPT_PRIMITIVE("help", prim_help, 0, "help()");
+
+/* ================= 9. 扩展硬件物理测量与执行原语 ================= */
+
+static int32_t prim_adc_volt(script_vm_t *vm, int argc, const char *argv[]) {
+    (void)vm;
+    if (argc < 2) return 0;
+    uint pin = (uint)strtoul(argv[1], NULL, 0);
+    if (pin < 26 || pin > 29) return 0;
+
+    static bool s_adc_inited = false;
+    if (!s_adc_inited) {
+        adc_init();
+        s_adc_inited = true;
+    }
+    adc_gpio_init(pin);
+    adc_select_input(pin - 26);
+    uint16_t raw = adc_read();
+    return (int32_t)((raw * 3300u) / 4095u);
+}
+SCRIPT_PRIMITIVE("adc.volt", prim_adc_volt, 1, "adc.volt(引脚26-29) -> mV");
+
+static int32_t prim_adc_read(script_vm_t *vm, int argc, const char *argv[]) {
+    (void)vm;
+    if (argc < 2) return 0;
+    uint pin = (uint)strtoul(argv[1], NULL, 0);
+    if (pin < 26 || pin > 29) return 0;
+
+    static bool s_adc_inited = false;
+    if (!s_adc_inited) {
+        adc_init();
+        s_adc_inited = true;
+    }
+    adc_gpio_init(pin);
+    adc_select_input(pin - 26);
+    return (int32_t)adc_read();
+}
+SCRIPT_PRIMITIVE("adc.read", prim_adc_read, 1, "adc.read(引脚26-29)");
+
+static int32_t prim_pwm_set(script_vm_t *vm, int argc, const char *argv[]) {
+    (void)vm;
+    if (argc < 3) return -1;
+    uint pin = (uint)strtoul(argv[1], NULL, 0);
+    int32_t duty = (int32_t)strtol(argv[2], NULL, 0);
+    if (duty < 0) duty = 0;
+    if (duty > 100) duty = 100;
+
+    gpio_set_function(pin, GPIO_FUNC_PWM);
+    uint slice = pwm_gpio_to_slice_num(pin);
+    uint chan  = pwm_gpio_to_channel(pin);
+
+    pwm_set_wrap(slice, 1000);
+    pwm_set_chan_level(slice, chan, (duty * 1000) / 100);
+    pwm_set_enabled(slice, true);
+    return 0;
+}
+SCRIPT_PRIMITIVE("pwm.set", prim_pwm_set, 2, "pwm.set(引脚, 占空比0-100)");
+
+static int32_t prim_esp_send(script_vm_t *vm, int argc, const char *argv[]) {
+    (void)vm;
+    if (argc < 2) return 0;
+    char cmd[128];
+    snprintf(cmd, sizeof(cmd), "%s\r\n", argv[1]);
+    esp_send_string(cmd);
+    return 1;
+}
+SCRIPT_PRIMITIVE("esp.send", prim_esp_send, 1, "esp.send(AT指令/文本)");
+
+
+/* ================= 10. I2C 总线通用原生脚本原语 ================= */
+
+static int32_t prim_i2c_scan(script_vm_t *vm, int argc, const char *argv[]) {
+    (void)argc; (void)argv;
+    uint8_t addrs[16];
+    int n = fun_i2c_scan(addrs, 16);
+    if (vm && vm->log_cb) {
+        char buf[64];
+        if (n == 0) {
+            vm->log_cb("[I2C] 扫描完成: 未发现任何设备", 0xFD20, vm->user_data);
+        } else {
+            snprintf(buf, sizeof(buf), "[I2C] 扫描完成: 发现 %d 个从机", n);
+            vm->log_cb(buf, 0x03DF, vm->user_data);
+            
+            // 逐个打印扫出的十六进制地址和器件名称
+            for (int i = 0; i < n && i < 16; i++) {
+                snprintf(buf, sizeof(buf), " -> [0x%02X] %s", addrs[i], fun_i2c_lookup_name(addrs[i]));
+                vm->log_cb(buf, 0x07E0, vm->user_data);
+            }
+        }
+    }
+    return n;
+}
+SCRIPT_PRIMITIVE("i2c.scan", prim_i2c_scan, 0, "i2c.scan() -> 发现器件数");
+
+static int32_t prim_i2c_read(script_vm_t *vm, int argc, const char *argv[]) {
+    if (argc < 3) return -1;
+    uint8_t addr = (uint8_t)strtoul(argv[1], NULL, 0);
+    uint8_t reg  = (uint8_t)strtoul(argv[2], NULL, 0);
+    uint8_t val  = 0;
+    int ret = fun_i2c_read_reg(addr, reg, &val);
+    return (ret == 0) ? (int32_t)val : -1;
+}
+SCRIPT_PRIMITIVE("i2c.read", prim_i2c_read, 2, "i2c.read(从机地址, 寄存器) -> 值");
+
+static int32_t prim_i2c_write(script_vm_t *vm, int argc, const char *argv[]) {
+    if (argc < 4) return -1;
+    uint8_t addr = (uint8_t)strtoul(argv[1], NULL, 0);
+    uint8_t reg  = (uint8_t)strtoul(argv[2], NULL, 0);
+    uint8_t val  = (uint8_t)strtoul(argv[3], NULL, 0);
+    return (fun_i2c_write_reg(addr, reg, val) == 0) ? 0 : -1;
+}
+SCRIPT_PRIMITIVE("i2c.write", prim_i2c_write, 3, "i2c.write(从机地址, 寄存器, 值)");
+
+static int32_t prim_i2c_send(script_vm_t *vm, int argc, const char *argv[]) {
+    if (argc < 3) return -1;
+    uint8_t addr = (uint8_t)strtoul(argv[1], NULL, 0);
+    const char *hex_str = argv[2];
+    int ret = fun_i2c_send_hex(addr, hex_str);
+    return ret >= 0 ? 0 : -1;
+}
+SCRIPT_PRIMITIVE("i2c.send", prim_i2c_send, 2, "i2c.send(从机地址, \"HEX字符串\")");
+

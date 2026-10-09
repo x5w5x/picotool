@@ -51,6 +51,7 @@
 #include "app_esp.h"
 #include "app_script.h"
 #include "app_ir.h"
+#include "app_i2c.h"
 #define LED_PIN PICO_DEFAULT_LED_PIN
 #define CHIP_TEMP_OFFSET_C 13.0f
 
@@ -150,12 +151,12 @@ void app_ui_custom_init(void)
     // app_manager_register(&g_app_mgr, app_uart_term_get_instance());
     // app_manager_register(&g_app_mgr, app_swd_probe_get_instance());
     app_manager_register(&g_app_mgr, app_sd_msc_get_instance());
-
+     app_manager_register(&g_app_mgr, app_i2c_get_instance());
     // app_manager_register(&g_app_mgr, app_adc_get_instance());
 
     // app_manager_register(&g_app_mgr, app_pwm_get_instance());
     // app_manager_register(&g_app_mgr, app_i2c_spi_get_instance());
-    // app_manager_register(&g_app_mgr, app_pinout_get_instance());
+    app_manager_register(&g_app_mgr, app_pinout_get_instance());
     // app_manager_register(&g_app_mgr, app_audio_get_instance());
     // app_manager_register(&g_app_mgr, app_loader_get_instance());
     // 3. ³õÊ¼»¯¶¥²¿×´Ì¬À¸ (X:0, Y:0, W:480, H:32)

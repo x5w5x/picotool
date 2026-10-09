@@ -33,6 +33,8 @@ add_library(appmgr STATIC
     app_settings.c
     app_script.c
     app_ir.c
+    app_i2c.c
+
 )
 
 target_include_directories(appmgr PUBLIC
