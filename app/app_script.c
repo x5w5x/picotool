@@ -16,6 +16,8 @@
 #include "pico/multicore.h"
 #include "pico/time.h"
 #include "fun_script_engine.h"
+#include "fun_pio_swd.h"
+#include "pio_manager.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -199,9 +201,13 @@ typedef struct {
 
     FATFS               fs;
     bool                fs_mounted;
+
 } script_app_data_t;
 
 static app_t s_app_script;
+/* SWD 句柄不放入 10 KB 的共享 App RAM，避免继续扩大共享池越界。 */
+static fun_pio_swd_t s_script_swd;
+static bool s_script_swd_opened;
 
 static inline ui_rect_t rect_union_box(ui_rect_t a, ui_rect_t b) {
     if (a.w == 0 || a.h == 0) return b;
@@ -1272,6 +1278,108 @@ static void on_flow_scroll_draw_content(ui_tile_t *tile, const ui_rect_t *viewpo
     }
 }
 
+/* ================= 通用 SWD 脚本原语 =================
+ * 原语只提供总线能力，不判断 STM32/CW32 等具体型号。
+ * 例如芯片的 Flash 容量寄存器地址，交给 txt 脚本调用 swd.read32()。
+ */
+static int32_t prim_swd_open(script_vm_t *vm, int argc, const char *argv[])
+{
+    if (!vm || argc < 4) return -1;
+    script_app_data_t *data = (script_app_data_t *)vm->user_data;
+    if (!data) return -1;
+
+    uint8_t swclk = (uint8_t)strtoul(argv[1], NULL, 0);
+    uint8_t swdio = (uint8_t)strtoul(argv[2], NULL, 0);
+    uint32_t clock_hz = (uint32_t)strtoul(argv[3], NULL, 0);
+
+    if (s_script_swd_opened) {
+        fun_pio_swd_close(&s_script_swd);
+        s_script_swd_opened = false;
+    }
+    fun_pio_swd_init(&s_script_swd);
+    s_script_swd_opened = fun_pio_swd_open_auto(
+        &s_script_swd, pio_manager_get_default(), swclk, swdio, clock_hz);
+
+    if (s_script_swd_opened) {
+        if (vm->log_cb) vm->log_cb("[SWD] open ok", 0x07E0, vm->user_data);
+        return 1;
+    }
+    if (vm->log_cb) vm->log_cb("[SWD] open failed", 0xF800, vm->user_data);
+    return 0;
+}
+SCRIPT_PRIMITIVE("swd.open", prim_swd_open, 3,
+                 "swd.open(SWCLK, SWDIO, CLOCK_HZ)");
+
+static int32_t prim_swd_dp_id(script_vm_t *vm, int argc, const char *argv[])
+{
+    (void)argc; (void)argv;
+    if (!vm) return -1;
+    script_app_data_t *data = (script_app_data_t *)vm->user_data;
+    if (!data || !s_script_swd_opened) return -1;
+
+    uint32_t id = 0;
+    uint8_t ack = 0;
+    bool ok = fun_pio_swd_read_dp_idcode(&s_script_swd, &id, &ack);
+    if (vm->log_cb) {
+        char text[96];
+        snprintf(text, sizeof(text), "[SWD] DP ID=0x%08lX ACK=%u",
+                 (unsigned long)id, (unsigned)ack);
+        vm->log_cb(text, ok ? 0x07E0 : 0xF800, vm->user_data);
+    }
+    return ok ? (int32_t)id : -1;
+}
+SCRIPT_PRIMITIVE("swd.dp_id", prim_swd_dp_id, 0, "swd.dp_id() -> DP ID");
+
+static int32_t prim_swd_power_up(script_vm_t *vm, int argc, const char *argv[])
+{
+    (void)argc; (void)argv;
+    if (!vm) return -1;
+    script_app_data_t *data = (script_app_data_t *)vm->user_data;
+    if (!data || !s_script_swd_opened) return -1;
+    bool ok = fun_pio_swd_power_up(&s_script_swd);
+    if (vm->log_cb) vm->log_cb(ok ? "[SWD] power up ok" : "[SWD] power up failed", ok ? 0x07E0 : 0xF800, vm->user_data);
+    return ok ? 1 : 0;
+}
+SCRIPT_PRIMITIVE("swd.power_up", prim_swd_power_up, 0, "swd.power_up()");
+
+static int32_t prim_swd_read32(script_vm_t *vm, int argc, const char *argv[])
+{
+    if (!vm || argc < 2) return -1;
+    script_app_data_t *data = (script_app_data_t *)vm->user_data;
+    if (!data || !s_script_swd_opened) return -1;
+
+    uint32_t address = (uint32_t)strtoul(argv[1], NULL, 0);
+    uint32_t value = 0;
+    if (!fun_pio_swd_read_memory32(&s_script_swd, address, &value)) {
+        if (vm->log_cb) vm->log_cb("[SWD] read32 failed", 0xF800, vm->user_data);
+        return -1;
+    }
+    if (vm->log_cb) {
+        char text[96];
+        snprintf(text, sizeof(text), "[SWD] MEM[0x%08lX]=0x%08lX",
+                 (unsigned long)address, (unsigned long)value);
+        vm->log_cb(text, 0x07E0, vm->user_data);
+    }
+    return (int32_t)value;
+}
+SCRIPT_PRIMITIVE("swd.read32", prim_swd_read32, 1,
+                 "swd.read32(ADDRESS) -> 32-bit value");
+
+static int32_t prim_swd_close(script_vm_t *vm, int argc, const char *argv[])
+{
+    (void)argc; (void)argv;
+    if (!vm) return -1;
+    script_app_data_t *data = (script_app_data_t *)vm->user_data;
+    if (!data) return -1;
+    if (s_script_swd_opened) {
+        fun_pio_swd_close(&s_script_swd);
+        s_script_swd_opened = false;
+    }
+    if (vm->log_cb) vm->log_cb("[SWD] closed", 0x8410, vm->user_data);
+    return 0;
+}
+SCRIPT_PRIMITIVE("swd.close", prim_swd_close, 0, "swd.close()");
+
 /* ================= 8. App 标准生命周期 ================= */
 
 static void app_script_init(app_t *self) {
@@ -1292,6 +1400,8 @@ static void app_script_enter(app_t *self) {
 
     script_vm_init(&data->vm);
     script_vm_set_log(&data->vm, script_log_bridge, data);
+    fun_pio_swd_init(&s_script_swd);
+    s_script_swd_opened = false;
 
     ui_tabview_init(&data->tabview, 0, 32, LCD_WIDTH, LCD_HEIGHT - 32,
                     110, 48, s_script_tabs, SCRIPT_TAB_COUNT, 0, on_tab_changed);
@@ -1450,6 +1560,10 @@ static void app_script_exit(app_t *self) {
             script_vm_abort(&data->vm);
             multicore_reset_core1();
             data->core1_running = false;
+        }
+        if (s_script_swd_opened) {
+            fun_pio_swd_close(&s_script_swd);
+            s_script_swd_opened = false;
         }
         if (data->fs_mounted) {
             f_mount(NULL, "0:", 0);
