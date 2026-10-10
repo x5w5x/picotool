@@ -34,6 +34,7 @@ add_library(appmgr STATIC
     app_script.c
     app_ir.c
     app_i2c.c
+    app_spi.c
 
 )
 

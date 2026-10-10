@@ -75,7 +75,8 @@
         "time.h": "c",
         "fun_uart_profile.h": "c",
         "ir.pio.h": "c",
-        "fun_spi.h": "c"
+        "fun_spi.h": "c",
+        "app_api.h": "c"
     },
     "idf.currentSetup": "D:/espidf/Espressif/frameworks/esp-idf-v5.3.1/"
 }

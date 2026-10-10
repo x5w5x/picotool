@@ -13,6 +13,7 @@ add_library(fun STATIC
     fun_ir.c
     fun_task_flow.c
     fun_i2c.c
+    fun_spi.c
 
     
 )
