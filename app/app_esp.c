@@ -231,6 +231,19 @@ static inline void esp_queue_push(esp_app_data_t *data, const char *text, uint16
 
 static void on_btn_install_item_click(ui_btn_t *btn, void *user_data);
 
+/* 脚本文本下载到脚本目录，其余商城/应用文件仍进入下载目录。 */
+static bool esp_filename_is_txt(const char *filename)
+{
+    if (!filename) return false;
+
+    const char *dot = strrchr(filename, '.');
+    if (!dot || strlen(dot) != 4) return false;
+
+    return dot[1] == 't' || dot[1] == 'T'
+        ? (dot[2] == 'x' || dot[2] == 'X') && (dot[3] == 't' || dot[3] == 'T')
+        : false;
+}
+
 /* ============================================================================
  * Core 1: 921600 高速串口抽采线程 (定长载荷解耦引擎)
  * ============================================================================ */
@@ -309,13 +322,19 @@ static void esp_core1_worker(void)
                             char *comma = strchr(p_name, ',');
                             if (comma) {
                                 *comma = '\0';
-                                strncpy(data->dl_filename, p_name, sizeof(data->dl_filename) - 1);
-                                data->dl_filename[sizeof(data->dl_filename) - 1] = '\0';
 
-                                size_t fn_len = strlen(data->dl_filename);
-                                while (fn_len > 0 && (data->dl_filename[fn_len - 1] == ' ' || data->dl_filename[fn_len - 1] == '\r')) {
-                                    data->dl_filename[--fn_len] = '\0';
+                                // 1. 先清洗 UTF-8 文件名尾部的空格和换行
+                                char raw_utf8[64];
+                                strncpy(raw_utf8, p_name, sizeof(raw_utf8) - 1);
+                                raw_utf8[sizeof(raw_utf8) - 1] = '\0';
+
+                                size_t fn_len = strlen(raw_utf8);
+                                while (fn_len > 0 && (raw_utf8[fn_len - 1] == ' ' || raw_utf8[fn_len - 1] == '\r')) {
+                                    raw_utf8[--fn_len] = '\0';
                                 }
+
+                                // ⚡ 核心修复：将 UTF-8 文件名转换为 GBK 格式供 FatFs 和 UI 使用
+                                utf8_to_gbk_string(raw_utf8, data->dl_filename, sizeof(data->dl_filename));
 
                                 data->dl_total_bytes = (uint32_t)strtoul(comma + 1, NULL, 10);
                                 data->dl_recv_bytes  = 0;
@@ -327,14 +346,18 @@ static void esp_core1_worker(void)
                                     }
                                 }
 
-                                f_mkdir("0:/download");
-                                char target_path[64];
-                                snprintf(target_path, sizeof(target_path), "0:/download/%s", data->dl_filename);
+                                const char *target_dir = esp_filename_is_txt(data->dl_filename)
+                                    ? "0:/scripts" : "0:/download";
+                                (void)f_mkdir(target_dir);
+                                char target_path[96];
+                                snprintf(target_path, sizeof(target_path), "%s/%s", target_dir, data->dl_filename);
 
                                 if (f_open(&data->dl_file, target_path, FA_WRITE | FA_CREATE_ALWAYS) == FR_OK) {
                                     data->dl_state = DL_STATE_WAIT_HEADER;
                                     char start_msg[48];
-                                    snprintf(start_msg, sizeof(start_msg), "[落盘] download/%s", data->dl_filename);
+                                    snprintf(start_msg, sizeof(start_msg), "[落盘] %s/%s",
+                                             esp_filename_is_txt(data->dl_filename) ? "scripts" : "download",
+                                             data->dl_filename);
                                     esp_queue_push(data, start_msg, ESP_COL_ACCENT);
                                     esp_send_string("#DL:ACK\r\n"); // 握手确认
                                 } else {
@@ -349,7 +372,7 @@ static void esp_core1_worker(void)
                             strcpy(data->store_status, "正在接收列表...");
                             data->store_need_redraw = true;
                         }
-                        else if (strncmp(line_accum, "+APP:", 5) == 0) {
+                      else if (strncmp(line_accum, "+APP:", 5) == 0) {
                             char *p = line_accum + 5;
                             char *t_idx  = strtok(p, ",");
                             char *t_name = strtok(NULL, ",");
@@ -361,9 +384,15 @@ static void esp_core1_worker(void)
                                 int idx = atoi(t_idx);
                                 if (idx >= 0 && idx < MAX_STORE_ITEMS) {
                                     store_ui_item_t *item = &data->store_items[idx];
+                                    
+                                    // ⚡ 1. 应用名称转码为 GBK
                                     utf8_to_gbk_string(t_name, item->name, sizeof(item->name));
-                                    strncpy(item->file, t_file, sizeof(item->file) - 1);
+                                    
+                                    // ⚡ 2. 核心修复：文件名同样转码为 GBK，彻底消除卡片副标题中的乱码
+                                    utf8_to_gbk_string(t_file, item->file, sizeof(item->file));
+                                    
                                     strncpy(item->type, t_type, sizeof(item->type) - 1);
+                                    item->type[sizeof(item->type) - 1] = '\0';
                                     item->size = (uint32_t)strtoul(t_size, NULL, 10);
                                     item->valid = true;
 
