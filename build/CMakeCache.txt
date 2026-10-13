@@ -322,7 +322,52 @@ PICO_STDIO_UART:BOOL=ON
 PICO_STDIO_USB:BOOL=OFF
 
 //No help, variable specified on the command line.
-Python3_EXECUTABLE:UNINITIALIZED=c:/Users/xwx/AppData/Local/Programs/Python/Python312/python.exe
+Python3_EXECUTABLE:UNINITIALIZED=C:/Users/xwx/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe
+
+//Value Computed by CMake
+dino_runner_BINARY_DIR:STATIC=E:/pico/pico/build/plugins/dino_runner
+
+//Value Computed by CMake
+dino_runner_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+dino_runner_SOURCE_DIR:STATIC=E:/pico/pico/plugins/dino_runner
+
+//Value Computed by CMake
+flappy_BINARY_DIR:STATIC=E:/pico/pico/build/plugins/flappy
+
+//Value Computed by CMake
+flappy_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+flappy_SOURCE_DIR:STATIC=E:/pico/pico/plugins/flappy
+
+//Value Computed by CMake
+game2048_BINARY_DIR:STATIC=E:/pico/pico/build/plugins/2048
+
+//Value Computed by CMake
+game2048_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+game2048_SOURCE_DIR:STATIC=E:/pico/pico/plugins/2048
+
+//Value Computed by CMake
+gomoku_BINARY_DIR:STATIC=E:/pico/pico/build/plugins/gomoku
+
+//Value Computed by CMake
+gomoku_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+gomoku_SOURCE_DIR:STATIC=E:/pico/pico/plugins/gomoku
+
+//Value Computed by CMake
+invaders_BINARY_DIR:STATIC=E:/pico/pico/build/plugins/invaders
+
+//Value Computed by CMake
+invaders_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+invaders_SOURCE_DIR:STATIC=E:/pico/pico/plugins/invaders
 
 //Value Computed by CMake
 led_controller_BINARY_DIR:STATIC=E:/pico/pico/build/plugins/led_controller
@@ -332,6 +377,15 @@ led_controller_IS_TOP_LEVEL:STATIC=OFF
 
 //Value Computed by CMake
 led_controller_SOURCE_DIR:STATIC=E:/pico/pico/plugins/led_controller
+
+//Value Computed by CMake
+minesweeper_BINARY_DIR:STATIC=E:/pico/pico/build/plugins/minesweeper
+
+//Value Computed by CMake
+minesweeper_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+minesweeper_SOURCE_DIR:STATIC=E:/pico/pico/plugins/minesweeper
 
 //Value Computed by CMake
 novel_reader_BINARY_DIR:STATIC=E:/pico/pico/build/plugins/novel_reader
@@ -361,6 +415,24 @@ pico_sdk_IS_TOP_LEVEL:STATIC=OFF
 pico_sdk_SOURCE_DIR:STATIC=C:/Users/xwx/.pico-sdk/sdk/2.2.0
 
 //Value Computed by CMake
+pushbox_BINARY_DIR:STATIC=E:/pico/pico/build/plugins/pushbox
+
+//Value Computed by CMake
+pushbox_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+pushbox_SOURCE_DIR:STATIC=E:/pico/pico/plugins/pushbox
+
+//Value Computed by CMake
+snake_BINARY_DIR:STATIC=E:/pico/pico/build/plugins/snake
+
+//Value Computed by CMake
+snake_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+snake_SOURCE_DIR:STATIC=E:/pico/pico/plugins/snake
+
+//Value Computed by CMake
 wire_quality_BINARY_DIR:STATIC=E:/pico/pico/build/plugins/wire_quality
 
 //Value Computed by CMake
@@ -368,6 +440,15 @@ wire_quality_IS_TOP_LEVEL:STATIC=OFF
 
 //Value Computed by CMake
 wire_quality_SOURCE_DIR:STATIC=E:/pico/pico/plugins/wire_quality
+
+//Value Computed by CMake
+xiangqi_BINARY_DIR:STATIC=E:/pico/pico/build/plugins/xiangqi
+
+//Value Computed by CMake
+xiangqi_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+xiangqi_SOURCE_DIR:STATIC=E:/pico/pico/plugins/xiangqi
 
 
 ########################
@@ -491,7 +572,7 @@ CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_NM
 CMAKE_NM-ADVANCED:INTERNAL=1
 //number of local generators
-CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=107
+CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=116
 //ADVANCED property for variable: CMAKE_OBJCOPY
 CMAKE_OBJCOPY-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_OBJDUMP
@@ -540,7 +621,7 @@ DOXYGEN_DOT_EXECUTABLE-ADVANCED:INTERNAL=1
 DOXYGEN_EXECUTABLE-ADVANCED:INTERNAL=1
 FAMILY_MCUS:INTERNAL=RP2040
 //Details about finding Python3
-FIND_PACKAGE_MESSAGE_DETAILS_Python3:INTERNAL=[c:/Users/xwx/AppData/Local/Programs/Python/Python312/python.exe][cfound components: Interpreter ][v3.12.0()]
+FIND_PACKAGE_MESSAGE_DETAILS_Python3:INTERNAL=[C:/Users/xwx/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe][cfound components: Interpreter ][v3.12.14()]
 PICO_32BIT:INTERNAL=1
 PICO_ARM:INTERNAL=1
 PICO_BOOT_STAGE2_DIR:INTERNAL=C:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/boot_stage2
@@ -572,10 +653,10 @@ PICO_TOOLS_DIR:INTERNAL=C:/Users/xwx/.pico-sdk/sdk/2.2.0/tools
 _Python3_Compiler_REASON_FAILURE:INTERNAL=
 //Development reason failure
 _Python3_Development_REASON_FAILURE:INTERNAL=
-_Python3_EXECUTABLE:INTERNAL=c:/Users/xwx/AppData/Local/Programs/Python/Python312/python.exe
+_Python3_EXECUTABLE:INTERNAL=C:/Users/xwx/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe
 //Python3 Properties
-_Python3_INTERPRETER_PROPERTIES:INTERNAL=Python;3;12;0;32;64;;;abi3;c:\Users\xwx\AppData\Local\Programs\Python\Python312\Lib;c:\Users\xwx\AppData\Local\Programs\Python\Python312\Lib;c:\Users\xwx\AppData\Local\Programs\Python\Python312\Lib\site-packages;c:\Users\xwx\AppData\Local\Programs\Python\Python312\Lib\site-packages
-_Python3_INTERPRETER_SIGNATURE:INTERNAL=77c2a1fc1da077f2cdf6ff1ea2d5d75e
+_Python3_INTERPRETER_PROPERTIES:INTERNAL=Python;3;12;14;32;64;;;abi3;C:\Users\xwx\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib;C:\Users\xwx\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib;C:\Users\xwx\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages;C:\Users\xwx\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages
+_Python3_INTERPRETER_SIGNATURE:INTERNAL=8ce1bf8c1151949e7c17bdc520697adb
 //NumPy reason failure
 _Python3_NumPy_REASON_FAILURE:INTERNAL=
 

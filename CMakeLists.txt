@@ -190,6 +190,11 @@ set_property(SOURCE app/app_settings.c PROPERTY COMPILE_DEFINITIONS
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/plugins/led_controller)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/plugins/wire_quality)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/plugins/novel_reader)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/plugins/snake)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/plugins/dino_runner)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/plugins/gomoku)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/plugins/xiangqi)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/plugins/2048)
 
 # ============================================================
 # 锚定 .app_pool_sec @ 0x20038000
@@ -200,3 +205,6 @@ add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/plugins/novel_reader)
 # 位置已经过对齐: .bss 末址 ≈ 0x20034910,挪到 0x20038000 给 heap 留 ~14KB。
 # ============================================================
 pico_set_linker_script(pico "${CMAKE_CURRENT_LIST_DIR}/app/memmap_pico.ld")
+
+
+

@@ -1497,7 +1497,7 @@ build pico-sdk/src/rp2040/boot_stage2/bs2_default.bin | ${cmake_ninja_workdir}pi
 # Custom command for pico-sdk\src\rp2040\boot_stage2\bs2_default_padded_checksummed.S
 
 build pico-sdk/src/rp2040/boot_stage2/bs2_default_padded_checksummed.S | ${cmake_ninja_workdir}pico-sdk/src/rp2040/boot_stage2/bs2_default_padded_checksummed.S: CUSTOM_COMMAND pico-sdk/src/rp2040/boot_stage2/bs2_default.bin || pico-sdk/src/rp2040/boot_stage2/bs2_default.elf
-  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\pico-sdk\src\rp2040\boot_stage2 && c:\Users\xwx\AppData\Local\Programs\Python\Python312\python.exe C:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/boot_stage2/pad_checksum -s 0xffffffff E:/pico/pico/build/pico-sdk/src/rp2040/boot_stage2/bs2_default.bin E:/pico/pico/build/pico-sdk/src/rp2040/boot_stage2/bs2_default_padded_checksummed.S"
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\pico-sdk\src\rp2040\boot_stage2 && C:\Users\xwx\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe C:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/boot_stage2/pad_checksum -s 0xffffffff E:/pico/pico/build/pico-sdk/src/rp2040/boot_stage2/bs2_default.bin E:/pico/pico/build/pico-sdk/src/rp2040/boot_stage2/bs2_default_padded_checksummed.S"
   DESC = Generating bs2_default_padded_checksummed.S
   restat = 1
 
@@ -7629,6 +7629,636 @@ build plugins/novel_reader/CMakeFiles/rebuild_cache.util: CUSTOM_COMMAND
 build plugins/novel_reader/rebuild_cache: phony plugins/novel_reader/CMakeFiles/rebuild_cache.util
 
 # =============================================================================
+# Write statements declared in CMakeLists.txt:
+# E:/pico/pico/CMakeLists.txt
+# =============================================================================
+
+# =============================================================================
+# Object build statements for EXECUTABLE target snake
+
+
+#############################################
+# Order-only phony target for snake
+
+build cmake_object_order_depends_target_snake: phony || .
+
+build plugins/snake/CMakeFiles/snake.dir/main.c.obj: C_COMPILER__snake_unscanned_Release E$:/pico/pico/plugins/snake/main.c || cmake_object_order_depends_target_snake
+  DEP_FILE = plugins\snake\CMakeFiles\snake.dir\main.c.obj.d
+  FLAGS = -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall -Wno-unused-parameter -finput-charset=UTF-8 -fexec-charset=GBK
+  INCLUDES = -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers
+  OBJECT_DIR = plugins\snake\CMakeFiles\snake.dir
+  OBJECT_FILE_DIR = plugins\snake\CMakeFiles\snake.dir
+
+build plugins/snake/CMakeFiles/snake.dir/snake_plugin.c.obj: C_COMPILER__snake_unscanned_Release E$:/pico/pico/plugins/snake/snake_plugin.c || cmake_object_order_depends_target_snake
+  DEP_FILE = plugins\snake\CMakeFiles\snake.dir\snake_plugin.c.obj.d
+  FLAGS = -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall -Wno-unused-parameter -finput-charset=UTF-8 -fexec-charset=GBK
+  INCLUDES = -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers
+  OBJECT_DIR = plugins\snake\CMakeFiles\snake.dir
+  OBJECT_FILE_DIR = plugins\snake\CMakeFiles\snake.dir
+
+
+# =============================================================================
+# Link build statements for EXECUTABLE target snake
+
+
+#############################################
+# Link the executable plugins\snake\snake.elf
+
+build plugins/snake/snake.elf: C_EXECUTABLE_LINKER__snake_Release plugins/snake/CMakeFiles/snake.dir/main.c.obj plugins/snake/CMakeFiles/snake.dir/snake_plugin.c.obj
+  FLAGS = -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG
+  LINK_FLAGS = -mcpu=cortex-m0plus -mthumb -nostartfiles -nodefaultlibs -nostdlib -Wl,--gc-sections -Wl,--build-id=none -Wl,-TE:/pico/pico/plugins/snake/plugin.ld
+  LINK_LIBRARIES = -lgcc
+  OBJECT_DIR = plugins\snake\CMakeFiles\snake.dir
+  POST_BUILD = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\plugins\snake && C:\Users\xwx\.pico-sdk\toolchain\14_2_Rel1\bin\arm-none-eabi-objcopy.exe -O binary E:/pico/pico/build/plugins/snake/snake.elf E:/pico/pico/build/plugins/snake/snake.papp"
+  PRE_LINK = cd .
+  TARGET_FILE = plugins\snake\snake.elf
+  TARGET_PDB = snake.elf.dbg
+
+
+#############################################
+# Utility command for edit_cache
+
+build plugins/snake/CMakeFiles/edit_cache.util: CUSTOM_COMMAND
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\plugins\snake && C:\Users\xwx\.pico-sdk\cmake\v3.31.5\bin\cmake-gui.exe -SE:\pico\pico -BE:\pico\pico\build"
+  DESC = Running CMake cache editor...
+  pool = console
+  restat = 1
+
+build plugins/snake/edit_cache: phony plugins/snake/CMakeFiles/edit_cache.util
+
+
+#############################################
+# Utility command for rebuild_cache
+
+build plugins/snake/CMakeFiles/rebuild_cache.util: CUSTOM_COMMAND
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\plugins\snake && C:\Users\xwx\.pico-sdk\cmake\v3.31.5\bin\cmake.exe --regenerate-during-build -SE:\pico\pico -BE:\pico\pico\build"
+  DESC = Running CMake to regenerate build system...
+  pool = console
+  restat = 1
+
+build plugins/snake/rebuild_cache: phony plugins/snake/CMakeFiles/rebuild_cache.util
+
+# =============================================================================
+# Write statements declared in CMakeLists.txt:
+# E:/pico/pico/CMakeLists.txt
+# =============================================================================
+
+# =============================================================================
+# Object build statements for EXECUTABLE target dino_runner
+
+
+#############################################
+# Order-only phony target for dino_runner
+
+build cmake_object_order_depends_target_dino_runner: phony || .
+
+build plugins/dino_runner/CMakeFiles/dino_runner.dir/main.c.obj: C_COMPILER__dino_runner_unscanned_Release E$:/pico/pico/plugins/dino_runner/main.c || cmake_object_order_depends_target_dino_runner
+  DEP_FILE = plugins\dino_runner\CMakeFiles\dino_runner.dir\main.c.obj.d
+  FLAGS = -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall -Wno-unused-parameter -finput-charset=UTF-8 -fexec-charset=GBK
+  INCLUDES = -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers
+  OBJECT_DIR = plugins\dino_runner\CMakeFiles\dino_runner.dir
+  OBJECT_FILE_DIR = plugins\dino_runner\CMakeFiles\dino_runner.dir
+
+build plugins/dino_runner/CMakeFiles/dino_runner.dir/plugin_dino_runner.c.obj: C_COMPILER__dino_runner_unscanned_Release E$:/pico/pico/plugins/dino_runner/plugin_dino_runner.c || cmake_object_order_depends_target_dino_runner
+  DEP_FILE = plugins\dino_runner\CMakeFiles\dino_runner.dir\plugin_dino_runner.c.obj.d
+  FLAGS = -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall -Wno-unused-parameter -finput-charset=UTF-8 -fexec-charset=GBK
+  INCLUDES = -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers
+  OBJECT_DIR = plugins\dino_runner\CMakeFiles\dino_runner.dir
+  OBJECT_FILE_DIR = plugins\dino_runner\CMakeFiles\dino_runner.dir
+
+
+# =============================================================================
+# Link build statements for EXECUTABLE target dino_runner
+
+
+#############################################
+# Link the executable plugins\dino_runner\dino_runner.elf
+
+build plugins/dino_runner/dino_runner.elf: C_EXECUTABLE_LINKER__dino_runner_Release plugins/dino_runner/CMakeFiles/dino_runner.dir/main.c.obj plugins/dino_runner/CMakeFiles/dino_runner.dir/plugin_dino_runner.c.obj
+  FLAGS = -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG
+  LINK_FLAGS = -mcpu=cortex-m0plus -mthumb -nostartfiles -nodefaultlibs -nostdlib -Wl,--gc-sections -Wl,--build-id=none -Wl,-TE:/pico/pico/plugins/dino_runner/plugin.ld
+  LINK_LIBRARIES = -lgcc
+  OBJECT_DIR = plugins\dino_runner\CMakeFiles\dino_runner.dir
+  POST_BUILD = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\plugins\dino_runner && C:\Users\xwx\.pico-sdk\toolchain\14_2_Rel1\bin\arm-none-eabi-objcopy.exe -O binary E:/pico/pico/build/plugins/dino_runner/dino_runner.elf E:/pico/pico/build/plugins/dino_runner/dino_runner.papp"
+  PRE_LINK = cd .
+  TARGET_FILE = plugins\dino_runner\dino_runner.elf
+  TARGET_PDB = dino_runner.elf.dbg
+
+
+#############################################
+# Utility command for edit_cache
+
+build plugins/dino_runner/CMakeFiles/edit_cache.util: CUSTOM_COMMAND
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\plugins\dino_runner && C:\Users\xwx\.pico-sdk\cmake\v3.31.5\bin\cmake-gui.exe -SE:\pico\pico -BE:\pico\pico\build"
+  DESC = Running CMake cache editor...
+  pool = console
+  restat = 1
+
+build plugins/dino_runner/edit_cache: phony plugins/dino_runner/CMakeFiles/edit_cache.util
+
+
+#############################################
+# Utility command for rebuild_cache
+
+build plugins/dino_runner/CMakeFiles/rebuild_cache.util: CUSTOM_COMMAND
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\plugins\dino_runner && C:\Users\xwx\.pico-sdk\cmake\v3.31.5\bin\cmake.exe --regenerate-during-build -SE:\pico\pico -BE:\pico\pico\build"
+  DESC = Running CMake to regenerate build system...
+  pool = console
+  restat = 1
+
+build plugins/dino_runner/rebuild_cache: phony plugins/dino_runner/CMakeFiles/rebuild_cache.util
+
+# =============================================================================
+# Write statements declared in CMakeLists.txt:
+# E:/pico/pico/CMakeLists.txt
+# =============================================================================
+
+# =============================================================================
+# Object build statements for EXECUTABLE target gomoku
+
+
+#############################################
+# Order-only phony target for gomoku
+
+build cmake_object_order_depends_target_gomoku: phony || .
+
+build plugins/gomoku/CMakeFiles/gomoku.dir/main.c.obj: C_COMPILER__gomoku_unscanned_Release E$:/pico/pico/plugins/gomoku/main.c || cmake_object_order_depends_target_gomoku
+  DEP_FILE = plugins\gomoku\CMakeFiles\gomoku.dir\main.c.obj.d
+  FLAGS = -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall -Wno-unused-parameter -finput-charset=UTF-8 -fexec-charset=GBK
+  INCLUDES = -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers
+  OBJECT_DIR = plugins\gomoku\CMakeFiles\gomoku.dir
+  OBJECT_FILE_DIR = plugins\gomoku\CMakeFiles\gomoku.dir
+
+build plugins/gomoku/CMakeFiles/gomoku.dir/gomoku_plugin.c.obj: C_COMPILER__gomoku_unscanned_Release E$:/pico/pico/plugins/gomoku/gomoku_plugin.c || cmake_object_order_depends_target_gomoku
+  DEP_FILE = plugins\gomoku\CMakeFiles\gomoku.dir\gomoku_plugin.c.obj.d
+  FLAGS = -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall -Wno-unused-parameter -finput-charset=UTF-8 -fexec-charset=GBK
+  INCLUDES = -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers
+  OBJECT_DIR = plugins\gomoku\CMakeFiles\gomoku.dir
+  OBJECT_FILE_DIR = plugins\gomoku\CMakeFiles\gomoku.dir
+
+
+# =============================================================================
+# Link build statements for EXECUTABLE target gomoku
+
+
+#############################################
+# Link the executable plugins\gomoku\gomoku.elf
+
+build plugins/gomoku/gomoku.elf: C_EXECUTABLE_LINKER__gomoku_Release plugins/gomoku/CMakeFiles/gomoku.dir/main.c.obj plugins/gomoku/CMakeFiles/gomoku.dir/gomoku_plugin.c.obj
+  FLAGS = -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG
+  LINK_FLAGS = -mcpu=cortex-m0plus -mthumb -nostartfiles -nodefaultlibs -nostdlib -Wl,--gc-sections -Wl,--build-id=none -Wl,-TE:/pico/pico/plugins/gomoku/plugin.ld
+  LINK_LIBRARIES = -lgcc
+  OBJECT_DIR = plugins\gomoku\CMakeFiles\gomoku.dir
+  POST_BUILD = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\plugins\gomoku && C:\Users\xwx\.pico-sdk\toolchain\14_2_Rel1\bin\arm-none-eabi-objcopy.exe -O binary E:/pico/pico/build/plugins/gomoku/gomoku.elf E:/pico/pico/build/plugins/gomoku/gomoku.papp"
+  PRE_LINK = cd .
+  TARGET_FILE = plugins\gomoku\gomoku.elf
+  TARGET_PDB = gomoku.elf.dbg
+
+
+#############################################
+# Utility command for edit_cache
+
+build plugins/gomoku/CMakeFiles/edit_cache.util: CUSTOM_COMMAND
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\plugins\gomoku && C:\Users\xwx\.pico-sdk\cmake\v3.31.5\bin\cmake-gui.exe -SE:\pico\pico -BE:\pico\pico\build"
+  DESC = Running CMake cache editor...
+  pool = console
+  restat = 1
+
+build plugins/gomoku/edit_cache: phony plugins/gomoku/CMakeFiles/edit_cache.util
+
+
+#############################################
+# Utility command for rebuild_cache
+
+build plugins/gomoku/CMakeFiles/rebuild_cache.util: CUSTOM_COMMAND
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\plugins\gomoku && C:\Users\xwx\.pico-sdk\cmake\v3.31.5\bin\cmake.exe --regenerate-during-build -SE:\pico\pico -BE:\pico\pico\build"
+  DESC = Running CMake to regenerate build system...
+  pool = console
+  restat = 1
+
+build plugins/gomoku/rebuild_cache: phony plugins/gomoku/CMakeFiles/rebuild_cache.util
+
+# =============================================================================
+# Write statements declared in CMakeLists.txt:
+# E:/pico/pico/CMakeLists.txt
+# =============================================================================
+
+# =============================================================================
+# Object build statements for EXECUTABLE target xiangqi
+
+
+#############################################
+# Order-only phony target for xiangqi
+
+build cmake_object_order_depends_target_xiangqi: phony || .
+
+build plugins/xiangqi/CMakeFiles/xiangqi.dir/main.c.obj: C_COMPILER__xiangqi_unscanned_Release E$:/pico/pico/plugins/xiangqi/main.c || cmake_object_order_depends_target_xiangqi
+  DEP_FILE = plugins\xiangqi\CMakeFiles\xiangqi.dir\main.c.obj.d
+  FLAGS = -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall -Wno-unused-parameter -finput-charset=UTF-8 -fexec-charset=GBK
+  INCLUDES = -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers
+  OBJECT_DIR = plugins\xiangqi\CMakeFiles\xiangqi.dir
+  OBJECT_FILE_DIR = plugins\xiangqi\CMakeFiles\xiangqi.dir
+
+build plugins/xiangqi/CMakeFiles/xiangqi.dir/xiangqi_plugin.c.obj: C_COMPILER__xiangqi_unscanned_Release E$:/pico/pico/plugins/xiangqi/xiangqi_plugin.c || cmake_object_order_depends_target_xiangqi
+  DEP_FILE = plugins\xiangqi\CMakeFiles\xiangqi.dir\xiangqi_plugin.c.obj.d
+  FLAGS = -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall -Wno-unused-parameter -finput-charset=UTF-8 -fexec-charset=GBK
+  INCLUDES = -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers
+  OBJECT_DIR = plugins\xiangqi\CMakeFiles\xiangqi.dir
+  OBJECT_FILE_DIR = plugins\xiangqi\CMakeFiles\xiangqi.dir
+
+
+# =============================================================================
+# Link build statements for EXECUTABLE target xiangqi
+
+
+#############################################
+# Link the executable plugins\xiangqi\xiangqi.elf
+
+build plugins/xiangqi/xiangqi.elf: C_EXECUTABLE_LINKER__xiangqi_Release plugins/xiangqi/CMakeFiles/xiangqi.dir/main.c.obj plugins/xiangqi/CMakeFiles/xiangqi.dir/xiangqi_plugin.c.obj
+  FLAGS = -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG
+  LINK_FLAGS = -mcpu=cortex-m0plus -mthumb -nostartfiles -nodefaultlibs -nostdlib -Wl,--gc-sections -Wl,--build-id=none -Wl,-TE:/pico/pico/plugins/xiangqi/plugin.ld
+  LINK_LIBRARIES = -lgcc
+  OBJECT_DIR = plugins\xiangqi\CMakeFiles\xiangqi.dir
+  POST_BUILD = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\plugins\xiangqi && C:\Users\xwx\.pico-sdk\toolchain\14_2_Rel1\bin\arm-none-eabi-objcopy.exe -O binary E:/pico/pico/build/plugins/xiangqi/xiangqi.elf E:/pico/pico/build/plugins/xiangqi/xiangqi.papp"
+  PRE_LINK = cd .
+  TARGET_FILE = plugins\xiangqi\xiangqi.elf
+  TARGET_PDB = xiangqi.elf.dbg
+
+
+#############################################
+# Utility command for edit_cache
+
+build plugins/xiangqi/CMakeFiles/edit_cache.util: CUSTOM_COMMAND
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\plugins\xiangqi && C:\Users\xwx\.pico-sdk\cmake\v3.31.5\bin\cmake-gui.exe -SE:\pico\pico -BE:\pico\pico\build"
+  DESC = Running CMake cache editor...
+  pool = console
+  restat = 1
+
+build plugins/xiangqi/edit_cache: phony plugins/xiangqi/CMakeFiles/edit_cache.util
+
+
+#############################################
+# Utility command for rebuild_cache
+
+build plugins/xiangqi/CMakeFiles/rebuild_cache.util: CUSTOM_COMMAND
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\plugins\xiangqi && C:\Users\xwx\.pico-sdk\cmake\v3.31.5\bin\cmake.exe --regenerate-during-build -SE:\pico\pico -BE:\pico\pico\build"
+  DESC = Running CMake to regenerate build system...
+  pool = console
+  restat = 1
+
+build plugins/xiangqi/rebuild_cache: phony plugins/xiangqi/CMakeFiles/rebuild_cache.util
+
+# =============================================================================
+# Write statements declared in CMakeLists.txt:
+# E:/pico/pico/CMakeLists.txt
+# =============================================================================
+
+# =============================================================================
+# Object build statements for EXECUTABLE target game2048
+
+
+#############################################
+# Order-only phony target for game2048
+
+build cmake_object_order_depends_target_game2048: phony || .
+
+build plugins/2048/CMakeFiles/game2048.dir/main.c.obj: C_COMPILER__game2048_unscanned_Release E$:/pico/pico/plugins/2048/main.c || cmake_object_order_depends_target_game2048
+  DEP_FILE = plugins\2048\CMakeFiles\game2048.dir\main.c.obj.d
+  FLAGS = -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall -Wno-unused-parameter -finput-charset=UTF-8 -fexec-charset=GBK
+  INCLUDES = -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers
+  OBJECT_DIR = plugins\2048\CMakeFiles\game2048.dir
+  OBJECT_FILE_DIR = plugins\2048\CMakeFiles\game2048.dir
+
+build plugins/2048/CMakeFiles/game2048.dir/game2048_plugin.c.obj: C_COMPILER__game2048_unscanned_Release E$:/pico/pico/plugins/2048/game2048_plugin.c || cmake_object_order_depends_target_game2048
+  DEP_FILE = plugins\2048\CMakeFiles\game2048.dir\game2048_plugin.c.obj.d
+  FLAGS = -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall -Wno-unused-parameter -finput-charset=UTF-8 -fexec-charset=GBK
+  INCLUDES = -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers
+  OBJECT_DIR = plugins\2048\CMakeFiles\game2048.dir
+  OBJECT_FILE_DIR = plugins\2048\CMakeFiles\game2048.dir
+
+
+# =============================================================================
+# Link build statements for EXECUTABLE target game2048
+
+
+#############################################
+# Link the executable plugins\2048\game2048.elf
+
+build plugins/2048/game2048.elf: C_EXECUTABLE_LINKER__game2048_Release plugins/2048/CMakeFiles/game2048.dir/main.c.obj plugins/2048/CMakeFiles/game2048.dir/game2048_plugin.c.obj
+  FLAGS = -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG
+  LINK_FLAGS = -mcpu=cortex-m0plus -mthumb -nostartfiles -nodefaultlibs -nostdlib -Wl,--gc-sections -Wl,--build-id=none -Wl,-TE:/pico/pico/plugins/2048/plugin.ld
+  LINK_LIBRARIES = -lgcc
+  OBJECT_DIR = plugins\2048\CMakeFiles\game2048.dir
+  POST_BUILD = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\plugins\2048 && C:\Users\xwx\.pico-sdk\toolchain\14_2_Rel1\bin\arm-none-eabi-objcopy.exe -O binary E:/pico/pico/build/plugins/2048/game2048.elf E:/pico/pico/build/plugins/2048/2048.papp"
+  PRE_LINK = cd .
+  TARGET_FILE = plugins\2048\game2048.elf
+  TARGET_PDB = game2048.elf.dbg
+
+
+#############################################
+# Utility command for edit_cache
+
+build plugins/2048/CMakeFiles/edit_cache.util: CUSTOM_COMMAND
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\plugins\2048 && C:\Users\xwx\.pico-sdk\cmake\v3.31.5\bin\cmake-gui.exe -SE:\pico\pico -BE:\pico\pico\build"
+  DESC = Running CMake cache editor...
+  pool = console
+  restat = 1
+
+build plugins/2048/edit_cache: phony plugins/2048/CMakeFiles/edit_cache.util
+
+
+#############################################
+# Utility command for rebuild_cache
+
+build plugins/2048/CMakeFiles/rebuild_cache.util: CUSTOM_COMMAND
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\plugins\2048 && C:\Users\xwx\.pico-sdk\cmake\v3.31.5\bin\cmake.exe --regenerate-during-build -SE:\pico\pico -BE:\pico\pico\build"
+  DESC = Running CMake to regenerate build system...
+  pool = console
+  restat = 1
+
+build plugins/2048/rebuild_cache: phony plugins/2048/CMakeFiles/rebuild_cache.util
+
+# =============================================================================
+# Write statements declared in CMakeLists.txt:
+# E:/pico/pico/CMakeLists.txt
+# =============================================================================
+
+# =============================================================================
+# Object build statements for EXECUTABLE target minesweeper
+
+
+#############################################
+# Order-only phony target for minesweeper
+
+build cmake_object_order_depends_target_minesweeper: phony || .
+
+build plugins/minesweeper/CMakeFiles/minesweeper.dir/main.c.obj: C_COMPILER__minesweeper_unscanned_Release E$:/pico/pico/plugins/minesweeper/main.c || cmake_object_order_depends_target_minesweeper
+  DEP_FILE = plugins\minesweeper\CMakeFiles\minesweeper.dir\main.c.obj.d
+  FLAGS = -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall
+  INCLUDES = -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers
+  OBJECT_DIR = plugins\minesweeper\CMakeFiles\minesweeper.dir
+  OBJECT_FILE_DIR = plugins\minesweeper\CMakeFiles\minesweeper.dir
+
+build plugins/minesweeper/CMakeFiles/minesweeper.dir/minesweeper_plugin.c.obj: C_COMPILER__minesweeper_unscanned_Release E$:/pico/pico/plugins/minesweeper/minesweeper_plugin.c || cmake_object_order_depends_target_minesweeper
+  DEP_FILE = plugins\minesweeper\CMakeFiles\minesweeper.dir\minesweeper_plugin.c.obj.d
+  FLAGS = -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall
+  INCLUDES = -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers
+  OBJECT_DIR = plugins\minesweeper\CMakeFiles\minesweeper.dir
+  OBJECT_FILE_DIR = plugins\minesweeper\CMakeFiles\minesweeper.dir
+
+
+# =============================================================================
+# Link build statements for EXECUTABLE target minesweeper
+
+
+#############################################
+# Link the executable plugins\minesweeper\minesweeper.elf
+
+build plugins/minesweeper/minesweeper.elf: C_EXECUTABLE_LINKER__minesweeper_Release plugins/minesweeper/CMakeFiles/minesweeper.dir/main.c.obj plugins/minesweeper/CMakeFiles/minesweeper.dir/minesweeper_plugin.c.obj
+  FLAGS = -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG
+  LINK_FLAGS = -mcpu=cortex-m0plus -mthumb -nostartfiles -nodefaultlibs -nostdlib -Wl,--gc-sections -Wl,--build-id=none -Wl,-TE:/pico/pico/plugins/minesweeper/plugin.ld
+  LINK_LIBRARIES = -lgcc
+  OBJECT_DIR = plugins\minesweeper\CMakeFiles\minesweeper.dir
+  POST_BUILD = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\plugins\minesweeper && C:\Users\xwx\.pico-sdk\toolchain\14_2_Rel1\bin\arm-none-eabi-objcopy.exe -O binary E:/pico/pico/build/plugins/minesweeper/minesweeper.elf E:/pico/pico/build/plugins/minesweeper/minesweeper.papp"
+  PRE_LINK = cd .
+  TARGET_FILE = plugins\minesweeper\minesweeper.elf
+  TARGET_PDB = minesweeper.elf.dbg
+
+
+#############################################
+# Utility command for edit_cache
+
+build plugins/minesweeper/CMakeFiles/edit_cache.util: CUSTOM_COMMAND
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\plugins\minesweeper && C:\Users\xwx\.pico-sdk\cmake\v3.31.5\bin\cmake-gui.exe -SE:\pico\pico -BE:\pico\pico\build"
+  DESC = Running CMake cache editor...
+  pool = console
+  restat = 1
+
+build plugins/minesweeper/edit_cache: phony plugins/minesweeper/CMakeFiles/edit_cache.util
+
+
+#############################################
+# Utility command for rebuild_cache
+
+build plugins/minesweeper/CMakeFiles/rebuild_cache.util: CUSTOM_COMMAND
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\plugins\minesweeper && C:\Users\xwx\.pico-sdk\cmake\v3.31.5\bin\cmake.exe --regenerate-during-build -SE:\pico\pico -BE:\pico\pico\build"
+  DESC = Running CMake to regenerate build system...
+  pool = console
+  restat = 1
+
+build plugins/minesweeper/rebuild_cache: phony plugins/minesweeper/CMakeFiles/rebuild_cache.util
+
+# =============================================================================
+# Write statements declared in CMakeLists.txt:
+# E:/pico/pico/CMakeLists.txt
+# =============================================================================
+
+# =============================================================================
+# Object build statements for EXECUTABLE target pushbox
+
+
+#############################################
+# Order-only phony target for pushbox
+
+build cmake_object_order_depends_target_pushbox: phony || .
+
+build plugins/pushbox/CMakeFiles/pushbox.dir/main.c.obj: C_COMPILER__pushbox_unscanned_Release E$:/pico/pico/plugins/pushbox/main.c || cmake_object_order_depends_target_pushbox
+  DEP_FILE = plugins\pushbox\CMakeFiles\pushbox.dir\main.c.obj.d
+  FLAGS = -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall
+  INCLUDES = -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers
+  OBJECT_DIR = plugins\pushbox\CMakeFiles\pushbox.dir
+  OBJECT_FILE_DIR = plugins\pushbox\CMakeFiles\pushbox.dir
+
+build plugins/pushbox/CMakeFiles/pushbox.dir/pushbox_plugin.c.obj: C_COMPILER__pushbox_unscanned_Release E$:/pico/pico/plugins/pushbox/pushbox_plugin.c || cmake_object_order_depends_target_pushbox
+  DEP_FILE = plugins\pushbox\CMakeFiles\pushbox.dir\pushbox_plugin.c.obj.d
+  FLAGS = -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall
+  INCLUDES = -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers
+  OBJECT_DIR = plugins\pushbox\CMakeFiles\pushbox.dir
+  OBJECT_FILE_DIR = plugins\pushbox\CMakeFiles\pushbox.dir
+
+
+# =============================================================================
+# Link build statements for EXECUTABLE target pushbox
+
+
+#############################################
+# Link the executable plugins\pushbox\pushbox.elf
+
+build plugins/pushbox/pushbox.elf: C_EXECUTABLE_LINKER__pushbox_Release plugins/pushbox/CMakeFiles/pushbox.dir/main.c.obj plugins/pushbox/CMakeFiles/pushbox.dir/pushbox_plugin.c.obj
+  FLAGS = -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG
+  LINK_FLAGS = -mcpu=cortex-m0plus -mthumb -nostartfiles -nodefaultlibs -nostdlib -Wl,--gc-sections -Wl,--build-id=none -Wl,-TE:/pico/pico/plugins/pushbox/plugin.ld
+  LINK_LIBRARIES = -lgcc
+  OBJECT_DIR = plugins\pushbox\CMakeFiles\pushbox.dir
+  POST_BUILD = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\plugins\pushbox && C:\Users\xwx\.pico-sdk\toolchain\14_2_Rel1\bin\arm-none-eabi-objcopy.exe -O binary E:/pico/pico/build/plugins/pushbox/pushbox.elf E:/pico/pico/build/plugins/pushbox/pushbox.papp"
+  PRE_LINK = cd .
+  TARGET_FILE = plugins\pushbox\pushbox.elf
+  TARGET_PDB = pushbox.elf.dbg
+
+
+#############################################
+# Utility command for edit_cache
+
+build plugins/pushbox/CMakeFiles/edit_cache.util: CUSTOM_COMMAND
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\plugins\pushbox && C:\Users\xwx\.pico-sdk\cmake\v3.31.5\bin\cmake-gui.exe -SE:\pico\pico -BE:\pico\pico\build"
+  DESC = Running CMake cache editor...
+  pool = console
+  restat = 1
+
+build plugins/pushbox/edit_cache: phony plugins/pushbox/CMakeFiles/edit_cache.util
+
+
+#############################################
+# Utility command for rebuild_cache
+
+build plugins/pushbox/CMakeFiles/rebuild_cache.util: CUSTOM_COMMAND
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\plugins\pushbox && C:\Users\xwx\.pico-sdk\cmake\v3.31.5\bin\cmake.exe --regenerate-during-build -SE:\pico\pico -BE:\pico\pico\build"
+  DESC = Running CMake to regenerate build system...
+  pool = console
+  restat = 1
+
+build plugins/pushbox/rebuild_cache: phony plugins/pushbox/CMakeFiles/rebuild_cache.util
+
+# =============================================================================
+# Write statements declared in CMakeLists.txt:
+# E:/pico/pico/CMakeLists.txt
+# =============================================================================
+
+# =============================================================================
+# Object build statements for EXECUTABLE target flappy
+
+
+#############################################
+# Order-only phony target for flappy
+
+build cmake_object_order_depends_target_flappy: phony || .
+
+build plugins/flappy/CMakeFiles/flappy.dir/main.c.obj: C_COMPILER__flappy_unscanned_Release E$:/pico/pico/plugins/flappy/main.c || cmake_object_order_depends_target_flappy
+  DEP_FILE = plugins\flappy\CMakeFiles\flappy.dir\main.c.obj.d
+  FLAGS = -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall
+  INCLUDES = -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers
+  OBJECT_DIR = plugins\flappy\CMakeFiles\flappy.dir
+  OBJECT_FILE_DIR = plugins\flappy\CMakeFiles\flappy.dir
+
+build plugins/flappy/CMakeFiles/flappy.dir/flappy_plugin.c.obj: C_COMPILER__flappy_unscanned_Release E$:/pico/pico/plugins/flappy/flappy_plugin.c || cmake_object_order_depends_target_flappy
+  DEP_FILE = plugins\flappy\CMakeFiles\flappy.dir\flappy_plugin.c.obj.d
+  FLAGS = -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall
+  INCLUDES = -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers
+  OBJECT_DIR = plugins\flappy\CMakeFiles\flappy.dir
+  OBJECT_FILE_DIR = plugins\flappy\CMakeFiles\flappy.dir
+
+
+# =============================================================================
+# Link build statements for EXECUTABLE target flappy
+
+
+#############################################
+# Link the executable plugins\flappy\flappy.elf
+
+build plugins/flappy/flappy.elf: C_EXECUTABLE_LINKER__flappy_Release plugins/flappy/CMakeFiles/flappy.dir/main.c.obj plugins/flappy/CMakeFiles/flappy.dir/flappy_plugin.c.obj
+  FLAGS = -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG
+  LINK_FLAGS = -mcpu=cortex-m0plus -mthumb -nostartfiles -nodefaultlibs -nostdlib -Wl,--gc-sections -Wl,--build-id=none -Wl,-TE:/pico/pico/plugins/flappy/plugin.ld
+  LINK_LIBRARIES = -lgcc
+  OBJECT_DIR = plugins\flappy\CMakeFiles\flappy.dir
+  POST_BUILD = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\plugins\flappy && C:\Users\xwx\.pico-sdk\toolchain\14_2_Rel1\bin\arm-none-eabi-objcopy.exe -O binary E:/pico/pico/build/plugins/flappy/flappy.elf E:/pico/pico/build/plugins/flappy/flappy.papp"
+  PRE_LINK = cd .
+  TARGET_FILE = plugins\flappy\flappy.elf
+  TARGET_PDB = flappy.elf.dbg
+
+
+#############################################
+# Utility command for edit_cache
+
+build plugins/flappy/CMakeFiles/edit_cache.util: CUSTOM_COMMAND
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\plugins\flappy && C:\Users\xwx\.pico-sdk\cmake\v3.31.5\bin\cmake-gui.exe -SE:\pico\pico -BE:\pico\pico\build"
+  DESC = Running CMake cache editor...
+  pool = console
+  restat = 1
+
+build plugins/flappy/edit_cache: phony plugins/flappy/CMakeFiles/edit_cache.util
+
+
+#############################################
+# Utility command for rebuild_cache
+
+build plugins/flappy/CMakeFiles/rebuild_cache.util: CUSTOM_COMMAND
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\plugins\flappy && C:\Users\xwx\.pico-sdk\cmake\v3.31.5\bin\cmake.exe --regenerate-during-build -SE:\pico\pico -BE:\pico\pico\build"
+  DESC = Running CMake to regenerate build system...
+  pool = console
+  restat = 1
+
+build plugins/flappy/rebuild_cache: phony plugins/flappy/CMakeFiles/rebuild_cache.util
+
+# =============================================================================
+# Write statements declared in CMakeLists.txt:
+# E:/pico/pico/CMakeLists.txt
+# =============================================================================
+
+# =============================================================================
+# Object build statements for EXECUTABLE target invaders
+
+
+#############################################
+# Order-only phony target for invaders
+
+build cmake_object_order_depends_target_invaders: phony || .
+
+build plugins/invaders/CMakeFiles/invaders.dir/main.c.obj: C_COMPILER__invaders_unscanned_Release E$:/pico/pico/plugins/invaders/main.c || cmake_object_order_depends_target_invaders
+  DEP_FILE = plugins\invaders\CMakeFiles\invaders.dir\main.c.obj.d
+  FLAGS = -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall
+  INCLUDES = -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers
+  OBJECT_DIR = plugins\invaders\CMakeFiles\invaders.dir
+  OBJECT_FILE_DIR = plugins\invaders\CMakeFiles\invaders.dir
+
+build plugins/invaders/CMakeFiles/invaders.dir/invaders_plugin.c.obj: C_COMPILER__invaders_unscanned_Release E$:/pico/pico/plugins/invaders/invaders_plugin.c || cmake_object_order_depends_target_invaders
+  DEP_FILE = plugins\invaders\CMakeFiles\invaders.dir\invaders_plugin.c.obj.d
+  FLAGS = -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall
+  INCLUDES = -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers
+  OBJECT_DIR = plugins\invaders\CMakeFiles\invaders.dir
+  OBJECT_FILE_DIR = plugins\invaders\CMakeFiles\invaders.dir
+
+
+# =============================================================================
+# Link build statements for EXECUTABLE target invaders
+
+
+#############################################
+# Link the executable plugins\invaders\invaders.elf
+
+build plugins/invaders/invaders.elf: C_EXECUTABLE_LINKER__invaders_Release plugins/invaders/CMakeFiles/invaders.dir/main.c.obj plugins/invaders/CMakeFiles/invaders.dir/invaders_plugin.c.obj
+  FLAGS = -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG
+  LINK_FLAGS = -mcpu=cortex-m0plus -mthumb -nostartfiles -nodefaultlibs -nostdlib -Wl,--gc-sections -Wl,--build-id=none -Wl,-TE:/pico/pico/plugins/invaders/plugin.ld
+  LINK_LIBRARIES = -lgcc
+  OBJECT_DIR = plugins\invaders\CMakeFiles\invaders.dir
+  POST_BUILD = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\plugins\invaders && C:\Users\xwx\.pico-sdk\toolchain\14_2_Rel1\bin\arm-none-eabi-objcopy.exe -O binary E:/pico/pico/build/plugins/invaders/invaders.elf E:/pico/pico/build/plugins/invaders/invaders.papp"
+  PRE_LINK = cd .
+  TARGET_FILE = plugins\invaders\invaders.elf
+  TARGET_PDB = invaders.elf.dbg
+
+
+#############################################
+# Utility command for edit_cache
+
+build plugins/invaders/CMakeFiles/edit_cache.util: CUSTOM_COMMAND
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\plugins\invaders && C:\Users\xwx\.pico-sdk\cmake\v3.31.5\bin\cmake-gui.exe -SE:\pico\pico -BE:\pico\pico\build"
+  DESC = Running CMake cache editor...
+  pool = console
+  restat = 1
+
+build plugins/invaders/edit_cache: phony plugins/invaders/CMakeFiles/edit_cache.util
+
+
+#############################################
+# Utility command for rebuild_cache
+
+build plugins/invaders/CMakeFiles/rebuild_cache.util: CUSTOM_COMMAND
+  COMMAND = C:\WINDOWS\system32\cmd.exe /C "cd /D E:\pico\pico\build\plugins\invaders && C:\Users\xwx\.pico-sdk\cmake\v3.31.5\bin\cmake.exe --regenerate-during-build -SE:\pico\pico -BE:\pico\pico\build"
+  DESC = Running CMake to regenerate build system...
+  pool = console
+  restat = 1
+
+build plugins/invaders/rebuild_cache: phony plugins/invaders/CMakeFiles/rebuild_cache.util
+
+# =============================================================================
 # Target aliases.
 
 build FatFs_SPI: phony fatfs/libFatFs_SPI.a
@@ -7645,7 +8275,15 @@ build bs2_default_library: phony pico-sdk/src/rp2040/boot_stage2/bs2_default_lib
 
 build cyw43_driver_picow_cyw43_bus_pio_spi_pio_h: phony pico-sdk/src/rp2_common/pico_cyw43_driver/cyw43_driver_picow_cyw43_bus_pio_spi_pio_h
 
+build dino_runner: phony plugins/dino_runner/dino_runner.elf
+
+build dino_runner.elf: phony plugins/dino_runner/dino_runner.elf
+
 build drivelib: phony Drivers/libdrivelib.a
+
+build flappy: phony plugins/flappy/flappy.elf
+
+build flappy.elf: phony plugins/flappy/flappy.elf
 
 build fun: phony fun/libfun.a
 
@@ -7654,6 +8292,18 @@ build fun_ir_pio_h: phony fun/fun_ir_pio_h
 build fun_swd_pio_h: phony fun/fun_swd_pio_h
 
 build fun_uart_pio_h: phony fun/fun_uart_pio_h
+
+build game2048: phony plugins/2048/game2048.elf
+
+build game2048.elf: phony plugins/2048/game2048.elf
+
+build gomoku: phony plugins/gomoku/gomoku.elf
+
+build gomoku.elf: phony plugins/gomoku/gomoku.elf
+
+build invaders: phony plugins/invaders/invaders.elf
+
+build invaders.elf: phony plugins/invaders/invaders.elf
 
 build led_controller: phony plugins/led_controller/led_controller.elf
 
@@ -7671,6 +8321,10 @@ build libpio_manager.a: phony pio/libpio_manager.a
 
 build libuigeom.a: phony ui/libuigeom.a
 
+build minesweeper: phony plugins/minesweeper/minesweeper.elf
+
+build minesweeper.elf: phony plugins/minesweeper/minesweeper.elf
+
 build novel_reader: phony plugins/novel_reader/novel_reader.elf
 
 build novel_reader.elf: phony plugins/novel_reader/novel_reader.elf
@@ -7681,11 +8335,23 @@ build pico_status_led_ws2812_pio_h: phony pico-sdk/src/rp2_common/pico_status_le
 
 build pio_manager: phony pio/libpio_manager.a
 
+build pushbox: phony plugins/pushbox/pushbox.elf
+
+build pushbox.elf: phony plugins/pushbox/pushbox.elf
+
+build snake: phony plugins/snake/snake.elf
+
+build snake.elf: phony plugins/snake/snake.elf
+
 build uigeom: phony ui/libuigeom.a
 
 build wire_quality: phony plugins/wire_quality/wire_quality.elf
 
 build wire_quality.elf: phony plugins/wire_quality/wire_quality.elf
+
+build xiangqi: phony plugins/xiangqi/xiangqi.elf
+
+build xiangqi.elf: phony plugins/xiangqi/xiangqi.elf
 
 # =============================================================================
 # Folder targets.
@@ -7695,7 +8361,7 @@ build wire_quality.elf: phony plugins/wire_quality/wire_quality.elf
 #############################################
 # Folder: E:/pico/pico/build
 
-build all: phony pico.elf pico-sdk/all Drivers/all ui/all pio/all fun/all app/all fatfs/all plugins/led_controller/all plugins/wire_quality/all plugins/novel_reader/all
+build all: phony pico.elf pico-sdk/all Drivers/all ui/all pio/all fun/all app/all fatfs/all plugins/led_controller/all plugins/wire_quality/all plugins/novel_reader/all plugins/snake/all plugins/dino_runner/all plugins/gomoku/all plugins/xiangqi/all plugins/2048/all plugins/minesweeper/all plugins/pushbox/all plugins/flappy/all plugins/invaders/all
 
 # =============================================================================
 
@@ -8414,9 +9080,51 @@ build pio/all: phony pio/libpio_manager.a
 # =============================================================================
 
 #############################################
+# Folder: E:/pico/pico/build/plugins/2048
+
+build plugins/2048/all: phony plugins/2048/game2048.elf
+
+# =============================================================================
+
+#############################################
+# Folder: E:/pico/pico/build/plugins/dino_runner
+
+build plugins/dino_runner/all: phony plugins/dino_runner/dino_runner.elf
+
+# =============================================================================
+
+#############################################
+# Folder: E:/pico/pico/build/plugins/flappy
+
+build plugins/flappy/all: phony plugins/flappy/flappy.elf
+
+# =============================================================================
+
+#############################################
+# Folder: E:/pico/pico/build/plugins/gomoku
+
+build plugins/gomoku/all: phony plugins/gomoku/gomoku.elf
+
+# =============================================================================
+
+#############################################
+# Folder: E:/pico/pico/build/plugins/invaders
+
+build plugins/invaders/all: phony plugins/invaders/invaders.elf
+
+# =============================================================================
+
+#############################################
 # Folder: E:/pico/pico/build/plugins/led_controller
 
 build plugins/led_controller/all: phony plugins/led_controller/led_controller.elf
+
+# =============================================================================
+
+#############################################
+# Folder: E:/pico/pico/build/plugins/minesweeper
+
+build plugins/minesweeper/all: phony plugins/minesweeper/minesweeper.elf
 
 # =============================================================================
 
@@ -8428,9 +9136,30 @@ build plugins/novel_reader/all: phony plugins/novel_reader/novel_reader.elf
 # =============================================================================
 
 #############################################
+# Folder: E:/pico/pico/build/plugins/pushbox
+
+build plugins/pushbox/all: phony plugins/pushbox/pushbox.elf
+
+# =============================================================================
+
+#############################################
+# Folder: E:/pico/pico/build/plugins/snake
+
+build plugins/snake/all: phony plugins/snake/snake.elf
+
+# =============================================================================
+
+#############################################
 # Folder: E:/pico/pico/build/plugins/wire_quality
 
 build plugins/wire_quality/all: phony plugins/wire_quality/wire_quality.elf
+
+# =============================================================================
+
+#############################################
+# Folder: E:/pico/pico/build/plugins/xiangqi
+
+build plugins/xiangqi/all: phony plugins/xiangqi/xiangqi.elf
 
 # =============================================================================
 
@@ -8446,14 +9175,14 @@ build ui/all: phony ui/libuigeom.a
 #############################################
 # Re-run CMake if any of its inputs changed.
 
-build build.ninja: RERUN_CMAKE | C$:/Users/xwx/.pico-sdk/cmake/pico-vscode.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeASMInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeCInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeCXXInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeCommonLanguageInclude.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeGenericSystem.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeInitializeConfigs.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeLanguageInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakePrintHelpers.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeSystemSpecificInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeSystemSpecificInitialize.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Compiler/CMakeCommonCompilerMacros.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Compiler/GNU-ASM.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Compiler/GNU-C.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Compiler/GNU-CXX.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Compiler/GNU.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/ExternalProject/shared_internal_commands.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/FetchContent.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/FindDoxygen.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/FindPackageHandleStandardArgs.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/FindPackageMessage.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/FindPython3.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/FindPython/Support.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Internal/CMakeASMLinkerInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Internal/CMakeCLinkerInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Internal/CMakeCXXLinkerInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Internal/CMakeCommonLinkerInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Platform/WindowsPaths.cmake C$:/Users/xwx/.pico-sdk/picotool/2.2.0-a4/picotool/picotoolConfig.cmake C$:/Users/xwx/.pico-sdk/picotool/2.2.0-a4/picotool/picotoolConfigVersion.cmake C$:/Users/xwx/.pico-sdk/picotool/2.2.0-a4/picotool/picotoolTargets-release.cmake C$:/Users/xwx/.pico-sdk/picotool/2.2.0-a4/picotool/picotoolTargets.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/Platform/PICO.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/generic_board.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/pico_pre_load_platform.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/pico_pre_load_toolchain.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/pico_utils.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/preload/platforms/rp2040.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/preload/toolchains/pico_arm_cortex_m0plus_gcc.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/preload/toolchains/util/find_compiler.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/preload/toolchains/util/pico_arm_gcc_common.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/preload/toolchains/util/set_flags.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/docs/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/lib/tinyusb/hw/bsp/family_support.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/lib/tinyusb/hw/bsp/rp2040/boards/pico_sdk/board.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/lib/tinyusb/hw/bsp/rp2040/family.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/lib/tinyusb/hw/bsp/rp2040/pico_sdk_import.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/pico_sdk_init.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/pico_sdk_version.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/cmake/on_device.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/cmake/rp2_common.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/boot_picobin_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/boot_picoboot_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/boot_uf2_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/hardware_claim/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_base_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_base_headers/generate_config_header.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_base_headers/include/pico/version.h.in C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_binary_info/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_bit_ops_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_divider_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_stdlib_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_sync/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_time/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_usb_reset_interface_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_util/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/boot_stage2/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/hardware_regs/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/hardware_regs/include/hardware/regs/dreq.h C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/hardware_regs/include/hardware/regs/intctrl.h C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/hardware_structs/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/pico_platform/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/boot_bootrom_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/cmsis/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_adc/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_base/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_boot_lock/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_clocks/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_divider/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_dma/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_exception/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_flash/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_gpio/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_i2c/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_interp/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_irq/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_pio/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_pll/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_pwm/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_resets/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_rtc/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_spi/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_sync/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_sync_spin_lock/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_ticks/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_timer/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_uart/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_vreg/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_watchdog/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_xip_cache/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_xosc/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_aon_timer/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_async_context/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_atomic/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_bit_ops/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_bootrom/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_bootsel_via_double_reset/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_btstack/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_clib_interface/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_crt0/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_cxx_options/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_cyw43_arch/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_cyw43_driver/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_cyw43_driver/cybt_shared_bus/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_divider/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_double/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_fix/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_fix/rp2040_usb_device_enumeration/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_flash/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_float/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_i2c_slave/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_int64_ops/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_lwip/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_lwip/tools/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_malloc/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_mbedtls/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_mem_ops/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_multicore/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_platform_common/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_platform_compiler/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_platform_panic/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_platform_sections/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_printf/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_rand/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_runtime/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_runtime_init/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_standard_binary_info/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_standard_link/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_standard_link/pico_flash_region.template.ld C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_status_led/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdio/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdio_rtt/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdio_semihosting/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdio_uart/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdio_usb/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdlib/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_time_adapter/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_unique_id/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/tinyusb/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/tools/CMakeLists.txt C$:/Users/xwx/.pico-sdk/tools/2.2.0/pioasm/pioasmConfig.cmake C$:/Users/xwx/.pico-sdk/tools/2.2.0/pioasm/pioasmConfigVersion.cmake C$:/Users/xwx/.pico-sdk/tools/2.2.0/pioasm/pioasmTargets-release.cmake C$:/Users/xwx/.pico-sdk/tools/2.2.0/pioasm/pioasmTargets.cmake CMakeCache.txt CMakeFiles/3.31.5/CMakeASMCompiler.cmake CMakeFiles/3.31.5/CMakeCCompiler.cmake CMakeFiles/3.31.5/CMakeCXXCompiler.cmake CMakeFiles/3.31.5/CMakeSystem.cmake E$:/pico/pico/CMakeLists.txt E$:/pico/pico/Drivers/CMakeLists.txt E$:/pico/pico/app/CMakeLists.txt E$:/pico/pico/fatfs/CMakeLists.txt E$:/pico/pico/fun/CMakeLists.txt E$:/pico/pico/pico_sdk_import.cmake E$:/pico/pico/pio/CMakeLists.txt E$:/pico/pico/plugins/led_controller/CMakeLists.txt E$:/pico/pico/plugins/novel_reader/CMakeLists.txt E$:/pico/pico/plugins/wire_quality/CMakeLists.txt E$:/pico/pico/ui/CMakeLists.txt
+build build.ninja: RERUN_CMAKE | C$:/Users/xwx/.pico-sdk/cmake/pico-vscode.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeASMInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeCInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeCXXInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeCommonLanguageInclude.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeGenericSystem.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeInitializeConfigs.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeLanguageInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakePrintHelpers.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeSystemSpecificInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeSystemSpecificInitialize.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Compiler/CMakeCommonCompilerMacros.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Compiler/GNU-ASM.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Compiler/GNU-C.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Compiler/GNU-CXX.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Compiler/GNU.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/ExternalProject/shared_internal_commands.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/FetchContent.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/FindDoxygen.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/FindPackageHandleStandardArgs.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/FindPackageMessage.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/FindPython3.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/FindPython/Support.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Internal/CMakeASMLinkerInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Internal/CMakeCLinkerInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Internal/CMakeCXXLinkerInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Internal/CMakeCommonLinkerInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Platform/WindowsPaths.cmake C$:/Users/xwx/.pico-sdk/picotool/2.2.0-a4/picotool/picotoolConfig.cmake C$:/Users/xwx/.pico-sdk/picotool/2.2.0-a4/picotool/picotoolConfigVersion.cmake C$:/Users/xwx/.pico-sdk/picotool/2.2.0-a4/picotool/picotoolTargets-release.cmake C$:/Users/xwx/.pico-sdk/picotool/2.2.0-a4/picotool/picotoolTargets.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/Platform/PICO.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/generic_board.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/pico_pre_load_platform.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/pico_pre_load_toolchain.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/pico_utils.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/preload/platforms/rp2040.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/preload/toolchains/pico_arm_cortex_m0plus_gcc.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/preload/toolchains/util/find_compiler.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/preload/toolchains/util/pico_arm_gcc_common.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/preload/toolchains/util/set_flags.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/docs/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/lib/tinyusb/hw/bsp/family_support.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/lib/tinyusb/hw/bsp/rp2040/boards/pico_sdk/board.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/lib/tinyusb/hw/bsp/rp2040/family.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/lib/tinyusb/hw/bsp/rp2040/pico_sdk_import.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/pico_sdk_init.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/pico_sdk_version.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/cmake/on_device.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/cmake/rp2_common.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/boot_picobin_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/boot_picoboot_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/boot_uf2_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/hardware_claim/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_base_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_base_headers/generate_config_header.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_base_headers/include/pico/version.h.in C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_binary_info/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_bit_ops_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_divider_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_stdlib_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_sync/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_time/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_usb_reset_interface_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_util/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/boot_stage2/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/hardware_regs/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/hardware_regs/include/hardware/regs/dreq.h C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/hardware_regs/include/hardware/regs/intctrl.h C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/hardware_structs/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/pico_platform/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/boot_bootrom_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/cmsis/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_adc/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_base/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_boot_lock/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_clocks/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_divider/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_dma/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_exception/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_flash/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_gpio/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_i2c/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_interp/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_irq/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_pio/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_pll/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_pwm/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_resets/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_rtc/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_spi/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_sync/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_sync_spin_lock/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_ticks/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_timer/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_uart/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_vreg/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_watchdog/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_xip_cache/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_xosc/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_aon_timer/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_async_context/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_atomic/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_bit_ops/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_bootrom/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_bootsel_via_double_reset/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_btstack/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_clib_interface/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_crt0/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_cxx_options/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_cyw43_arch/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_cyw43_driver/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_cyw43_driver/cybt_shared_bus/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_divider/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_double/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_fix/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_fix/rp2040_usb_device_enumeration/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_flash/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_float/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_i2c_slave/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_int64_ops/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_lwip/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_lwip/tools/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_malloc/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_mbedtls/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_mem_ops/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_multicore/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_platform_common/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_platform_compiler/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_platform_panic/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_platform_sections/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_printf/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_rand/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_runtime/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_runtime_init/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_standard_binary_info/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_standard_link/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_standard_link/pico_flash_region.template.ld C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_status_led/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdio/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdio_rtt/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdio_semihosting/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdio_uart/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdio_usb/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdlib/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_time_adapter/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_unique_id/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/tinyusb/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/tools/CMakeLists.txt C$:/Users/xwx/.pico-sdk/tools/2.2.0/pioasm/pioasmConfig.cmake C$:/Users/xwx/.pico-sdk/tools/2.2.0/pioasm/pioasmConfigVersion.cmake C$:/Users/xwx/.pico-sdk/tools/2.2.0/pioasm/pioasmTargets-release.cmake C$:/Users/xwx/.pico-sdk/tools/2.2.0/pioasm/pioasmTargets.cmake CMakeCache.txt CMakeFiles/3.31.5/CMakeASMCompiler.cmake CMakeFiles/3.31.5/CMakeCCompiler.cmake CMakeFiles/3.31.5/CMakeCXXCompiler.cmake CMakeFiles/3.31.5/CMakeSystem.cmake E$:/pico/pico/CMakeLists.txt E$:/pico/pico/Drivers/CMakeLists.txt E$:/pico/pico/app/CMakeLists.txt E$:/pico/pico/fatfs/CMakeLists.txt E$:/pico/pico/fun/CMakeLists.txt E$:/pico/pico/pico_sdk_import.cmake E$:/pico/pico/pio/CMakeLists.txt E$:/pico/pico/plugins/2048/CMakeLists.txt E$:/pico/pico/plugins/dino_runner/CMakeLists.txt E$:/pico/pico/plugins/flappy/CMakeLists.txt E$:/pico/pico/plugins/gomoku/CMakeLists.txt E$:/pico/pico/plugins/invaders/CMakeLists.txt E$:/pico/pico/plugins/led_controller/CMakeLists.txt E$:/pico/pico/plugins/minesweeper/CMakeLists.txt E$:/pico/pico/plugins/novel_reader/CMakeLists.txt E$:/pico/pico/plugins/pushbox/CMakeLists.txt E$:/pico/pico/plugins/snake/CMakeLists.txt E$:/pico/pico/plugins/wire_quality/CMakeLists.txt E$:/pico/pico/plugins/xiangqi/CMakeLists.txt E$:/pico/pico/ui/CMakeLists.txt
   pool = console
 
 
 #############################################
 # A missing CMake input file is not an error.
 
-build C$:/Users/xwx/.pico-sdk/cmake/pico-vscode.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeASMInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeCInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeCXXInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeCommonLanguageInclude.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeGenericSystem.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeInitializeConfigs.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeLanguageInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakePrintHelpers.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeSystemSpecificInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeSystemSpecificInitialize.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Compiler/CMakeCommonCompilerMacros.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Compiler/GNU-ASM.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Compiler/GNU-C.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Compiler/GNU-CXX.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Compiler/GNU.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/ExternalProject/shared_internal_commands.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/FetchContent.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/FindDoxygen.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/FindPackageHandleStandardArgs.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/FindPackageMessage.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/FindPython3.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/FindPython/Support.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Internal/CMakeASMLinkerInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Internal/CMakeCLinkerInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Internal/CMakeCXXLinkerInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Internal/CMakeCommonLinkerInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Platform/WindowsPaths.cmake C$:/Users/xwx/.pico-sdk/picotool/2.2.0-a4/picotool/picotoolConfig.cmake C$:/Users/xwx/.pico-sdk/picotool/2.2.0-a4/picotool/picotoolConfigVersion.cmake C$:/Users/xwx/.pico-sdk/picotool/2.2.0-a4/picotool/picotoolTargets-release.cmake C$:/Users/xwx/.pico-sdk/picotool/2.2.0-a4/picotool/picotoolTargets.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/Platform/PICO.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/generic_board.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/pico_pre_load_platform.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/pico_pre_load_toolchain.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/pico_utils.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/preload/platforms/rp2040.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/preload/toolchains/pico_arm_cortex_m0plus_gcc.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/preload/toolchains/util/find_compiler.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/preload/toolchains/util/pico_arm_gcc_common.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/preload/toolchains/util/set_flags.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/docs/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/lib/tinyusb/hw/bsp/family_support.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/lib/tinyusb/hw/bsp/rp2040/boards/pico_sdk/board.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/lib/tinyusb/hw/bsp/rp2040/family.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/lib/tinyusb/hw/bsp/rp2040/pico_sdk_import.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/pico_sdk_init.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/pico_sdk_version.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/cmake/on_device.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/cmake/rp2_common.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/boot_picobin_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/boot_picoboot_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/boot_uf2_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/hardware_claim/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_base_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_base_headers/generate_config_header.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_base_headers/include/pico/version.h.in C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_binary_info/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_bit_ops_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_divider_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_stdlib_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_sync/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_time/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_usb_reset_interface_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_util/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/boot_stage2/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/hardware_regs/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/hardware_regs/include/hardware/regs/dreq.h C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/hardware_regs/include/hardware/regs/intctrl.h C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/hardware_structs/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/pico_platform/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/boot_bootrom_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/cmsis/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_adc/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_base/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_boot_lock/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_clocks/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_divider/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_dma/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_exception/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_flash/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_gpio/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_i2c/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_interp/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_irq/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_pio/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_pll/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_pwm/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_resets/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_rtc/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_spi/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_sync/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_sync_spin_lock/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_ticks/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_timer/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_uart/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_vreg/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_watchdog/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_xip_cache/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_xosc/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_aon_timer/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_async_context/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_atomic/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_bit_ops/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_bootrom/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_bootsel_via_double_reset/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_btstack/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_clib_interface/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_crt0/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_cxx_options/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_cyw43_arch/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_cyw43_driver/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_cyw43_driver/cybt_shared_bus/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_divider/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_double/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_fix/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_fix/rp2040_usb_device_enumeration/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_flash/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_float/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_i2c_slave/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_int64_ops/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_lwip/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_lwip/tools/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_malloc/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_mbedtls/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_mem_ops/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_multicore/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_platform_common/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_platform_compiler/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_platform_panic/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_platform_sections/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_printf/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_rand/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_runtime/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_runtime_init/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_standard_binary_info/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_standard_link/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_standard_link/pico_flash_region.template.ld C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_status_led/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdio/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdio_rtt/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdio_semihosting/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdio_uart/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdio_usb/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdlib/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_time_adapter/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_unique_id/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/tinyusb/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/tools/CMakeLists.txt C$:/Users/xwx/.pico-sdk/tools/2.2.0/pioasm/pioasmConfig.cmake C$:/Users/xwx/.pico-sdk/tools/2.2.0/pioasm/pioasmConfigVersion.cmake C$:/Users/xwx/.pico-sdk/tools/2.2.0/pioasm/pioasmTargets-release.cmake C$:/Users/xwx/.pico-sdk/tools/2.2.0/pioasm/pioasmTargets.cmake CMakeCache.txt CMakeFiles/3.31.5/CMakeASMCompiler.cmake CMakeFiles/3.31.5/CMakeCCompiler.cmake CMakeFiles/3.31.5/CMakeCXXCompiler.cmake CMakeFiles/3.31.5/CMakeSystem.cmake E$:/pico/pico/CMakeLists.txt E$:/pico/pico/Drivers/CMakeLists.txt E$:/pico/pico/app/CMakeLists.txt E$:/pico/pico/fatfs/CMakeLists.txt E$:/pico/pico/fun/CMakeLists.txt E$:/pico/pico/pico_sdk_import.cmake E$:/pico/pico/pio/CMakeLists.txt E$:/pico/pico/plugins/led_controller/CMakeLists.txt E$:/pico/pico/plugins/novel_reader/CMakeLists.txt E$:/pico/pico/plugins/wire_quality/CMakeLists.txt E$:/pico/pico/ui/CMakeLists.txt: phony
+build C$:/Users/xwx/.pico-sdk/cmake/pico-vscode.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeASMInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeCInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeCXXInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeCommonLanguageInclude.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeGenericSystem.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeInitializeConfigs.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeLanguageInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakePrintHelpers.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeSystemSpecificInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/CMakeSystemSpecificInitialize.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Compiler/CMakeCommonCompilerMacros.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Compiler/GNU-ASM.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Compiler/GNU-C.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Compiler/GNU-CXX.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Compiler/GNU.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/ExternalProject/shared_internal_commands.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/FetchContent.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/FindDoxygen.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/FindPackageHandleStandardArgs.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/FindPackageMessage.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/FindPython3.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/FindPython/Support.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Internal/CMakeASMLinkerInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Internal/CMakeCLinkerInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Internal/CMakeCXXLinkerInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Internal/CMakeCommonLinkerInformation.cmake C$:/Users/xwx/.pico-sdk/cmake/v3.31.5/share/cmake-3.31/Modules/Platform/WindowsPaths.cmake C$:/Users/xwx/.pico-sdk/picotool/2.2.0-a4/picotool/picotoolConfig.cmake C$:/Users/xwx/.pico-sdk/picotool/2.2.0-a4/picotool/picotoolConfigVersion.cmake C$:/Users/xwx/.pico-sdk/picotool/2.2.0-a4/picotool/picotoolTargets-release.cmake C$:/Users/xwx/.pico-sdk/picotool/2.2.0-a4/picotool/picotoolTargets.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/Platform/PICO.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/generic_board.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/pico_pre_load_platform.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/pico_pre_load_toolchain.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/pico_utils.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/preload/platforms/rp2040.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/preload/toolchains/pico_arm_cortex_m0plus_gcc.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/preload/toolchains/util/find_compiler.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/preload/toolchains/util/pico_arm_gcc_common.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/cmake/preload/toolchains/util/set_flags.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/docs/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/lib/tinyusb/hw/bsp/family_support.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/lib/tinyusb/hw/bsp/rp2040/boards/pico_sdk/board.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/lib/tinyusb/hw/bsp/rp2040/family.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/lib/tinyusb/hw/bsp/rp2040/pico_sdk_import.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/pico_sdk_init.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/pico_sdk_version.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/cmake/on_device.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/cmake/rp2_common.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/boot_picobin_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/boot_picoboot_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/boot_uf2_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/hardware_claim/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_base_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_base_headers/generate_config_header.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_base_headers/include/pico/version.h.in C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_binary_info/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_bit_ops_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_divider_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_stdlib_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_sync/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_time/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_usb_reset_interface_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/common/pico_util/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040.cmake C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/boot_stage2/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/hardware_regs/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/hardware_regs/include/hardware/regs/dreq.h C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/hardware_regs/include/hardware/regs/intctrl.h C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/hardware_structs/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/pico_platform/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/boot_bootrom_headers/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/cmsis/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_adc/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_base/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_boot_lock/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_clocks/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_divider/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_dma/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_exception/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_flash/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_gpio/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_i2c/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_interp/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_irq/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_pio/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_pll/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_pwm/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_resets/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_rtc/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_spi/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_sync/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_sync_spin_lock/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_ticks/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_timer/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_uart/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_vreg/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_watchdog/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_xip_cache/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_xosc/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_aon_timer/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_async_context/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_atomic/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_bit_ops/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_bootrom/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_bootsel_via_double_reset/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_btstack/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_clib_interface/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_crt0/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_cxx_options/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_cyw43_arch/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_cyw43_driver/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_cyw43_driver/cybt_shared_bus/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_divider/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_double/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_fix/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_fix/rp2040_usb_device_enumeration/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_flash/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_float/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_i2c_slave/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_int64_ops/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_lwip/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_lwip/tools/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_malloc/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_mbedtls/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_mem_ops/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_multicore/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_platform_common/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_platform_compiler/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_platform_panic/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_platform_sections/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_printf/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_rand/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_runtime/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_runtime_init/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_standard_binary_info/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_standard_link/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_standard_link/pico_flash_region.template.ld C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_status_led/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdio/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdio_rtt/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdio_semihosting/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdio_uart/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdio_usb/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdlib/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_time_adapter/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_unique_id/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2_common/tinyusb/CMakeLists.txt C$:/Users/xwx/.pico-sdk/sdk/2.2.0/tools/CMakeLists.txt C$:/Users/xwx/.pico-sdk/tools/2.2.0/pioasm/pioasmConfig.cmake C$:/Users/xwx/.pico-sdk/tools/2.2.0/pioasm/pioasmConfigVersion.cmake C$:/Users/xwx/.pico-sdk/tools/2.2.0/pioasm/pioasmTargets-release.cmake C$:/Users/xwx/.pico-sdk/tools/2.2.0/pioasm/pioasmTargets.cmake CMakeCache.txt CMakeFiles/3.31.5/CMakeASMCompiler.cmake CMakeFiles/3.31.5/CMakeCCompiler.cmake CMakeFiles/3.31.5/CMakeCXXCompiler.cmake CMakeFiles/3.31.5/CMakeSystem.cmake E$:/pico/pico/CMakeLists.txt E$:/pico/pico/Drivers/CMakeLists.txt E$:/pico/pico/app/CMakeLists.txt E$:/pico/pico/fatfs/CMakeLists.txt E$:/pico/pico/fun/CMakeLists.txt E$:/pico/pico/pico_sdk_import.cmake E$:/pico/pico/pio/CMakeLists.txt E$:/pico/pico/plugins/2048/CMakeLists.txt E$:/pico/pico/plugins/dino_runner/CMakeLists.txt E$:/pico/pico/plugins/flappy/CMakeLists.txt E$:/pico/pico/plugins/gomoku/CMakeLists.txt E$:/pico/pico/plugins/invaders/CMakeLists.txt E$:/pico/pico/plugins/led_controller/CMakeLists.txt E$:/pico/pico/plugins/minesweeper/CMakeLists.txt E$:/pico/pico/plugins/novel_reader/CMakeLists.txt E$:/pico/pico/plugins/pushbox/CMakeLists.txt E$:/pico/pico/plugins/snake/CMakeLists.txt E$:/pico/pico/plugins/wire_quality/CMakeLists.txt E$:/pico/pico/plugins/xiangqi/CMakeLists.txt E$:/pico/pico/ui/CMakeLists.txt: phony
 
 
 #############################################
