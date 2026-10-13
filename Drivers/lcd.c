@@ -106,16 +106,18 @@ void LCD_BulkWrite(const uint8_t *buf, uint32_t len)
 void LCD_PushTileDMA_Async(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t *buf)
 {
     if (w == 0 || h == 0 || !buf) return;
-    
+
     uint32_t count = (uint32_t)w * h;
     if (count > LCD_WIDTH * UI_TILE_H) count = LCD_WIDTH * UI_TILE_H;
 
-    LCD_WaitDMA();
-    
-    for (uint32_t i = 0; i < count; i++) {
-
-         buf[i] = __builtin_bswap16(buf[i]);
-    }
+    /* ⚡ 这里绝对不能 LCD_WaitDMA()。
+     * 旧版在此等待,导致"乒乓"退化成串行:每次启动新传输都要等旧的
+     * 彻底发完,CPU 在 491µs 的 SPI 传输期间完全空转。
+     * 现在等待的责任交给 ui_tile_get_next() —— 只在"复用某一块缓冲之前"
+     * 才等,从而让 CPU 渲染下一块与当前块的 DMA 传输真正重叠。
+     *
+     * ⚠️ 同时 bswap 也移走了(见 ui_tile_swap_rect / ui_tile_swap_full):
+     * 15k 次翻转的 CPU 时间不该串在 DMA 时间线里,应该在渲染期做。 */
 
     LCD_SetWindow(x, y, x + w - 1, y + h - 1);
     LCD_DC_HIGH();
@@ -136,24 +138,21 @@ void LCD_PushSubTile(uint16_t screen_x, uint16_t screen_y,
     if (screen_x + sub_w > LCD_WIDTH)  sub_w = LCD_WIDTH - screen_x;
     if (screen_y + sub_h > LCD_HEIGHT) sub_h = LCD_HEIGHT - screen_y;
 
+    /* ⚡ 契约变更:本函数不再自己做 bswap(旧版在这里原地逐行翻转)。
+     * 调用方必须在渲染期用 ui_tile_swap_rect() / ui_tile_swap_region()
+     * 把将要发送的整块区域翻转好。
+     * 这样 CPU 翻转像素的时间才能和上一块的 DMA 传输重叠,而不是串在
+     * 推送这一步;而且按区域翻转比"只翻实际写过的像素"更确定 ——
+     * clip 内的稀疏区域也一定被翻到。
+     * 逐行 DMA:因为 stride(tile 宽 480)!= sub_w(窗口宽),不能单次发。 */
     LCD_WaitDMA();
 
-    // 1. 原地逐行完成大小端翻转
-    for (uint16_t row = 0; row < sub_h; row++) {
-        uint16_t *src = tile_buf + (src_offset_y + row) * tile_stride + src_offset_x;
-        for (uint16_t col = 0; col < sub_w; col++) {
-            src[col] = __builtin_bswap16(src[col]);
-        }
-    }
-
-    // 2. 设置屏幕目标窗口
     LCD_SetWindow(screen_x, screen_y, screen_x + sub_w - 1, screen_y + sub_h - 1);
     LCD_DC_HIGH();
     LCD_CS_LOW();
 
-    // 3. 逐行使用 DMA 发送（正确处理 tile_stride 内存跨度）
     for (uint16_t row = 0; row < sub_h; row++) {
-        uint16_t *src = tile_buf + (src_offset_y + row) * tile_stride + src_offset_x;
+        const uint16_t *src = tile_buf + (src_offset_y + row) * tile_stride + src_offset_x;
         dma_channel_set_read_addr(lcd_dma_chan, src, false);
         dma_channel_set_trans_count(lcd_dma_chan, sub_w * 2, true);
         LCD_WaitDMA_Auto();

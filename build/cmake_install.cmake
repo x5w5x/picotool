@@ -54,10 +54,6 @@ if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   include("E:/pico/pico/build/plugins/gomoku/cmake_install.cmake")
   include("E:/pico/pico/build/plugins/xiangqi/cmake_install.cmake")
   include("E:/pico/pico/build/plugins/2048/cmake_install.cmake")
-  include("E:/pico/pico/build/plugins/minesweeper/cmake_install.cmake")
-  include("E:/pico/pico/build/plugins/pushbox/cmake_install.cmake")
-  include("E:/pico/pico/build/plugins/flappy/cmake_install.cmake")
-  include("E:/pico/pico/build/plugins/invaders/cmake_install.cmake")
 
 endif()
 

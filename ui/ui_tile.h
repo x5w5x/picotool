@@ -32,6 +32,25 @@ void ui_tile_flush(ui_tile_t *tile);
 // 等待所有 DMA 传输完成[cite: 4]
 void ui_tile_wait_finish(void);
 
+/* ⚡ 渲染期字节序转换(RGB565 → 大端字节流,屏要的)
+ *
+ * 必须在 draw_scene() 画完、推送之前调用,且必须覆盖"即将发送的
+ * 整块区域",不能只覆盖实际画过的像素 —— clip 内没被图元碰到的
+ * 像素还是上一帧翻转后的残留,漏翻就会以错字节序发出,表现为花屏。
+ *
+ *   - 全刷路径     → ui_tile_swap_full(tile)
+ *   - 脏矩形路径   → ui_tile_swap_rect(tile, &clip_rect)
+ *
+ * 为什么不能在 push 里做:那样 CPU 翻转像素的时间会串进 DMA 时间线,
+ * 乒乓重叠带来的收益全被吃掉。放到渲染期,翻转和上一块的 DMA 并行。 */
+void ui_tile_swap_region(ui_tile_t *tile, int16_t x, int16_t y, int16_t w, int16_t h);
+void ui_tile_swap_rect(ui_tile_t *tile, const ui_rect_t *r);
+void ui_tile_swap_full(ui_tile_t *tile);
+
+/* 同步推送路径(不经 ui_tile_flush)用完一块缓冲后调用,
+ * 通知乒乓层这块已不在途,避免下一次 ui_tile_get_next 白等。 */
+void ui_tile_mark_idle(ui_tile_t *tile);
+
 #ifdef __cplusplus
 }
 #endif

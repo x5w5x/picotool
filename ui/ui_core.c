@@ -12,11 +12,12 @@ void ui_render_tiles(uint8_t start_row, uint8_t end_row, ui_scene_draw_cb_t draw
     if (start_row > end_row) return;
 
     for (uint8_t row = start_row; row <= end_row; row++) {
-        //获取当前切片显存指针
+        //获取当前切片显存指针 (内部只在复用该块时才等它的 DMA)
         ui_tile_t *tile = ui_tile_get_next(row);
         draw_scene(tile);
 
-        //启动整行 DMA 异步推流并切换双缓冲
+        //渲染期翻转整块字节序,然后启动异步 DMA 并切乒乓
+        ui_tile_swap_full(tile);
         ui_tile_flush(tile);
     }
 
@@ -59,15 +60,32 @@ void ui_render_dirty_clipped(const ui_rect_t *dirty, ui_scene_draw_cb_t draw_sce
         // 恢复视口
         ui_draw_reset_clip();
 
-        // 5. 计算子矩形在切片显存内部的相对偏移
+        /* 5. 渲染期翻转整个 clip 区域(不是"画过的像素" —— 稀疏区域
+         *    仍是上一帧翻转后的残留,不翻就会以错字节序发出去花屏) */
+        ui_tile_swap_rect(tile, &clip_rect);
+
+        /* 6. 推送"脏矩形 ∩ 本切片"这块子区域。
+         *
+         * 为什么这里不能像全刷那样调 ui_tile_flush(整块 480x32):
+         * 脏矩形路径下 draw_scene 只重画了 clip 内的像素,切片里
+         * clip 之外的像素是上一帧(甚至上一个 row 复用同一缓冲时)
+         * 的残留 —— 整块发出去会把残留画到屏幕上。
+         *
+         * 所以这条路径发子矩形。它拿不到乒乓重叠(逐行 DMA + 行间
+         * 等待),但已经比旧版快:bswap 现在只翻 clip 交集,而不是
+         * 整个子矩形在推送里翻。
+         *
+         * ⚡ 真正需要"全刷级"吞吐的场景走 ui_render_frame,那条路
+         * 已经完全乒乓化。 */
         uint16_t src_off_x = (uint16_t)(clip_rect.x - tile->rect.x);
         uint16_t src_off_y = (uint16_t)(clip_rect.y - tile->rect.y);
-
-        // 6. 调用 LCD 驱动进行单次 DMA 局部开窗极速推流
         LCD_PushSubTile((uint16_t)clip_rect.x, (uint16_t)clip_rect.y,
                         (uint16_t)clip_rect.w, (uint16_t)clip_rect.h,
                         tile->buf, UI_TILE_W,
                         src_off_x, src_off_y);
+
+        /* 这块缓冲刚被同步发完,标记为不在途,避免 get_next 空等 */
+        ui_tile_mark_idle(tile);
     }
 
     ui_tile_wait_finish();

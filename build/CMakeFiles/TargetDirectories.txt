@@ -246,15 +246,3 @@ E:/pico/pico/build/plugins/xiangqi/CMakeFiles/rebuild_cache.dir
 E:/pico/pico/build/plugins/2048/CMakeFiles/game2048.dir
 E:/pico/pico/build/plugins/2048/CMakeFiles/edit_cache.dir
 E:/pico/pico/build/plugins/2048/CMakeFiles/rebuild_cache.dir
-E:/pico/pico/build/plugins/minesweeper/CMakeFiles/minesweeper.dir
-E:/pico/pico/build/plugins/minesweeper/CMakeFiles/edit_cache.dir
-E:/pico/pico/build/plugins/minesweeper/CMakeFiles/rebuild_cache.dir
-E:/pico/pico/build/plugins/pushbox/CMakeFiles/pushbox.dir
-E:/pico/pico/build/plugins/pushbox/CMakeFiles/edit_cache.dir
-E:/pico/pico/build/plugins/pushbox/CMakeFiles/rebuild_cache.dir
-E:/pico/pico/build/plugins/flappy/CMakeFiles/flappy.dir
-E:/pico/pico/build/plugins/flappy/CMakeFiles/edit_cache.dir
-E:/pico/pico/build/plugins/flappy/CMakeFiles/rebuild_cache.dir
-E:/pico/pico/build/plugins/invaders/CMakeFiles/invaders.dir
-E:/pico/pico/build/plugins/invaders/CMakeFiles/edit_cache.dir
-E:/pico/pico/build/plugins/invaders/CMakeFiles/rebuild_cache.dir

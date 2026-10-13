@@ -3106,53 +3106,5 @@
   "command": "C:\\Users\\xwx\\.pico-sdk\\toolchain\\14_2_Rel1\\bin\\arm-none-eabi-gcc.exe -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall -Wno-unused-parameter -finput-charset=UTF-8 -fexec-charset=GBK -o plugins\\2048\\CMakeFiles\\game2048.dir\\game2048_plugin.c.obj -c E:\\pico\\pico\\plugins\\2048\\game2048_plugin.c",
   "file": "E:\\pico\\pico\\plugins\\2048\\game2048_plugin.c",
   "output": "plugins\\2048\\CMakeFiles\\game2048.dir\\game2048_plugin.c.obj"
-},
-{
-  "directory": "E:/pico/pico/build",
-  "command": "C:\\Users\\xwx\\.pico-sdk\\toolchain\\14_2_Rel1\\bin\\arm-none-eabi-gcc.exe -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall -o plugins\\minesweeper\\CMakeFiles\\minesweeper.dir\\main.c.obj -c E:\\pico\\pico\\plugins\\minesweeper\\main.c",
-  "file": "E:\\pico\\pico\\plugins\\minesweeper\\main.c",
-  "output": "plugins\\minesweeper\\CMakeFiles\\minesweeper.dir\\main.c.obj"
-},
-{
-  "directory": "E:/pico/pico/build",
-  "command": "C:\\Users\\xwx\\.pico-sdk\\toolchain\\14_2_Rel1\\bin\\arm-none-eabi-gcc.exe -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall -o plugins\\minesweeper\\CMakeFiles\\minesweeper.dir\\minesweeper_plugin.c.obj -c E:\\pico\\pico\\plugins\\minesweeper\\minesweeper_plugin.c",
-  "file": "E:\\pico\\pico\\plugins\\minesweeper\\minesweeper_plugin.c",
-  "output": "plugins\\minesweeper\\CMakeFiles\\minesweeper.dir\\minesweeper_plugin.c.obj"
-},
-{
-  "directory": "E:/pico/pico/build",
-  "command": "C:\\Users\\xwx\\.pico-sdk\\toolchain\\14_2_Rel1\\bin\\arm-none-eabi-gcc.exe -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall -o plugins\\pushbox\\CMakeFiles\\pushbox.dir\\main.c.obj -c E:\\pico\\pico\\plugins\\pushbox\\main.c",
-  "file": "E:\\pico\\pico\\plugins\\pushbox\\main.c",
-  "output": "plugins\\pushbox\\CMakeFiles\\pushbox.dir\\main.c.obj"
-},
-{
-  "directory": "E:/pico/pico/build",
-  "command": "C:\\Users\\xwx\\.pico-sdk\\toolchain\\14_2_Rel1\\bin\\arm-none-eabi-gcc.exe -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall -o plugins\\pushbox\\CMakeFiles\\pushbox.dir\\pushbox_plugin.c.obj -c E:\\pico\\pico\\plugins\\pushbox\\pushbox_plugin.c",
-  "file": "E:\\pico\\pico\\plugins\\pushbox\\pushbox_plugin.c",
-  "output": "plugins\\pushbox\\CMakeFiles\\pushbox.dir\\pushbox_plugin.c.obj"
-},
-{
-  "directory": "E:/pico/pico/build",
-  "command": "C:\\Users\\xwx\\.pico-sdk\\toolchain\\14_2_Rel1\\bin\\arm-none-eabi-gcc.exe -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall -o plugins\\flappy\\CMakeFiles\\flappy.dir\\main.c.obj -c E:\\pico\\pico\\plugins\\flappy\\main.c",
-  "file": "E:\\pico\\pico\\plugins\\flappy\\main.c",
-  "output": "plugins\\flappy\\CMakeFiles\\flappy.dir\\main.c.obj"
-},
-{
-  "directory": "E:/pico/pico/build",
-  "command": "C:\\Users\\xwx\\.pico-sdk\\toolchain\\14_2_Rel1\\bin\\arm-none-eabi-gcc.exe -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall -o plugins\\flappy\\CMakeFiles\\flappy.dir\\flappy_plugin.c.obj -c E:\\pico\\pico\\plugins\\flappy\\flappy_plugin.c",
-  "file": "E:\\pico\\pico\\plugins\\flappy\\flappy_plugin.c",
-  "output": "plugins\\flappy\\CMakeFiles\\flappy.dir\\flappy_plugin.c.obj"
-},
-{
-  "directory": "E:/pico/pico/build",
-  "command": "C:\\Users\\xwx\\.pico-sdk\\toolchain\\14_2_Rel1\\bin\\arm-none-eabi-gcc.exe -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall -o plugins\\invaders\\CMakeFiles\\invaders.dir\\main.c.obj -c E:\\pico\\pico\\plugins\\invaders\\main.c",
-  "file": "E:\\pico\\pico\\plugins\\invaders\\main.c",
-  "output": "plugins\\invaders\\CMakeFiles\\invaders.dir\\main.c.obj"
-},
-{
-  "directory": "E:/pico/pico/build",
-  "command": "C:\\Users\\xwx\\.pico-sdk\\toolchain\\14_2_Rel1\\bin\\arm-none-eabi-gcc.exe -IE:/pico/pico/app -IE:/pico/pico/ui -IE:/pico/pico/Drivers -mcpu=cortex-m0plus -mthumb -g -O3 -DNDEBUG -std=gnu11 -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin -fdata-sections -ffunction-sections -Wall -o plugins\\invaders\\CMakeFiles\\invaders.dir\\invaders_plugin.c.obj -c E:\\pico\\pico\\plugins\\invaders\\invaders_plugin.c",
-  "file": "E:\\pico\\pico\\plugins\\invaders\\invaders_plugin.c",
-  "output": "plugins\\invaders\\CMakeFiles\\invaders.dir\\invaders_plugin.c.obj"
 }
 ]
