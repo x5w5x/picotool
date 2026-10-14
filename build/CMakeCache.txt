@@ -322,7 +322,7 @@ PICO_STDIO_UART:BOOL=ON
 PICO_STDIO_USB:BOOL=OFF
 
 //No help, variable specified on the command line.
-Python3_EXECUTABLE:UNINITIALIZED=C:/Users/xwx/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe
+Python3_EXECUTABLE:UNINITIALIZED=c:/Users/xwx/AppData/Local/Programs/Python/Python312/python.exe
 
 //Value Computed by CMake
 dino_runner_BINARY_DIR:STATIC=E:/pico/pico/build/plugins/dino_runner
@@ -621,7 +621,7 @@ DOXYGEN_DOT_EXECUTABLE-ADVANCED:INTERNAL=1
 DOXYGEN_EXECUTABLE-ADVANCED:INTERNAL=1
 FAMILY_MCUS:INTERNAL=RP2040
 //Details about finding Python3
-FIND_PACKAGE_MESSAGE_DETAILS_Python3:INTERNAL=[C:/Users/xwx/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe][cfound components: Interpreter ][v3.12.14()]
+FIND_PACKAGE_MESSAGE_DETAILS_Python3:INTERNAL=[c:/Users/xwx/AppData/Local/Programs/Python/Python312/python.exe][cfound components: Interpreter ][v3.12.0()]
 PICO_32BIT:INTERNAL=1
 PICO_ARM:INTERNAL=1
 PICO_BOOT_STAGE2_DIR:INTERNAL=C:/Users/xwx/.pico-sdk/sdk/2.2.0/src/rp2040/boot_stage2
@@ -653,10 +653,10 @@ PICO_TOOLS_DIR:INTERNAL=C:/Users/xwx/.pico-sdk/sdk/2.2.0/tools
 _Python3_Compiler_REASON_FAILURE:INTERNAL=
 //Development reason failure
 _Python3_Development_REASON_FAILURE:INTERNAL=
-_Python3_EXECUTABLE:INTERNAL=C:/Users/xwx/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe
+_Python3_EXECUTABLE:INTERNAL=c:/Users/xwx/AppData/Local/Programs/Python/Python312/python.exe
 //Python3 Properties
-_Python3_INTERPRETER_PROPERTIES:INTERNAL=Python;3;12;14;32;64;;;abi3;C:\Users\xwx\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib;C:\Users\xwx\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib;C:\Users\xwx\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages;C:\Users\xwx\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages
-_Python3_INTERPRETER_SIGNATURE:INTERNAL=8ce1bf8c1151949e7c17bdc520697adb
+_Python3_INTERPRETER_PROPERTIES:INTERNAL=Python;3;12;0;32;64;;;abi3;c:\Users\xwx\AppData\Local\Programs\Python\Python312\Lib;c:\Users\xwx\AppData\Local\Programs\Python\Python312\Lib;c:\Users\xwx\AppData\Local\Programs\Python\Python312\Lib\site-packages;c:\Users\xwx\AppData\Local\Programs\Python\Python312\Lib\site-packages
+_Python3_INTERPRETER_SIGNATURE:INTERNAL=77c2a1fc1da077f2cdf6ff1ea2d5d75e
 //NumPy reason failure
 _Python3_NumPy_REASON_FAILURE:INTERNAL=
 

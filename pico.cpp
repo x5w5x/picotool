@@ -11,7 +11,7 @@
 #include "config.h"
 #include "pio_manager.h"
 #include "pin_manager.h"
-// Ó²¼şÇı¶¯²ã
+// ç¡¬ä»¶é©±åŠ¨å±‚
 #include "board_pins.h"
 #include "spi_bus.h"
 #include "lcd.h"
@@ -19,19 +19,19 @@
 #include "chinese.h"
 #include "fun_esp.h"
    
-// UI ºËĞÄäÖÈ¾Ì×¼ş
+// UI æ ¸å¿ƒæ¸²æŸ“å¥—ä»¶
 #include "ui_geometry.h"
 #include "ui_tile.h"
 #include "ui_core.h"
 #include "ui_draw.h"
 
-// UI ×é¼şÓëÍ¼ÏñÊı¾İ
+// UI ç»„ä»¶ä¸å›¾åƒæ•°æ®
 #include "ui_status_bar.h"
 #include "ui_picture.h"
 #include "ui_btn.h"
 #include "dog_data.h"
  #include "ui_input.h"
-// App ¹ÜÀíÓë¶ÀÁ¢Ó¦ÓÃÄ£¿é
+// App ç®¡ç†ä¸ç‹¬ç«‹åº”ç”¨æ¨¡å—
 #include "app_manager.h"
 #include "app_led.h"
 #include "app_template.h"
@@ -53,53 +53,54 @@
 #include "app_ir.h"
 #include "app_i2c.h"
 #include "app_spi.h"
+#include "app_gb.h"
 #define LED_PIN PICO_DEFAULT_LED_PIN
 #define CHIP_TEMP_OFFSET_C 13.0f
 
-// ÆÁÄ»ÎïÀí±³¾°É«: ´¿°× (0xFFFF)
+// å±å¹•ç‰©ç†èƒŒæ™¯è‰²: çº¯ç™½ (0xFFFF)
 #define SCREEN_BG_COLOR 0xFFFF
 
-/* ================= 1. È«¾Ö¿Ø¼şÊµÌåÓëĞÔÄÜÒ£²â ================= */
+/* ================= 1. å…¨å±€æ§ä»¶å®ä½“ä¸æ€§èƒ½é¥æµ‹ ================= */
 extern "C"
 {
-    app_manager_t g_app_mgr; // È¥µô static£¬²¢ÓÃ extern "C" µ¼³ö·ûºÅ
+    app_manager_t g_app_mgr; // å»æ‰ staticï¼Œå¹¶ç”¨ extern "C" å¯¼å‡ºç¬¦å·
 }
-// static app_manager_t g_app_mgr;      // Ó¦ÓÃ¹ÜÀíÆ÷ºËĞÄ
-static ui_status_bar_t g_status_bar; // ¶¥²¿³£×¤×´Ì¬À¸ (480x32)
-static ui_picture_t g_pic_dog;       // Í¼Ïñ×é¼ş
-static ui_btn_t g_btn_sl;            // ÉÕÂ¼Ä£Ê½¸üĞÂ°´¼ü
+// static app_manager_t g_app_mgr;      // åº”ç”¨ç®¡ç†å™¨æ ¸å¿ƒ
+static ui_status_bar_t g_status_bar; // é¡¶éƒ¨å¸¸é©»çŠ¶æ€æ  (480x32)
+static ui_picture_t g_pic_dog;       // å›¾åƒç»„ä»¶
+static ui_btn_t g_btn_sl;            // çƒ§å½•æ¨¡å¼æ›´æ–°æŒ‰é”®
 
-static uint32_t g_sys_fps_real = 60;    // ×´Ì¬À¸ÊµÊ±ÏÔÊ¾ FPS
-static uint32_t g_cpu_usage_real = 0;   // ×´Ì¬À¸ÊµÊ±ÏÔÊ¾ CPU%
-static uint8_t g_last_cpu_val = 0xFF;   // ÉÏ´Î×´Ì¬À¸ÍÆÁ÷ CPU Öµ
-static uint8_t g_last_fps_val = 60;     // ÉÏ´Î×´Ì¬À¸ÍÆÁ÷ FPS Öµ
-static int16_t g_last_temp_val = -99;   // ÉÏ´Î×´Ì¬À¸ÍÆÁ÷ÎÂ¶ÈÖµ
-static uint64_t g_last_fps_tick_us = 0; // ÉÏÒ»Ö¡ÎïÀíÊ±±ê (ÓÃÓÚÊµÊ±¼ÆËã Delta T)
-static uint32_t g_fps_smoothed = 60;    // ¶¨µãÊıÆ½»¬ FPS
-static uint32_t g_cpu_ema_x10 = 0;      // ¶¨µãÊıÆ½»¬ CPU (0~1000 ¶ÔÓ¦ 0~100.0%)
+static uint32_t g_sys_fps_real = 60;    // çŠ¶æ€æ å®æ—¶æ˜¾ç¤º FPS
+static uint32_t g_cpu_usage_real = 0;   // çŠ¶æ€æ å®æ—¶æ˜¾ç¤º CPU%
+static uint8_t g_last_cpu_val = 0xFF;   // ä¸Šæ¬¡çŠ¶æ€æ æ¨æµ CPU å€¼
+static uint8_t g_last_fps_val = 60;     // ä¸Šæ¬¡çŠ¶æ€æ æ¨æµ FPS å€¼
+static int16_t g_last_temp_val = -99;   // ä¸Šæ¬¡çŠ¶æ€æ æ¨æµæ¸©åº¦å€¼
+static uint64_t g_last_fps_tick_us = 0; // ä¸Šä¸€å¸§ç‰©ç†æ—¶æ ‡ (ç”¨äºå®æ—¶è®¡ç®— Delta T)
+static uint32_t g_fps_smoothed = 60;    // å®šç‚¹æ•°å¹³æ»‘ FPS
+static uint32_t g_cpu_ema_x10 = 0;      // å®šç‚¹æ•°å¹³æ»‘ CPU (0~1000 å¯¹åº” 0~100.0%)
 
 static bool g_last_touch_val = false; //
 static bool g_w25_ok = false;         //
 
-/* ================= 2. Ó²¼ş´«¸ĞÆ÷Óë½»»¥»Øµ÷ ================= */
+/* ================= 2. ç¡¬ä»¶ä¼ æ„Ÿå™¨ä¸äº¤äº’å›è°ƒ ================= */
  
-// Æ¬ÄÚ ADC ÎÂ¶È´«¸ĞÆ÷³õÊ¼»¯
+// ç‰‡å†… ADC æ¸©åº¦ä¼ æ„Ÿå™¨åˆå§‹åŒ–
 static void chip_temp_init(void)
 {
     adc_init();                        //
     adc_set_temp_sensor_enabled(true); //
 }
 
-// ¸ß¾«¶ÈÆ½»¬²ÉÑùµÄÆ¬ÄÚÎÂ¶È¶ÁÈ¡
+// é«˜ç²¾åº¦å¹³æ»‘é‡‡æ ·çš„ç‰‡å†…æ¸©åº¦è¯»å–
 static int16_t chip_temp_read(void)
 {
     adc_select_input(4);
 
-    // 1. Ô¤²ÉÑù²¢¶ªÆúÊ×Ö¡£¬ÈÃ²ÉÑùµçÈİ³ä·ÖÎÈ¶¨
+    // 1. é¢„é‡‡æ ·å¹¶ä¸¢å¼ƒé¦–å¸§ï¼Œè®©é‡‡æ ·ç”µå®¹å……åˆ†ç¨³å®š
     (void)adc_read();
     sleep_us(10);
 
-    // 2. 16 ´Î¹ı²ÉÑù¾ùÖµÂË²¨
+    // 2. 16 æ¬¡è¿‡é‡‡æ ·å‡å€¼æ»¤æ³¢
     uint32_t raw_sum = 0;
     for (int i = 0; i < 16; i++)
     {
@@ -108,17 +109,17 @@ static int16_t chip_temp_read(void)
     }
     float raw_avg = (float)raw_sum / 16.0f;
 
-    // 3. Êµ¼Ê 3V3 ¹ì»ù×¼»»Ëã
+    // 3. å®é™… 3V3 è½¨åŸºå‡†æ¢ç®—
     const float vref = 3.28f;
     float voltage = raw_avg * (vref / 4096.0f);
 
-    // 4. ¹Ù·½ÎÂ¸Ğ¹«Ê½¼ÆËã
+    // 4. å®˜æ–¹æ¸©æ„Ÿå…¬å¼è®¡ç®—
     float temp_c = 27.0f - (voltage - 0.706f) / 0.001721f+CHIP_TEMP_OFFSET_C;
 
     return (int16_t)(temp_c + 0.5f);
 }
 
-// ×´Ì¬À¸µã»÷½»»¥£ºµã»÷±êÌâÇøÓòºô³ö/¹Ø±Õ³éÌë²Ëµ¥
+// çŠ¶æ€æ ç‚¹å‡»äº¤äº’ï¼šç‚¹å‡»æ ‡é¢˜åŒºåŸŸå‘¼å‡º/å…³é—­æŠ½å±‰èœå•
 static void on_status_bar_click(ui_status_bar_t *sb, ui_sb_hit_t hit_area, void *user_data)
 {
     (void)sb;
@@ -129,7 +130,7 @@ static void on_status_bar_click(ui_status_bar_t *sb, ui_sb_hit_t hit_area, void 
     }
 }
 
-// °´¼üµã»÷Ö±½Ó½øÈë BOOTSEL Ä£Ê½`                                                   
+// æŒ‰é”®ç‚¹å‡»ç›´æ¥è¿›å…¥ BOOTSEL æ¨¡å¼`                                                   
 static void on_btn_click(ui_btn_t *btn, void *user_data)
 {
     (void)btn;
@@ -137,14 +138,14 @@ static void on_btn_click(ui_btn_t *btn, void *user_data)
     reset_usb_boot(1u << LED_PIN, 0);
 }
 
-/* ================= 3. UI ²¼¾ÖÓëÓ¦ÓÃ×¢²á³õÊ¼»¯ ================= */
+/* ================= 3. UI å¸ƒå±€ä¸åº”ç”¨æ³¨å†Œåˆå§‹åŒ– ================= */
 
 void app_ui_custom_init(void)
 {
-    // 1. ³õÊ¼»¯ App ¹ÜÀíÆ÷ (³éÌë¿í 140px£¬Y:32 ÏÂ·½Õ¹¿ª)
+    // 1. åˆå§‹åŒ– App ç®¡ç†å™¨ (æŠ½å±‰å®½ 140pxï¼ŒY:32 ä¸‹æ–¹å±•å¼€)
     app_manager_init(&g_app_mgr);
 
-    // 2. ×¢²áÒÑ¿ª·¢µÄ¶ÀÁ¢ App (°´Ë³ĞòÔÚ³éÌë²Ëµ¥ÖĞÅÅÁĞ)
+    // 2. æ³¨å†Œå·²å¼€å‘çš„ç‹¬ç«‹ App (æŒ‰é¡ºåºåœ¨æŠ½å±‰èœå•ä¸­æ’åˆ—)
     // app_manager_register(&g_app_mgr, app_led_get_instance());
     // app_manager_register(&g_app_mgr, app_template_get_instance());
      app_manager_register(&g_app_mgr, app_settings_get_instance());
@@ -161,7 +162,7 @@ void app_ui_custom_init(void)
     app_manager_register(&g_app_mgr, app_pinout_get_instance());
     // app_manager_register(&g_app_mgr, app_audio_get_instance());
     app_manager_register(&g_app_mgr, app_loader_get_instance());
-    // 3. ³õÊ¼»¯¶¥²¿×´Ì¬À¸ (X:0, Y:0, W:480, H:32)
+    // 3. åˆå§‹åŒ–é¡¶éƒ¨çŠ¶æ€æ  (X:0, Y:0, W:480, H:32)
 
    
     // app_manager_register(&g_app_mgr, app_ir_get_instance());
@@ -169,17 +170,18 @@ void app_ui_custom_init(void)
     app_manager_register(&g_app_mgr, app_esp_get_instance());
     app_manager_register(&g_app_mgr, app_uart_get_instance());
     app_manager_register(&g_app_mgr, app_dap_get_instance());
+    app_manager_register(&g_app_mgr, app_gb_get_instance());
     // app_manager_register(&g_app_mgr, app_hid_km_get_instance());
-    ui_status_bar_init(&g_status_bar, 0, 0, LCD_WIDTH, 32, "¶à¹¦ÄÜÇ¶ÈëÊ½ÖÕ¶Ë", on_status_bar_click);
+    ui_status_bar_init(&g_status_bar, 0, 0, LCD_WIDTH, 32, "å¤šåŠŸèƒ½åµŒå…¥å¼ç»ˆç«¯", on_status_bar_click);
 
-    // 4. ³õÊ¼»¯¸üĞÂ°´¼ü (X:54, Y:280, W:75, H:36)
-    ui_btn_init(&g_btn_sl, 54, 280, 75, 36, "¸üĞÂ", on_btn_click);
+    // 4. åˆå§‹åŒ–æ›´æ–°æŒ‰é”® (X:54, Y:280, W:75, H:36)
+    ui_btn_init(&g_btn_sl, 54, 280, 75, 36, "æ›´æ–°", on_btn_click);
     g_btn_sl.style = UI_BTN_STYLE_ROUND;
     g_btn_sl.mode = UI_BTN_MODE_PUSH;
     g_btn_sl.font_size = FONT_20;
     ui_btn_set_color(&g_btn_sl, 0xBF5E, 0xC618, 0x1A7B);
 
-    // 5. ³õÊ¼»¯Í¼Ïñ/¶¯Í¼ (X:230, Y:60)
+    // 5. åˆå§‹åŒ–å›¾åƒ/åŠ¨å›¾ (X:230, Y:60)
     int16_t img_x = 230;
     int16_t img_y = 60;
 #if DOG_IS_ANIM
@@ -191,7 +193,7 @@ void app_ui_custom_init(void)
 #endif
 }
   
-/* ================= 4. È«¾Ö³¡¾°ÇĞÆ¬¹âÕ¤»¯ºÏ³É ================= */
+/* ================= 4. å…¨å±€åœºæ™¯åˆ‡ç‰‡å…‰æ …åŒ–åˆæˆ ================= */
 static void ui_update_fps_ema(void)
 {
     uint64_t now_us = time_us_64();
@@ -199,10 +201,10 @@ static void ui_update_fps_ema(void)
     {
         uint32_t dt_us = (uint32_t)(now_us - g_last_fps_tick_us);
         if (dt_us > 0 && dt_us < 1000000)
-        { // ¹ıÂË¹ı´ó¿¨¶ÙÌø±ä
+        { // è¿‡æ»¤è¿‡å¤§å¡é¡¿è·³å˜
             uint32_t inst_fps = 1000000U / dt_us;
             if (inst_fps > 60)
-                inst_fps = 60; // ÎïÀíÆÁÄ»Ë¢ĞÂÉÏÏŞÏŞÖÆÎª 60
+                inst_fps = 60; // ç‰©ç†å±å¹•åˆ·æ–°ä¸Šé™é™åˆ¶ä¸º 60
             g_fps_smoothed = (g_fps_smoothed * 8 + inst_fps * 2) / 10;
             g_sys_fps_real = g_fps_smoothed;
         }
@@ -212,24 +214,24 @@ static void ui_update_fps_ema(void)
 
 static void render_custom_scene(ui_tile_t *tile)
 {
-    // ---------------- Í¼²ã 1: Ö÷×ÀÃæ»òµ±Ç° App ----------------
+    // ---------------- å›¾å±‚ 1: ä¸»æ¡Œé¢æˆ–å½“å‰ App ----------------
     if (g_app_mgr.is_home)
     {
-        // 1. ´¿°×µ×É«Ìî³ä
+        // 1. çº¯ç™½åº•è‰²å¡«å……
         ui_draw_fill_rect(tile, &tile->rect, SCREEN_BG_COLOR);
 
-        // 2. »æÖÆÍ¼ÏñÓë°´¼ü
+        // 2. ç»˜åˆ¶å›¾åƒä¸æŒ‰é”®
         ui_picture_draw(tile, &g_pic_dog);
         ui_btn_draw(tile, &g_btn_sl);
 
-        // 3. »¶Ó­±êÌâ (Y: 40)
+        // 3. æ¬¢è¿æ ‡é¢˜ (Y: 40)
         int16_t text_y = 40; //
         if ((text_y + 24) > tile->rect.y && text_y < (tile->rect.y + tile->rect.h))
         {
-            ui_draw_string(tile, 30, text_y, "»¶Ó­»ØÀ´,Ğù", FONT_24, 0x0000, SCREEN_BG_COLOR);
+            ui_draw_string(tile, 30, text_y, "æ¬¢è¿å›æ¥,è½©", FONT_24, 0x0000, SCREEN_BG_COLOR);
         }
 
-        // 4. ×°ÊÎ·Ö¸îÏß (Y: 75)
+        // 4. è£…é¥°åˆ†å‰²çº¿ (Y: 75)
         ui_rect_t div_rect = ui_rect_make(30, 75, 180, 1);
         ui_rect_t div_ov; //
         if (ui_rect_intersect(&tile->rect, &div_rect, &div_ov))
@@ -237,47 +239,47 @@ static void render_custom_scene(ui_tile_t *tile)
             ui_draw_fill_rect(tile, &div_ov, 0xC618);
         }
 
-        // 5. W25 Flash ¹ÒÔØ×´Ì¬ (Y: 88)
+        // 5. W25 Flash æŒ‚è½½çŠ¶æ€ (Y: 88)
         text_y = 88;
         if ((text_y + 16) > tile->rect.y && text_y < (tile->rect.y + tile->rect.h))
         {
-            ui_draw_string(tile, 30, text_y, "´æ´¢:", FONT_20, 0x4208, SCREEN_BG_COLOR);
+            ui_draw_string(tile, 30, text_y, "å­˜å‚¨:", FONT_20, 0x4208, SCREEN_BG_COLOR);
             if (g_w25_ok)
             {
-                ui_draw_string(tile, 75, text_y, " W25Q64 [ÒÑ¹ÒÔØ]", FONT_16, 0x05E0, SCREEN_BG_COLOR);
+                ui_draw_string(tile, 75, text_y, " W25Q64 [å·²æŒ‚è½½]", FONT_16, 0x05E0, SCREEN_BG_COLOR);
             }
             else
             {
-                ui_draw_string(tile, 75, text_y, "Flash [Î´Á¬½Ó]", FONT_16, 0xF800, SCREEN_BG_COLOR);
+                ui_draw_string(tile, 75, text_y, "Flash [æœªè¿æ¥]", FONT_16, 0xF800, SCREEN_BG_COLOR);
             }
         }
  
-        // 6. ´¥¿ØĞ¾Æ¬×´Ì¬ (Y: 114)
+        // 6. è§¦æ§èŠ¯ç‰‡çŠ¶æ€ (Y: 114)
         text_y = 114; //
         if ((text_y + 16) > tile->rect.y && text_y < (tile->rect.y + tile->rect.h))
         {
-            ui_draw_string(tile, 30, text_y, "´¥¿Ø:", FONT_20, 0x4208, SCREEN_BG_COLOR);
-            ui_draw_string(tile, 75, text_y, " FT6336 [¾ÍĞ÷]", FONT_16, 0x05E0, SCREEN_BG_COLOR);
+            ui_draw_string(tile, 30, text_y, "è§¦æ§:", FONT_20, 0x4208, SCREEN_BG_COLOR);
+            ui_draw_string(tile, 75, text_y, " FT6336 [å°±ç»ª]", FONT_16, 0x05E0, SCREEN_BG_COLOR);
         }
  
-        // 7. ÏµÍ³Ö÷Æµ (Y: 140)
+        // 7. ç³»ç»Ÿä¸»é¢‘ (Y: 140)
         text_y = 140;
         if ((text_y + 16) > tile->rect.y && text_y < (tile->rect.y + tile->rect.h))
         {
-            ui_draw_string(tile, 30, text_y, "Ö÷Æµ:", FONT_20, 0x4208, SCREEN_BG_COLOR);
+            ui_draw_string(tile, 30, text_y, "ä¸»é¢‘:", FONT_20, 0x4208, SCREEN_BG_COLOR);
             ui_draw_string(tile, 75, text_y, " 240MHz/60M", FONT_16, 0x03DF, SCREEN_BG_COLOR);
         }
 
-        // 8. ¸üĞÂÄ£Ê½ÌáÊ¾ÎÄ±¾ (Y: 256)
+        // 8. æ›´æ–°æ¨¡å¼æç¤ºæ–‡æœ¬ (Y: 256)
         text_y = 256;
         if ((text_y + 20) > tile->rect.y && text_y < (tile->rect.y + tile->rect.h))
         {
-            ui_draw_string(tile, 30, text_y, "³ÌĞò¸üĞÂÄ£Ê½", FONT_20, 0x0000, SCREEN_BG_COLOR);
+            ui_draw_string(tile, 30, text_y, "ç¨‹åºæ›´æ–°æ¨¡å¼", FONT_20, 0x0000, SCREEN_BG_COLOR);
         }
     }
     else
     {
-        // App ×¨Êô»­Ãæ£ºµ±Ç°ÔËĞĞµÄ App ¶ÀÁ¢ÇĞÆ¬»æÖÆ
+        // App ä¸“å±ç”»é¢ï¼šå½“å‰è¿è¡Œçš„ App ç‹¬ç«‹åˆ‡ç‰‡ç»˜åˆ¶
         app_t *cur = app_manager_get_current(&g_app_mgr);
         if (cur && cur->draw)
         {
@@ -285,13 +287,13 @@ static void render_custom_scene(ui_tile_t *tile)
         }
     }
 
-    // ---------------- Í¼²ã 2: ³éÌë¸¡²ã (Õ¹¿ªÊ±¸²¸Ç»æÖÆ) ----------------
+    // ---------------- å›¾å±‚ 2: æŠ½å±‰æµ®å±‚ (å±•å¼€æ—¶è¦†ç›–ç»˜åˆ¶) ----------------
     if (g_app_mgr.drawer.is_open)
     {
         ui_drawer_draw(tile, &g_app_mgr.drawer);
     }
 
-    // ---------------- Í¼²ã 3: ¶¥²¿³£×¤×´Ì¬À¸ (×î¶¥²ã±£»¤) ----------------
+    // ---------------- å›¾å±‚ 3: é¡¶éƒ¨å¸¸é©»çŠ¶æ€æ  (æœ€é¡¶å±‚ä¿æŠ¤) ----------------
     ui_status_bar_draw(tile, &g_status_bar);
 }
  
@@ -299,7 +301,7 @@ static void sys_process_keyboard_line(const char *line)
 {
     if (strncmp(line, "#KB:D,", 6) != 0) return;
 
-    // ? ³¹µ×ÒÆ³ı sscanf£¬Ö±½ÓÇĞ¶Ï Newlib È«¼ÒÍ°ÒÀÀµÁ´
+    // ? å½»åº•ç§»é™¤ sscanfï¼Œç›´æ¥åˆ‡æ–­ Newlib å…¨å®¶æ¡¶ä¾èµ–é“¾
     const char *p = line + 6;
     char *endp = NULL;
     
@@ -307,10 +309,10 @@ static void sys_process_keyboard_line(const char *line)
     if (!endp || *endp != ',') return;
     
     p = endp + 1;
-    unsigned int hid_code = (unsigned int)strtoul(p, &endp, 0); // 0 ×Ô¶¯½âÎöÊ®½øÖÆ»ò 0x Ê®Áù½øÖÆ
+    unsigned int hid_code = (unsigned int)strtoul(p, &endp, 0); // 0 è‡ªåŠ¨è§£æåè¿›åˆ¶æˆ– 0x åå…­è¿›åˆ¶
     if (!endp) return;
 
-    // ³¢ÊÔ×¢Èëµ±Ç°½¹µãÊäÈë¿ò
+    // å°è¯•æ³¨å…¥å½“å‰ç„¦ç‚¹è¾“å…¥æ¡†
     if (ui_input_inject_key(ascii, (uint8_t)hid_code)) {
         if (g_focused_input) {
             LCD_WaitDMA();
@@ -325,15 +327,15 @@ static void sys_process_keyboard_line(const char *line)
         return;
     }
 }
-/* ================= 5. Âã»úÖ÷Èë¿ÚÓëÊÂ¼şÑ­»· ================= */
+/* ================= 5. è£¸æœºä¸»å…¥å£ä¸äº‹ä»¶å¾ªç¯ ================= */
 int main(void)
 {
     
-    // 1. RP2040 ³¬ÆµÖÁ 240MHz
+    // 1. RP2040 è¶…é¢‘è‡³ 240MHz
     vreg_set_voltage(VREG_VOLTAGE_1_15);
     sleep_ms(5); //
     set_sys_clock_khz(240000, true);
-    sleep_ms(50); //µÈ´ı×Ô¶¯¸üĞÂµÄÃ¶¾Ù
+    sleep_ms(50); //ç­‰å¾…è‡ªåŠ¨æ›´æ–°çš„æšä¸¾
     stdio_init_all();
     pio_manager_system_init();
     pin_manager_system_init();
@@ -344,12 +346,12 @@ int main(void)
 //    esp_send_string("#PWM:10\r\n");
 //    esp_send_string("#PWM:10\r\n");
 
-    // 2. ĞÄÌøÖ¸Ê¾µÆ³õÊ¼»¯
+    // 2. å¿ƒè·³æŒ‡ç¤ºç¯åˆå§‹åŒ–
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, GPIO_OUT);
     gpio_put(LED_PIN, 1);
    
-    // 3. SPI Æ¬Ñ¡±£»¤Ëø¶¨
+    // 3. SPI ç‰‡é€‰ä¿æŠ¤é”å®š
     gpio_init(PIN_W25_CS);
     gpio_set_dir(PIN_W25_CS, GPIO_OUT);
     gpio_put(PIN_W25_CS, 1);
@@ -357,7 +359,7 @@ int main(void)
     gpio_set_dir(PIN_LCD_CS, GPIO_OUT);
     gpio_put(PIN_LCD_CS, 1);
 
-    // 4. ÆÁÄ»¡¢´¥¿ØÓëÏÔ´æ³õÊ¼»¯
+    // 4. å±å¹•ã€è§¦æ§ä¸æ˜¾å­˜åˆå§‹åŒ–
     LCD_Init();
     LCD_Clear(WHITE);
     LCD_WaitDMA();
@@ -367,13 +369,13 @@ int main(void)
     ui_tile_init();
     chip_temp_init();
 
-    // 5. ³õÊ¼»¯ UI ²¼¾ÖÓëÓ¦ÓÃ×¢²á
+    // 5. åˆå§‹åŒ– UI å¸ƒå±€ä¸åº”ç”¨æ³¨å†Œ
     app_ui_custom_init();
 
     int16_t init_temp = chip_temp_read();
     ui_status_bar_set_telemetry(&g_status_bar, 0, init_temp, 60);
 
-    // 6. Ê×Ö¡È«ÆÁäÖÈ¾»ùµ×
+    // 6. é¦–å¸§å…¨å±æ¸²æŸ“åŸºåº•
     ui_render_frame(render_custom_scene);
 
     uint32_t last_led_tick = 0;
@@ -381,9 +383,9 @@ int main(void)
 
     Touch_Data_t tp;
     int16_t last_tx = 0, last_ty = 0;
-esp_send_string("#PWM:204\r\n"); //80%ÁÁ¶È
+esp_send_string("#PWM:204\r\n"); //80%äº®åº¦
 // esp_send_string("#PWM:10\r\n");
-    // 7. ´¿¾Ö²¿ÇĞÆ¬¼ô²ÃÊÂ¼şÇı¶¯Ö÷Ñ­»·
+    // 7. çº¯å±€éƒ¨åˆ‡ç‰‡å‰ªè£äº‹ä»¶é©±åŠ¨ä¸»å¾ªç¯
     while (1)
     {
         uint64_t loop_start_us = time_us_64();
@@ -392,7 +394,7 @@ esp_send_string("#PWM:204\r\n"); //80%ÁÁ¶È
         while (esp_pop_keyboard_line(kb_line, sizeof(kb_line))) {
             sys_process_keyboard_line(kb_line);
         }
-        // ================= A. Ãë¼¶×´Ì¬À¸Ò£²âÍÆÁ÷ =================
+        // ================= A. ç§’çº§çŠ¶æ€æ é¥æµ‹æ¨æµ =================
         if (now - last_sec_tick >= 1000)
         {
             last_sec_tick = now; //
@@ -413,21 +415,21 @@ esp_send_string("#PWM:204\r\n"); //80%ÁÁ¶È
                 ui_render_dirty_clipped(&telem_dirty, render_custom_scene);
             }
 
-            // ÌŞ³ı×´Ì¬À¸×ÔÉíÖØ»æÊ±¼ä£¬±ÜÃâÎÛÈ¾ÒµÎñ CPU Í³¼Æ
+            // å‰”é™¤çŠ¶æ€æ è‡ªèº«é‡ç»˜æ—¶é—´ï¼Œé¿å…æ±¡æŸ“ä¸šåŠ¡ CPU ç»Ÿè®¡
             loop_start_us = time_us_64();
         }
 
-        // B. App ºóÌ¨ÂÖÑ¯¸üĞÂ
+        // B. App åå°è½®è¯¢æ›´æ–°
         app_manager_update(&g_app_mgr, now);
 
-        // C. ĞÄÌøÖ¸Ê¾µÆ (500ms ·­×ª)
+        // C. å¿ƒè·³æŒ‡ç¤ºç¯ (500ms ç¿»è½¬)
         if (sys_led_blink&& now - last_led_tick >= 500)
         {
             last_led_tick = now; //
             gpio_xor_mask(1u << LED_PIN);
         }
 
-        // D. Ó²¼ş´¥¿Ø²É¼¯
+        // D. ç¡¬ä»¶è§¦æ§é‡‡é›†
         bool read_ok = Touch_ReadData(&tp);
         bool is_pressing = read_ok && (tp.touch_num > 0);
         int16_t tx = is_pressing ? (int16_t)tp.x0 : last_tx;
@@ -438,7 +440,7 @@ esp_send_string("#PWM:204\r\n"); //80%ÁÁ¶È
             last_ty = ty;
         }
 
-        // E. ×´Ì¬À¸ Touch °ĞĞÄÍ¼±êÎ¢¾ØĞÎÍÆÁ÷ (½ö 20x22px)
+        // E. çŠ¶æ€æ  Touch é¶å¿ƒå›¾æ ‡å¾®çŸ©å½¢æ¨æµ (ä»… 20x22px)
         if (is_pressing != g_last_touch_val)
         {
             g_last_touch_val = is_pressing;
@@ -449,15 +451,15 @@ esp_send_string("#PWM:204\r\n"); //80%ÁÁ¶È
             ui_render_dirty_clipped(&touch_dirty, render_custom_scene);
         }
 
-        // ================= F. ¾Ö²¿Ôà¾ØĞÎ²¶»ñ·Ö·¢ =================
+        // ================= F. å±€éƒ¨è„çŸ©å½¢æ•è·åˆ†å‘ =================
         ui_rect_t dirty_box = ui_rect_make(0, 0, 0, 0);
         bool is_full_frame = false;
 
-        // 1. ËÍÈë AppManager (´¦Àí±ßÔµÓÒ»¬³ö³éÌë / ±ßÔµ×ó»¬»ØÖ÷ÆÁ / ÔËĞĞÖĞ App ¾Ö²¿´¥¿Ø)
+        // 1. é€å…¥ AppManager (å¤„ç†è¾¹ç¼˜å³æ»‘å‡ºæŠ½å±‰ / è¾¹ç¼˜å·¦æ»‘å›ä¸»å± / è¿è¡Œä¸­ App å±€éƒ¨è§¦æ§)
         (void)app_manager_process_touch_dirty(
             &g_app_mgr, is_pressing, tx, ty, now, &dirty_box, &is_full_frame);
 
-        // 2. ×´Ì¬À¸´¥¿Ø (³éÌëÎ´´ò¿ªÊ±µã»÷±êÌâÀ¸Õ¹¿ª)
+        // 2. çŠ¶æ€æ è§¦æ§ (æŠ½å±‰æœªæ‰“å¼€æ—¶ç‚¹å‡»æ ‡é¢˜æ å±•å¼€)
         if (!g_app_mgr.drawer.is_open)
         {
             if (ui_status_bar_process_touch(&g_status_bar, is_pressing, tx, ty, now))
@@ -465,7 +467,7 @@ esp_send_string("#PWM:204\r\n"); //80%ÁÁ¶È
                 ui_rect_union(&dirty_box, &g_app_mgr.drawer.rect, &dirty_box);
             }
 
-            // 3. Ö÷×ÀÃæ×¨Êô¿Ø¼ş (¸üĞÂ°´Å¥ + Ğ¡¹·¶¯Í¼)
+            // 3. ä¸»æ¡Œé¢ä¸“å±æ§ä»¶ (æ›´æ–°æŒ‰é’® + å°ç‹—åŠ¨å›¾)
             if (g_app_mgr.is_home)
             {
                 if (ui_btn_process_touch(&g_btn_sl, is_pressing, tx, ty, now))
@@ -493,24 +495,24 @@ esp_send_string("#PWM:204\r\n"); //80%ÁÁ¶È
             ui_render_dirty_clipped(&dirty_box, render_custom_scene);
         }
 
-        // ================= H. ÎïÀí FPS ÊµÊ±²âÁ¿ =================
+        // ================= H. ç‰©ç† FPS å®æ—¶æµ‹é‡ =================
         ui_update_fps_ema();
 
-        // ¶¯Ì¬Ö¡Ê±¼äÔ¤Ëã£º½»»¥/¶¯»­Ê± 60 FPS (16.6ms)£¬¾²Ö¹´ı»úÊ± 20 FPS (50ms)
+        // åŠ¨æ€å¸§æ—¶é—´é¢„ç®—ï¼šäº¤äº’/åŠ¨ç”»æ—¶ 60 FPS (16.6ms)ï¼Œé™æ­¢å¾…æœºæ—¶ 20 FPS (50ms)
         uint64_t loop_busy_us = time_us_64() - loop_start_us;
         uint32_t frame_budget_us = (is_pressing || dirty_box.w > 0 || is_full_frame || (g_app_mgr.is_home && g_pic_dog.is_playing)) ? 16666 : 50000; //
 
-        // ================= I. ´¿¶¨µãÕûÊı CPU EMA ¼ÆËã (Áã¸¡µã¿ªÏú) =================
+        // ================= I. çº¯å®šç‚¹æ•´æ•° CPU EMA è®¡ç®— (é›¶æµ®ç‚¹å¼€é”€) =================
         uint32_t inst_busy_x10 = (loop_busy_us >= frame_budget_us)
                                      ? 1000
                                      : (uint32_t)(loop_busy_us * 1000ULL / frame_budget_us);
 
         g_cpu_ema_x10 = (g_cpu_ema_x10 * 9 + inst_busy_x10) / 10;
-        g_cpu_usage_real = (g_cpu_ema_x10 + 5) / 10; // ËÄÉáÎåÈëÎª 0~100%
+        g_cpu_usage_real = (g_cpu_ema_x10 + 5) / 10; // å››èˆäº”å…¥ä¸º 0~100%
         if (g_cpu_usage_real > 100)
             g_cpu_usage_real = 100;
 
-        // Ö¡Ê±ÖÓË¯Ãß²¹³¥
+        // å¸§æ—¶é’Ÿç¡çœ è¡¥å¿
         if (loop_busy_us < frame_budget_us)
         { //
             sleep_us((uint32_t)(frame_budget_us - loop_busy_us));

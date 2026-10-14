@@ -145,6 +145,23 @@ target_compile_definitions(pico PRIVATE
 pico_enable_stdio_uart(pico 0)
 pico_enable_stdio_usb(pico 1)
 
+# ⚡ 根目标显式声明源文件字符集,与 app/ ui/ Drivers/ fun/ plugins/ 保持一致。
+#
+#    根目标以前漏了这一项,是历史遗留:当时 pico.cpp 是 GBK 编码,靠工具链
+#    默认行为碰巧能编过,但诊断信息里中文注释全是乱码("//横屏宽" 变成
+#    "//妯睆瀹?"),而且一旦出现中文字符串常量就会编出错误的字节。
+#
+#    现在 pico.cpp 已统一为 UTF-8 保存(全工程 111 个源文件编码终于一致),
+#    所以这里用 UTF-8 输入 + GBK 输出:
+#      输入 UTF-8  —— 所有源文件都是 UTF-8
+#      输出 GBK    —— 运行时字符串要喂 W25Q64 里的 GB2312 字库
+#    ⚠️ 如果哪天把某个源文件改回 GBK 保存,必须单独为它覆盖
+#       -finput-charset=GBK,否则会立刻编不过。 */
+target_compile_options(pico PRIVATE
+    -finput-charset=UTF-8
+    -fexec-charset=GBK
+)
+
 # Add the standard include files to the build
 target_include_directories(pico PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}
