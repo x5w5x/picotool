@@ -36,6 +36,7 @@ add_library(appmgr STATIC
     app_i2c.c
     app_spi.c
     app_gb.c
+    app_pet.c
 
 )
 
