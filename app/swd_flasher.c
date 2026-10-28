@@ -9,6 +9,7 @@
 #include "pico/time.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>   /* malloc / free:hex 缓冲按需分配用 */
 
 #define STM32F1_FLASH_KEYR    0x40022004
 #define STM32F1_FLASH_SR      0x4002200C
@@ -45,7 +46,44 @@ static uint64_t         s_flash_start_us = 0;
 static uint64_t         s_program_start_us = 0;
 
 #define FIRMWARE_BUF_SIZE  (32 * 1024)
-static uint8_t          s_firmware_buf[FIRMWARE_BUF_SIZE];
+
+/* ================= 固件来源抽象 =================
+ *
+ * 以前无论烧 .bin 还是 .hex,都要把整个固件读进 32KB 的静态缓冲
+ * (s_firmware_buf)。这带来两个问题:
+ *   1. 32KB 常驻 .bss,把堆压到只剩 76KB —— Game Boy 模拟器要 80KB,不够用;
+ *   2. 超过 32KB 的固件会被**静默截断**(f_read 只读 32KB,
+ *      hex 解析里 `if (ofs < FIRMWARE_BUF_SIZE)` 直接丢弃),没有任何报错。
+ *
+ * 现在分成两种来源:
+ *   FW_SRC_STREAM —— .bin 走流式:烧到哪读到哪,只占 2KB 缓冲,无大小上限。
+ *   FW_SRC_RAM    —— .hex 仍用内存缓冲(十六进制地址可乱序/有空洞,
+ *                    流式解析风险大),缓冲改为按需 malloc,
+ *                    并新增越界报错,不再静默截断。
+ */
+typedef enum {
+    FW_SRC_NONE = 0,
+    FW_SRC_STREAM,      /* 直接从 TF 卡流式读取 */
+    FW_SRC_RAM,         /* 从内存缓冲读取(hex) */
+} fw_src_t;
+
+static fw_src_t  s_fw_src = FW_SRC_NONE;
+
+/* hex 专用:按需分配,不用时释放,省出 32KB 堆 */
+static uint8_t  *s_firmware_buf = NULL;
+
+/* .bin 流式读取状态 */
+static FIL       s_fw_stream;
+static bool      s_fw_stream_open = false;
+static uint32_t  s_firmware_real_size = 0;   /* 文件真实字节数(bin) */
+
+#define FW_STREAM_BUF_SIZE 2048u
+static uint8_t   s_fw_rdbuf[FW_STREAM_BUF_SIZE];
+
+/* 前向声明:parse_intel_hex_file 早于这两个函数的定义使用它们 */
+static void fw_close_source(void);
+static bool fw_read_at(uint32_t ofs, uint8_t *dst, uint32_t len);
+
 static uint32_t         s_firmware_size   = 0;
 static uint32_t         s_firmware_offset = 0;
 static bool             s_firmware_is_hex = false;
@@ -328,6 +366,8 @@ static int hex_nibble(char c) {
 }
 
 static uint32_t s_hex_base = 0x08000000;
+/* hex 里出现超出缓冲容量的地址时置位,由 parse_intel_hex_file 报错 */
+static bool     s_hex_overflow = false;
 
 static bool hex_parse_line(const char *line) {
     if (line[0] != ':') return false;
@@ -356,11 +396,16 @@ static bool hex_parse_line(const char *line) {
                 uint32_t ofs = (absolute_addr >= 0x08000000) ? 
                                (absolute_addr - 0x08000000 + i) : (absolute_addr + i);
 
-                if (ofs < FIRMWARE_BUF_SIZE) {
-                    s_firmware_buf[ofs] = val;
-                    if (ofs + 1 > s_firmware_size) {
-                        s_firmware_size = ofs + 1;
-                    }
+                /* ⚡ 以前这里是 `if (ofs < FIRMWARE_BUF_SIZE)` —— 超出部分
+                 * 被静默丢弃,烧出来是截断的固件,还没有任何报错。
+                 * 现在改成标记溢出,由调用方明确报错。 */
+                if (ofs >= FIRMWARE_BUF_SIZE) {
+                    s_hex_overflow = true;
+                    return true;
+                }
+                s_firmware_buf[ofs] = val;
+                if (ofs + 1 > s_firmware_size) {
+                    s_firmware_size = ofs + 1;
                 }
             }
             return true;
@@ -393,12 +438,26 @@ static bool hex_parse_line(const char *line) {
 }
 
 static bool parse_intel_hex_file(const char *path) {
-    FIL f;
-    if (f_open(&f, path, FA_READ) != FR_OK) return false;
+    fw_close_source();
 
-    memset(s_firmware_buf, 0xFF, sizeof(s_firmware_buf));
+    /* hex 缓冲按需分配(32KB)。不用 hex 时不占内存,
+     * 让 Game Boy 模拟器等需要大堆的 app 有足够空间。 */
+    s_firmware_buf = (uint8_t *)malloc(FIRMWARE_BUF_SIZE);
+    if (!s_firmware_buf) {
+        return false;
+    }
+
+    FIL f;
+    if (f_open(&f, path, FA_READ) != FR_OK) {
+        fw_close_source();
+        return false;
+    }
+
+    memset(s_firmware_buf, 0xFF, FIRMWARE_BUF_SIZE);
     s_firmware_size = 0;
     s_hex_base = 0x08000000;
+    s_hex_overflow = false;
+    s_fw_src = FW_SRC_RAM;
 
     char line[600];
     UINT br = 0;
@@ -430,7 +489,10 @@ static bool parse_intel_hex_file(const char *path) {
     }
     f_close(&f);
 
-    if (!ok_any || s_firmware_size == 0) return false;
+    if (!ok_any || s_firmware_size == 0 || s_hex_overflow) {
+        fw_close_source();
+        return false;
+    }
     if (s_firmware_size & 1u) s_firmware_size++;
     return true;
 }
@@ -442,19 +504,94 @@ static bool path_is_hex(const char *path) {
     return (strcmp(dot, ".hex") == 0 || strcmp(dot, ".HEX") == 0);
 }
 
+/* ================= 固件数据读取 ================= */
+
+static void fw_close_source(void)
+{
+    if (s_fw_stream_open) {
+        f_close(&s_fw_stream);
+        s_fw_stream_open = false;
+    }
+    if (s_firmware_buf) {
+        free(s_firmware_buf);
+        s_firmware_buf = NULL;
+    }
+    s_fw_src = FW_SRC_NONE;
+}
+
+/* 读取固件的 [ofs, ofs+len) 到 dst。
+ * 超出文件尾的部分用 0xFF 填充(擦除态),这样末块不需要特殊处理。
+ * 返回 false 表示读取失败(卡坏/文件被删),调用方必须中止烧录。 */
+static bool fw_read_at(uint32_t ofs, uint8_t *dst, uint32_t len)
+{
+    if (len == 0) return true;
+
+    if (s_fw_src == FW_SRC_STREAM) {
+        if (!s_fw_stream_open) return false;
+        uint32_t avail = (ofs < s_firmware_real_size)
+                       ? (s_firmware_real_size - ofs) : 0u;
+        uint32_t got = (len < avail) ? len : avail;
+        if (got > 0) {
+            if (f_lseek(&s_fw_stream, ofs) != FR_OK) return false;
+            UINT br = 0;
+            if (f_read(&s_fw_stream, dst, got, &br) != FR_OK) return false;
+            if (br != got) return false;
+        }
+        if (got < len) {
+            memset(dst + got, 0xFF, len - got);
+        }
+        return true;
+    }
+
+    if (s_fw_src == FW_SRC_RAM) {
+        if (!s_firmware_buf) return false;
+        if (ofs >= FIRMWARE_BUF_SIZE) return false;
+        uint32_t avail = FIRMWARE_BUF_SIZE - ofs;
+        uint32_t got = (len < avail) ? len : avail;
+        memcpy(dst, &s_firmware_buf[ofs], got);
+        if (got < len) memset(dst + got, 0xFF, len - got);
+        return true;
+    }
+
+    return false;
+}
+
 static bool load_bin_file(const char *path) {
-    FIL f;
-    if (f_open(&f, path, FA_READ) != FR_OK) return false;
+    fw_close_source();
 
-    memset(s_firmware_buf, 0xFF, sizeof(s_firmware_buf));
-    s_firmware_size = 0;
+    if (f_open(&s_fw_stream, path, FA_READ) != FR_OK) return false;
 
-    UINT br = 0;
-    FRESULT fr = f_read(&f, s_firmware_buf, sizeof(s_firmware_buf), &br);
-    f_close(&f);
-    if (fr != FR_OK) return false;
-    s_firmware_size = br;
-    if (s_firmware_size & 1u) s_firmware_size++;
+    FSIZE_t sz = f_size(&s_fw_stream);
+    if (sz == 0) {
+        f_close(&s_fw_stream);
+        return false;
+    }
+
+    s_fw_stream_open      = true;
+    s_fw_src              = FW_SRC_STREAM;
+    s_firmware_real_size  = (uint32_t)sz;
+    s_firmware_size       = (uint32_t)sz;
+    if (s_firmware_size & 1u) s_firmware_size++;   /* ALGO 需要偶数字节 */
+
+    /* ⚡ 烧录前先把整个文件完整读一遍并验证。
+     * 流式读取意味着烧录过程中一直要碰 TF 卡,万一卡接触不良,
+     * 会在目标芯片已被擦除后才失败,留下半成品。
+     * 这里先预读验证一遍(约 10ms),把风险提前暴露。 */
+    uint32_t ofs = 0;
+    while (ofs < s_firmware_real_size) {
+        uint32_t n = s_firmware_real_size - ofs;
+        if (n > FW_STREAM_BUF_SIZE) n = FW_STREAM_BUF_SIZE;
+        if (!fw_read_at(ofs, s_fw_rdbuf, n)) {
+            fw_close_source();
+            return false;
+        }
+        ofs += n;
+    }
+
+    if (f_lseek(&s_fw_stream, 0) != FR_OK) {
+        fw_close_source();
+        return false;
+    }
     return true;
 }
 
@@ -524,6 +661,9 @@ void swd_flasher_abort(void) {
         f_close(&s_bin_file);
         s_bin_open = false;
     }
+    /* 释放固件来源(关闭流式文件句柄 + 回收 hex 缓冲),
+     * 否则中止后那 32KB(malloc)会一直占着堆。 */
+    fw_close_source();
     bool active = s_flasher_status.stage != FLASHER_IDLE &&
                   s_flasher_status.stage != FLASHER_STAGE_SUCCESS &&
                   s_flasher_status.stage != FLASHER_STAGE_ERROR;
@@ -703,6 +843,8 @@ void swd_flasher_step(void) {
 
         case FLASHER_STAGE_PROGRAM: {
             if (s_firmware_offset >= s_firmware_size) {
+                /* 数据已经全部烧完,释放固件来源,尽早把 RAM 还回堆 */
+                fw_close_source();
                 s_flasher_status.stage = FLASHER_STAGE_UNINIT;
                 strcpy(s_flasher_status.status_msg, "Running ALGO UnInit...");
                 break;
@@ -710,9 +852,24 @@ void swd_flasher_step(void) {
             uint32_t count = s_firmware_size - s_firmware_offset;
             if (count > s_algo_header.buffer_size)
                 count = s_algo_header.buffer_size;
+            /* 流式读取的临时缓冲上限 */
+            if (count > FW_STREAM_BUF_SIZE)
+                count = FW_STREAM_BUF_SIZE;
+
+            /* ⚡ 通过 fw_read_at 取数据:.bin 直接从 TF 流式读(不占 32KB),
+             * .hex 从内存缓冲读。两种来源在这里统一。 */
+            if (!fw_read_at(s_firmware_offset, s_fw_rdbuf, count)) {
+                snprintf(s_flasher_status.status_msg,
+                         sizeof(s_flasher_status.status_msg),
+                         "Read firmware failed @0x%lX",
+                         (unsigned long)s_firmware_offset);
+                s_flasher_status.stage = FLASHER_STAGE_ERROR;
+                break;
+            }
+
             uint32_t flash_addr = s_algo_header.flash_base + s_firmware_offset;
             if (!target_write_block32(s_algo_header.buffer_addr,
-                                      &s_firmware_buf[s_firmware_offset],
+                                      s_fw_rdbuf,
                                       count)) {
                 strcpy(s_flasher_status.status_msg, "Page buffer upload failed");
                 s_flasher_status.stage = FLASHER_STAGE_ERROR;

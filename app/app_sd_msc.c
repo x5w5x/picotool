@@ -95,6 +95,9 @@ typedef struct {
     bool               msc_was_auto_dropped;  // ⚡ 记录是否为拖拽触发的烧录（用于烧录成功后自动恢复 U 盘）
     bool               auto_result_pending;
     uint32_t           auto_result_tick;
+    /* 拖拽结果的简短提示。以前失败是全静默的(U 盘闪一下就回来),
+     * 用户完全不知道发生了什么,这里记一句给界面显示。 */
+    char               msc_hint[64];
     ui_rect_t          msc_card;
     ui_switch_t        sw_msc_en;             // 开关 1
     ui_switch_t        sw_auto_flash;         // 开关 2
@@ -138,42 +141,136 @@ static void load_directory(app_sd_data_t *data, const char *path) {
     f_closedir(&dir);
 }
 
-static bool find_latest_firmware(app_sd_data_t *data, char *out_path, char *out_name) {
-    (void)data;
+/* ================= 目录快照:精确识别"拖进来的那个文件" =================
+ *
+ * 旧做法:U 盘只要有写入就触发烧录,然后去根目录"猜"时间戳最新的 .bin/.hex。
+ * 由此产生的问题:
+ *   - 拖任何文件(图片/txt/系统生成的元数据文件)都可能触发烧录,
+ *     甚至把根目录里**本来的旧固件**烧进芯片;
+ *   - 只扫 0:/ 根目录,放进子目录的固件永远找不到 → 静默失败;
+ *   - FatFs 时间戳精度只有 2 秒,同时写入的多个文件选谁不确定。
+ *
+ * 新做法:开 MSC 之前给根目录拍一张"哈希快照",写入结束、静默判定到之后
+ * 重扫一遍,**找出新增或变化的那一个文件**,再判断它是不是 .bin/.hex。
+ *
+ * 哈希只存 4 字节/项、不存文件名 —— 第二次扫描本来就要遍历目录,
+ * 发现某条记录的哈希不在旧快照里,当场那份 fno.fname 就是要的路径。
+ * 静态开销:128 × 4 = 512 字节。
+ */
+#define SNAP_MAX  128u
+
+static uint32_t s_snap[SNAP_MAX];
+static uint16_t s_snap_count = 0;
+static bool     s_snap_valid = false;
+
+static uint32_t snap_hash(const char *name, uint32_t size, uint16_t fdate, uint16_t ftime)
+{
+    uint32_t h = 2166136261u;              /* FNV-1a 偏移基数 */
+    while (*name) {
+        h ^= (uint8_t)(*name++);
+        h *= 16777619u;
+    }
+    h ^= size;  h *= 16777619u;
+    h ^= (uint32_t)fdate; h *= 16777619u;
+    h ^= (uint32_t)ftime; h *= 16777619u;
+    return h;
+}
+
+/* 判断文件名后缀是不是固件。用后缀精确匹配,不用 strstr ——
+ * 否则 "a.bin.txt" 这种也会被当成固件。 */
+static bool is_firmware_name(const char *n)
+{
+    size_t l = strlen(n);
+    if (l < 5) return false;
+    const char *e = n + l - 4;
+    char a = e[0], b = e[1], c = e[2], d = e[3];
+    if (a != '.') return false;
+    if (b >= 'A' && b <= 'Z') b = (char)(b - 'A' + 'a');
+    if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
+    if (d >= 'A' && d <= 'Z') d = (char)(d - 'A' + 'a');
+    if (b == 'b' && c == 'i' && d == 'n') return true;
+    if (b == 'h' && c == 'e' && d == 'x') return true;
+    return false;
+}
+
+/* 扫根目录填快照。返回 false 表示目录项超过 SNAP_MAX(放弃自动烧录,避免误判) */
+static bool snap_dir_scan(void)
+{
     DIR dir;
     FILINFO fno;
     if (f_opendir(&dir, "0:/") != FR_OK) return false;
 
-    DWORD max_fdate = 0;
-    DWORD max_ftime = 0;
-    bool found = false;
-
+    s_snap_count = 0;
+    bool overflow = false;
     while (f_readdir(&dir, &fno) == FR_OK && fno.fname[0] != 0) {
-        if (!(fno.fattrib & AM_DIR)) {
-            if (strstr(fno.fname, ".hex") || strstr(fno.fname, ".HEX") ||
-                strstr(fno.fname, ".bin") || strstr(fno.fname, ".BIN")) {
-                
-                if (!found || (fno.fdate > max_fdate) || (fno.fdate == max_fdate && fno.ftime >= max_ftime)) {
-                    max_fdate = fno.fdate;
-                    max_ftime = fno.ftime;
-                    snprintf(out_path, 280, "0:/%s", fno.fname);
-                    strncpy(out_name, fno.fname, 63);
-                    found = true;
-                }
-            }
-        }
+        if (fno.fattrib & AM_DIR) continue;
+        if (s_snap_count >= SNAP_MAX) { overflow = true; break; }
+        s_snap[s_snap_count++] = snap_hash(fno.fname, (uint32_t)fno.fsize,
+                                           fno.fdate, fno.ftime);
     }
     f_closedir(&dir);
+    return !overflow;
+}
+
+/* 开 MSC 之前调用(此时 FatFs 必须已挂载) */
+static void snapshot_before_msc(void)
+{
+    s_snap_valid = snap_dir_scan();
+}
+
+/* 写入结束后调用:找出新增/变化且是固件的文件。
+ * 找到返回 true 并填好 out_path / out_name。 */
+static bool snap_find_new_firmware(char *out_path, uint32_t path_sz,
+                                   char *out_name, uint32_t name_sz)
+{
+    if (!s_snap_valid) return false;
+
+    DIR dir;
+    FILINFO fno;
+    if (f_opendir(&dir, "0:/") != FR_OK) {
+        s_snap_valid = false;
+        return false;
+    }
+
+    bool found = false;
+    while (f_readdir(&dir, &fno) == FR_OK && fno.fname[0] != 0) {
+        if (fno.fattrib & AM_DIR) continue;
+
+        uint32_t h = snap_hash(fno.fname, (uint32_t)fno.fsize, fno.fdate, fno.ftime);
+        bool is_old = false;
+        for (uint16_t i = 0; i < s_snap_count; ++i) {
+            if (s_snap[i] == h) { is_old = true; break; }
+        }
+        if (is_old) continue;              /* 老文件,跳过 */
+
+        if (!is_firmware_name(fno.fname)) continue;   /* 新文件但不是固件,跳过 */
+
+        snprintf(out_path, path_sz, "0:/%s", fno.fname);
+        strncpy(out_name, fno.fname, name_sz - 1);
+        out_name[name_sz - 1] = '\0';
+        found = true;
+        break;
+    }
+    f_closedir(&dir);
+
+    s_snap_valid = false;   /* 快照只能用一次 */
     return found;
 }
 
 static void restore_auto_msc(app_sd_data_t *data) {
     if (!data) return;
     data->msc_was_auto_dropped = false;
+
+    /* 重新开 U 盘之前再拍一次快照,这样连续拖拽也能正确识别 */
+    if (!data->fs_mounted) {
+        if (f_mount(&data->fs, "0:", 1) == FR_OK) data->fs_mounted = true;
+    }
     if (data->fs_mounted) {
+        snapshot_before_msc();
         f_mount(NULL, "0:", 1);
         data->fs_mounted = false;
     }
+
     data->msc_active = true;
     msc_disk_reset_write_state();
     msc_set_enabled(true);
@@ -364,6 +461,14 @@ static void on_msc_switch(ui_switch_t *sw, bool state, void *user_data) {
     data->msc_was_auto_dropped = false;
 
     if (state) {
+        /* ⚡ 必须在断开 FatFs 之前拍快照:拖拽结束后要靠它精确识别
+         * 这次写入的是哪个文件(而不是猜时间戳最新那个)。 */
+        if (!data->fs_mounted) {
+            if (f_mount(&data->fs, "0:", 1) == FR_OK) data->fs_mounted = true;
+        }
+        if (data->fs_mounted) {
+            snapshot_before_msc();
+        }
         if (data->fs_mounted) {
             f_mount(NULL, "0:", 1);
             data->fs_mounted = false;
@@ -496,7 +601,10 @@ static void app_sd_update(app_t *self, uint32_t now_tick) {
 
         char drop_path[280] = {0};
         char drop_name[64]  = {0};
-        if (find_latest_firmware(data, drop_path, drop_name)) {
+        if (snap_find_new_firmware(drop_path, sizeof(drop_path),
+                                   drop_name, sizeof(drop_name))) {
+            snprintf(data->msc_hint, sizeof(data->msc_hint),
+                     "检测到固件: %s", drop_name);
             strncpy(data->selected_file_path, drop_path, sizeof(data->selected_file_path) - 1);
             strncpy(data->selected_file_name, drop_name, sizeof(data->selected_file_name) - 1);
             strcpy(data->matched_algo_path, "0:/algo/STM32F10x_128.algo");
@@ -508,6 +616,8 @@ static void app_sd_update(app_t *self, uint32_t now_tick) {
 
             if (!swd_flasher_start(data->selected_file_path,
                                    data->matched_algo_path)) {
+                snprintf(data->msc_hint, sizeof(data->msc_hint),
+                         "启动失败: 检查 0:/algo/STM32F10x_128.algo");
                 restore_auto_msc(data);
                 data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
                 return;
@@ -515,7 +625,12 @@ static void app_sd_update(app_t *self, uint32_t now_tick) {
             data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
             return;
         } else {
+            /* 有写入,但没识别出"新增的 .bin/.hex" —— 明确告诉用户,
+             * 而不是静默恢复 U 盘模式让他以为功能坏了。 */
+            snprintf(data->msc_hint, sizeof(data->msc_hint),
+                     "未检测到新固件(仅识别根目录 .bin/.hex)");
             restore_auto_msc(data);
+            data->dirty_rect = ui_rect_make(0, 0, LCD_WIDTH, LCD_HEIGHT);
         }
     }
 
@@ -730,6 +845,10 @@ static void app_sd_draw(app_t *self, ui_tile_t *tile) {
                     ui_draw_string(tile, 140, 54, "○ USB 模式: [ 已断开 ]", FONT_16, 0x8410, 0x10A2);
                     ui_draw_string(tile, 140, 80, "开启下方开关后，电脑将识别为 U 盘", FONT_16, 0xFFFF, 0x10A2);
                     ui_draw_string(tile, 140, 106, "请确认 TF 卡已插好且引脚接触良好", FONT_16, 0x8410, 0x10A2);
+                }
+                /* 上次拖拽的结果提示 */
+                if (data->msc_hint[0]) {
+                    ui_draw_string(tile, 140, 136, data->msc_hint, FONT_16, 0xFFE0, 0x10A2);
                 }
             }
 
