@@ -78,6 +78,11 @@ static void host_gpio_set_pulls(uint32_t pin, bool up, bool down) {
     gpio_set_pulls((unsigned int)pin, up, down);
 }
 
+static uint16_t host_unicode_to_oem(uint32_t codepoint) {
+    if (codepoint > 0x10FFFFu) return 0;
+    return (uint16_t)ff_uni2oem((DWORD)codepoint, 936);
+}
+
 static void host_request_exit(void) {
     printf("[PAPP] host_request_exit!\r\n");
     s_plugin_running = false;
@@ -302,6 +307,7 @@ static const pico_host_api_t s_host_api_table = {
     .fat_size                 = host_fat_size,
     .fat_close                = host_fat_close,
     .fat_list_dir             = host_fat_list_dir,
+    .unicode_to_oem           = host_unicode_to_oem,
 };
 
 /* ================= Core 1 工作协程 ================= */

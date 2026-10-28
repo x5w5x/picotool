@@ -64,8 +64,8 @@
 #define HEADER_H       32       /* 顶栏 */
 #define BODY_Y         (HEADER_H + 4)
 #define BODY_H         240      /* 文本区 */
-#define PROG_Y         280      /* 进度条 Y */
-#define PROG_H         24       /* 进度条区高 */
+#define PROG_Y         SCREEN_H /* 进度条关闭 */
+#define PROG_H         0
 #define MARGIN_X       10       /* 左右边距 */
 
 /* 文件浏览 */
@@ -127,6 +127,7 @@ typedef struct {
 
     /* 触摸拖动进度条 */
     bool                   dragging;
+    bool                   touch_was_down;
 
     /* ⚡ 触摸残留防护:从浏览器点文件进入阅读器时,手指还按在屏幕上。
      * 紧接着的 touch UP 会在阅读器被当作翻页手势,让 byte_pos
@@ -140,6 +141,14 @@ typedef struct {
 } novel_data_t;
 
 static novel_data_t s_nr;
+
+/* ================= 分行结果(供 render_current_page 填写、draw 使用) =================
+ * 用 [start, end) 偏移表示每行，而不是"就地写 \0"。
+ * 这样自动换行时不会丢掉被换行字符的首字节，避免后续所有字节对错位。 */
+#define NR_MAX_LINES  64
+static int s_line_start[NR_MAX_LINES + 2];
+static int s_line_end[NR_MAX_LINES + 2];
+static int s_line_count;
 
 /* ================= 3. 工具: int → str ================= */
 
@@ -230,41 +239,34 @@ static uint8_t detect_encoding(int fd) {
  *   范围外的字 (符号 / 扩展 / 罕用字) 写 '?'
  *
  * 多数常见中文小说 95%+ 字符都落在 U+4E00..U+9FA5,够用 */
-static int utf8_to_gbk(const uint8_t *src, int src_len, uint8_t *dst, int dst_max) {
-    int si = 0, di = 0;
-    while (si < src_len && di + 2 < dst_max) {
-        uint8_t b1 = src[si];
-        if (b1 < 0x80) {
-            dst[di++] = b1;
-            si++;
-        } else if ((b1 & 0xE0) == 0xC0 && si + 1 < src_len) {
-            /* 2-byte UTF-8 → ASCII 范围,直接当 1 字节 */
-            dst[di++] = '?';
-            si += 2;
-        } else if ((b1 & 0xF0) == 0xE0 && si + 2 < src_len) {
-            uint32_t cp = ((uint32_t)(b1 & 0x0F) << 12)
-                        | ((uint32_t)(src[si+1] & 0x3F) << 6)
-                        |  (uint32_t)(src[si+2] & 0x3F);
-            if (cp >= 0x4E00 && cp <= 0x9FA5) {
-                int offset = (int)(cp - 0x4E00);
-                int hi = 0xB0 + (offset / 94);
-                int lo = 0xA1 + (offset % 94);
-                if (hi >= 0xB0 && hi <= 0xF7 && lo >= 0xA1 && lo <= 0xFE) {
-                    dst[di++] = (uint8_t)hi;
-                    dst[di++] = (uint8_t)lo;
-                } else {
-                    dst[di++] = '?';
-                }
-            } else {
-                dst[di++] = '?';
-            }
-            si += 3;
-        } else {
-            dst[di++] = '?';
-            si++;
-        }
+static int utf8_decode_one(const uint8_t *src, int len, uint32_t *cp) {
+    if (len <= 0) return 0;
+    uint8_t b = src[0];
+    int n = b < 0x80 ? 1 : (b >= 0xC2 && b <= 0xDF) ? 2 :
+            (b >= 0xE0 && b <= 0xEF) ? 3 :
+            (b >= 0xF0 && b <= 0xF4) ? 4 : 0;
+    if (!n) { *cp = '?'; return 1; }
+    if (len < n) return 0;
+    uint32_t v = b & ((1u << (7 - n)) - 1u);
+    for (int i = 1; i < n; ++i) {
+        if ((src[i] & 0xC0) != 0x80) { *cp = '?'; return 1; }
+        v = (v << 6) | (src[i] & 0x3F);
     }
-    return di;
+    if ((n == 2 && v < 0x80) || (n == 3 && v < 0x800) ||
+        (n == 4 && v < 0x10000) || v > 0x10FFFF ||
+        (v >= 0xD800 && v <= 0xDFFF)) { *cp = '?'; return 1; }
+    *cp = v;
+    return n;
+}
+
+static int unicode_to_gbk(uint32_t cp, uint8_t out[2]) {
+    if (cp < 0x80) { out[0] = (uint8_t)cp; return 1; }
+    uint16_t code = (s_nr.api->unicode_to_oem && cp <= 0xFFFFu) ?
+                    s_nr.api->unicode_to_oem(cp) : 0;
+    if (code >= 0x100u) { out[0] = (uint8_t)(code >> 8); out[1] = (uint8_t)code; return 2; }
+    if (code) { out[0] = (uint8_t)code; return 1; }
+    out[0] = '?';
+    return 1;
 }
 
 /* ================= 7. 书签读写 =================
@@ -330,42 +332,90 @@ static bool render_current_page(void) {
 
     /* UTF-8 → GBK 转码 (如果是 UTF-8) */
     int gbk_len;
+    /* 每个显示缓冲区位置对应原始文件中的 UTF-8 偏移。
+     * 不能用 GBK 输出长度推算下一页位置：中文 UTF-8 为 3 字节，
+     * 转成 GBK 后通常为 2 字节，会导致下一页落在半个 UTF-8 字符中间。 */
+    static uint32_t source_map[PAGE_BUF_SIZE + 1];
     if (s_nr.encoding == ENC_UTF8 || s_nr.encoding == ENC_UTF8_BOM) {
-        gbk_len = utf8_to_gbk(tmp, br, (uint8_t *)s_nr.page_buf, PAGE_BUF_SIZE - 1);
+        int si = 0, di = 0;
+        source_map[0] = (uint32_t)s_nr.byte_pos;
+        while (si < br && di < PAGE_BUF_SIZE - 2) {
+            uint32_t cp = 0;
+            int n = utf8_decode_one(tmp + si, br - si, &cp);
+            if (n <= 0) break;
+            uint8_t out[2];
+            int wn = unicode_to_gbk(cp, out);
+            if (di + wn >= PAGE_BUF_SIZE - 1) break;
+            uint32_t source_end = (uint32_t)(s_nr.byte_pos + si + n);
+            s_nr.page_buf[di++] = (char)out[0];
+            source_map[di] = source_end;
+            if (wn == 2) {
+                s_nr.page_buf[di++] = (char)out[1];
+                source_map[di] = source_end;
+            }
+            si += n;
+        }
+        gbk_len = di;
+        source_map[gbk_len] = (uint32_t)(s_nr.byte_pos + si);
     } else {
         if (br > PAGE_BUF_SIZE - 1) br = PAGE_BUF_SIZE - 1;
-        for (int i = 0; i < br; i++) s_nr.page_buf[i] = (char)tmp[i];
+        for (int i = 0; i < br; i++) {
+            s_nr.page_buf[i] = (char)tmp[i];
+            source_map[i] = (uint32_t)(s_nr.byte_pos + i);
+        }
         gbk_len = br;
+        source_map[gbk_len] = (uint32_t)(s_nr.byte_pos + br);
     }
     s_nr.page_buf[gbk_len] = '\0';
     s_nr.page_bytes = gbk_len;
 
-    /* 按 char width 找换行点,在换行点插 \0
-     * line_ends[i] = "第 i 行的最后一个字节的位置(将被置 \0)",
-     *               不含首行起点(首行起点固定是 page_buf[0])
-     * 扫到行尾时记录,扫完从后往前插 \0,避免影响后面的扫描 */
+    /* ================= 分行 =================
+     * ⚡ 这里以前用"就地写 \0"的办法,有一个致命 bug:
+     *
+     *   自动换行时 line_ends[k] = byte_i(放不下的那个汉字的起点),
+     *   然后把该位置写成 \0 —— 直接破坏了那个汉字的首字节。
+     *   渲染时 p = eol + 1 跳过 \0,于是下一行从"该汉字的第 2 个字节"开始,
+     *   从此**整行字节对全部错位**,渲染成一堆"合法但错误"的汉字。
+     *
+     *   而显式换行(\n)那条路径 byte_i 已经前进,所以不受影响 ——
+     *   这就是"部分行正确、部分行乱码"的来源。
+     *
+     * 修法:记录每行的 [start, end) 两个偏移,不破坏缓冲区;
+     *       渲染时临时写 \0 再恢复。自动换行时 start[k+1] == end[k],
+     *       不会丢字节。 */
     int max_x = SCREEN_W - MARGIN_X * 2;
     int cur_x = 0;
-    static int line_ends[64];   /* 最多 64 行,够 32KB 的 page_buf */
     int byte_i = 0;
-    int lc = 0;                 /* line_ends[0..lc-1] 是已记录的行尾位置数 */
+    int max_page_lines = BODY_H / (s_nr.line_h > 0 ? s_nr.line_h : 1);
+    int last_break_next = -1;
+    int lc = 0;
 
-    while (byte_i < gbk_len && lc < 64) {
+    s_line_start[0] = 0;
+
+    /* 多扫描一个边界：前 max_page_lines 行属于当前页，
+     * 第 max_page_lines+1 行的起点才是下一页起点。 */
+    while (byte_i < gbk_len && lc <= max_page_lines) {
         uint8_t b = (uint8_t)s_nr.page_buf[byte_i];
         int ch_w, ch_bytes;
         if (b == '\n') {
-            /* 显式换行 (LF) → 当前行结束在 byte_i(将置 \0),下一行从 byte_i+1 */
-            line_ends[lc++] = byte_i;
+            /* 显式换行 (LF) → 本行结束于 byte_i,下一行从 byte_i+1 开始 */
+            s_line_end[lc] = byte_i;
             byte_i++;
+            lc++;
+            s_line_start[lc] = byte_i;
+            last_break_next = byte_i;
             cur_x = 0;
             continue;
         }
         if (b == '\r') {
             /* CR (Windows 记事本 GBK 文件用 \r\n 行尾) → 视作换行 */
-            line_ends[lc++] = byte_i;
+            s_line_end[lc] = byte_i;
             byte_i++;
             /* 如果下一个是 \n,跳过 */
             if (byte_i < gbk_len && (uint8_t)s_nr.page_buf[byte_i] == '\n') byte_i++;
+            lc++;
+            s_line_start[lc] = byte_i;
+            last_break_next = byte_i;
             cur_x = 0;
             continue;
         }
@@ -381,36 +431,62 @@ static bool render_current_page(void) {
             }
         }
         if (cur_x + ch_w > max_x && cur_x > 0) {
-            /* 行满 → 当前行结束在 byte_i(将置 \0),下一行从这里开始 */
-            line_ends[lc++] = byte_i;
+            /* 自动换行:本行结束于 byte_i,下一行**也从 byte_i 开始**
+             * (这个字符整体归下一行,一个字节都不能丢) */
+            s_line_end[lc] = byte_i;
+            lc++;
+            s_line_start[lc] = byte_i;
             cur_x = 0;
-            /* 不动 byte_i,继续处理这个字符(它属于下一行) */
             continue;
         }
         cur_x += ch_w;
         byte_i += ch_bytes;
     }
 
-    /* 从后往前在 line_ends 位置插 \0 (避免影响前面的扫描) */
-    for (int i = lc - 1; i >= 0; i--) {
-        int pos = line_ends[i];
-        if (pos < PAGE_BUF_SIZE) s_nr.page_buf[pos] = '\0';
-    }
+    s_line_count = (lc > max_page_lines) ? max_page_lines : lc;
 
-    /* ⚡ 精准翻页:页面结束位置 = 最后一行末尾字节的下一个字节
-     *  (也就是 line_ends[lc-1] 的位置,因为我们刚在它前面插了 \0,
-     *   \0 之后的内容是会被丢弃的"半截下一行")
-     * 如果 br < PAGE_BUF_SIZE (到文件末尾了),就到 gbk_len (再 + 1 给 page_buf 末尾 \0 让位) */
+    /* ⚡ 精准翻页:页面结束位置
+     * 注意这里不再有"就地写 \0"的副作用,所以能正确读到换行符本身。 */
     if (br < (int)sizeof(tmp)) {
         /* 文件已读完 (FATFS 读不到 PAGE_BUF_SIZE 这么多) */
-        s_nr.page_end = (uint32_t)(s_nr.byte_pos + gbk_len);
+        s_nr.page_end = source_map[gbk_len];
+    } else if (lc > max_page_lines) {
+        s_nr.page_end = source_map[s_line_end[max_page_lines]];
     } else if (lc > 0) {
         /* 文件未读完,用最后一行末位置 */
-        s_nr.page_end = (uint32_t)(s_nr.byte_pos + line_ends[lc - 1]);
+        s_nr.page_end = source_map[s_line_end[lc - 1]];
     } else {
         /* 一行都没有 (page_buf 全是空白) → 跳过整个 PAGE_BUF_SIZE */
-        s_nr.page_end = (uint32_t)(s_nr.byte_pos + br);
+        s_nr.page_end = source_map[gbk_len];
     }
+
+    /* 页面若正好在真实换行符处结束，下一页要跳过换行符本身。
+     * 否则下一页从 '\n' 开始，会先得到空行，表现为少量字符后整页空白。
+     * 自动换行位置不跳过任何字节。
+     * ⚡ 这里现在能正确读到换行符了 —— 以前该位置已被写成 \0,
+     *    所以 end_ch 永远不等于 '\n',这段逻辑其实从没生效过。 */
+    if (lc > 0) {
+        int last = s_line_end[lc - 1];
+        if (last >= 0 && last < gbk_len) {
+            uint8_t end_ch = (uint8_t)s_nr.page_buf[last];
+            if (end_ch == '\n' && last + 1 <= gbk_len) {
+                s_nr.page_end = source_map[last + 1];
+            } else if (end_ch == '\r') {
+                int next = last + 1;
+                if (next < gbk_len && (uint8_t)s_nr.page_buf[next] == '\n') next++;
+                if (next <= gbk_len) s_nr.page_end = source_map[next];
+            }
+        }
+    }
+
+    if (last_break_next >= 0 && last_break_next <= gbk_len && lc > 0 &&
+        s_line_end[lc - 1] < last_break_next) {
+        s_nr.page_end = source_map[last_break_next];
+    }
+
+    /* 防御性检查：页边界必须前进，且不能超过文件尾。 */
+    if (s_nr.page_end < s_nr.byte_pos) s_nr.page_end = s_nr.byte_pos;
+    if (s_nr.page_end > s_nr.file_size) s_nr.page_end = s_nr.file_size;
 
     /* 计算下一页 byte_pos = 当前 byte_pos + 已消耗字节数 */
     /* 但 GBK 转码后字节数 ≠ 文件原始字节数!
@@ -520,7 +596,6 @@ static void open_file(const char *name) {
     s_nr.file_size = (uint32_t)s_nr.api->fat_size(s_nr.fd);
     s_nr.encoding = detect_encoding(s_nr.fd);
     s_nr.skip_bytes = (s_nr.encoding == ENC_UTF8_BOM) ? 3 : 0;
-    s_nr.unsupported_utf8 = (s_nr.encoding == ENC_UTF8 || s_nr.encoding == ENC_UTF8_BOM);
 
     /* 诊断:报编码 + 文件前 16 字节 (hex) */
     if (s_nr.api->post_log) {
@@ -556,15 +631,6 @@ static void open_file(const char *name) {
 
     /* ⚡ UTF-8 文件暂不支持 (W25Q64 字库是 GB2312,UTF-8→GBK 需要查表,32KB 放不下)
      * 显示提示屏,关 fd,让用户从顶栏 << 返回回浏览器 */
-    if (s_nr.unsupported_utf8) {
-        s_nr.api->fat_close(s_nr.fd);
-        s_nr.fd = -1;
-        s_nr.screen = SCR_READER;
-        s_nr.skip_carried_touch = true;
-        s_nr.api->request_redraw();
-        return;
-    }
-
     /* 尝试读书签 */
     uint32_t bm = load_bookmark(s_nr.bookmark_path);
     s_nr.byte_pos = (bm > 0 && bm < s_nr.file_size) ? bm : s_nr.skip_bytes;
@@ -681,6 +747,8 @@ static void nr_exit(void) {
 static void nr_process_touch(bool is_touch, int16_t x, int16_t y) {
     if (!s_nr.api || !s_nr.api->ui_btn_process_touch) return;
     uint32_t now = s_nr.api->get_time_ms ? s_nr.api->get_time_ms() : 0u;
+    bool released = (!is_touch && s_nr.touch_was_down);
+    s_nr.touch_was_down = is_touch;
 
     /* ⚡ 残留触摸防护:从浏览器点文件进入阅读器时,手指可能还按在屏幕上。
      * 关键时序:open_file() 置 skip_carried_touch=true。
@@ -708,7 +776,7 @@ static void nr_process_touch(bool is_touch, int16_t x, int16_t y) {
     s_nr.api->ui_btn_process_touch(&s_nr.btn_font, is_touch, x, y, now);
 
     if (s_nr.screen == SCR_BROWSER) {
-        if (!is_touch) {
+        if (released) {
             /* tap 释放 → 找 tap 到哪一行 */
             if (x >= 0 && x < SCREEN_W && y >= FILE_LIST_Y && y < FILE_LIST_Y + FILE_LIST_MAX * FILE_ROW_H) {
                 int row = (y - FILE_LIST_Y) / FILE_ROW_H;
@@ -720,11 +788,7 @@ static void nr_process_touch(bool is_touch, int16_t x, int16_t y) {
         }
     } else { /* SCR_READER */
         /* ⚡ 进度条:纯点击跳转 (按下记下 x,抬起时跳一次,不要连续跳) */
-        if (is_touch && y >= PROG_Y && y < PROG_Y + PROG_H) {
-            s_nr.dragging = true;
-            return;
-        }
-        if (!is_touch) {
+        if (released) {
             if (s_nr.dragging && y >= PROG_Y && y < PROG_Y + PROG_H) {
                 /* 进度条抬起 → 跳一次 */
                 s_nr.dragging = false;
@@ -734,7 +798,7 @@ static void nr_process_touch(bool is_touch, int16_t x, int16_t y) {
             }
             s_nr.dragging = false;
             /* ⚡ 翻页:HEADER_H (顶栏) 之下、PROG_Y (进度条) 之上,整片都是翻页区 */
-            if (y >= HEADER_H && y < PROG_Y) {
+            if (y >= HEADER_H && y < SCREEN_H) {
                 if (x < SCREEN_W / 2) goto_prev_page();
                 else                  goto_next_page();
             }
@@ -859,14 +923,24 @@ static void draw_reader(ui_tile_t *tile) {
         default:          fs = FONT_20; break;
         }
         int y = BODY_Y;
-        const char *p = s_nr.page_buf;
-        while (y < BODY_Y + BODY_H && *p) {
-            const char *eol = p;
-            while (*eol) eol++;
-            s_nr.api->ui_draw_string(tile, MARGIN_X, y, p, fs, 0x0000, 0xFFFF);
-            y += s_nr.line_h;
-            p = eol + 1;
+        /* ⚡ 按 [start, end) 逐行渲染:临时在 end 处写 \0，画完立刻恢复，
+         * 这样既能让 ui_draw_string 拿到 C 字符串，又不会破坏下一行的
+         * 首字节（自动换行时 end[k] == start[k+1]）。 */
+        for (int i = 0; i < s_line_count; ++i) {
             if (y >= BODY_Y + BODY_H) break;
+
+            int st = s_line_start[i];
+            int en = s_line_end[i];
+            if (en <= st) { y += s_nr.line_h; continue; }
+            if (en > s_nr.page_bytes) en = s_nr.page_bytes;
+
+            char save = s_nr.page_buf[en];
+            s_nr.page_buf[en] = '\0';
+            s_nr.api->ui_draw_string(tile, MARGIN_X, y, &s_nr.page_buf[st],
+                                     fs, 0x0000, 0xFFFF);
+            s_nr.page_buf[en] = save;
+
+            y += s_nr.line_h;
         }
     }
 

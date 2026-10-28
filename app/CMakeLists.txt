@@ -37,6 +37,7 @@ add_library(appmgr STATIC
     app_spi.c
     app_gb.c
     app_pet.c
+    app_fontburn.c
 
 )
 

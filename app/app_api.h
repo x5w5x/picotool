@@ -91,6 +91,8 @@ typedef struct {
     int  (*fat_size)(int fd);
     void (*fat_close)(int fd);
     int  (*fat_list_dir)(const char *dir, char *out_buf, int out_buf_size, int max_files);
+    /* Unicode code point -> OEM/GBK code.  Optional tail extension for PAPP. */
+    uint16_t (*unicode_to_oem)(uint32_t codepoint);
 } pico_host_api_t;
 
 /* ================= 动态 App 导出的生命周期接口 ================= */

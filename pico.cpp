@@ -54,6 +54,7 @@
 #include "app_i2c.h"
 #include "app_spi.h"
 #include "app_gb.h"
+#include "app_fontburn.h"
 #include "app_pet.h"
 #define LED_PIN PICO_DEFAULT_LED_PIN
 #define CHIP_TEMP_OFFSET_C 13.0f
@@ -165,17 +166,21 @@ void app_ui_custom_init(void)
     app_manager_register(&g_app_mgr, app_loader_get_instance());
     // 3. 初始化顶部状态栏 (X:0, Y:0, W:480, H:32)
 
-   
+     
     // app_manager_register(&g_app_mgr, app_ir_get_instance());
     app_manager_register(&g_app_mgr, app_script_get_instance());
     app_manager_register(&g_app_mgr, app_esp_get_instance());
     app_manager_register(&g_app_mgr, app_uart_get_instance());
     app_manager_register(&g_app_mgr, app_dap_get_instance());
     app_manager_register(&g_app_mgr, app_gb_get_instance());
+    app_manager_register(&g_app_mgr, app_fontburn_get_instance());
     app_manager_register(&g_app_mgr, app_pet_get_instance());
     // app_manager_register(&g_app_mgr, app_hid_km_get_instance());
-    // ui_status_bar_init(&g_status_bar, 0, 0, LCD_WIDTH, 32, "多功能嵌入式终端", on_status_bar_click);
-    ui_status_bar_init(&g_status_bar, 0, 0, LCD_WIDTH, 32, " ", on_status_bar_click);
+    ui_status_bar_init(&g_status_bar, 0, 0, LCD_WIDTH, 32, "多功能嵌入式终端", on_status_bar_click);
+
+
+
+    // ui_status_bar_init(&g_status_bar, 0, 0, LCD_WIDTH, 32, " ", on_status_bar_click);
     // 4. 初始化更新按键 (X:54, Y:280, W:75, H:36)
     ui_btn_init(&g_btn_sl, 54, 280, 75, 36, "更新", on_btn_click);
     g_btn_sl.style = UI_BTN_STYLE_ROUND;
@@ -306,7 +311,7 @@ static void sys_process_keyboard_line(const char *line)
     // ? 彻底移除 sscanf，直接切断 Newlib 全家桶依赖链
     const char *p = line + 6;
     char *endp = NULL;
-    
+      
     int ascii = (int)strtol(p, &endp, 10);
     if (!endp || *endp != ',') return;
     
