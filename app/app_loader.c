@@ -2,6 +2,7 @@
 #include "app_manager.h"
 #include "lcd.h"
 #include "ff.h"
+#include "la_usb.h"
 #include "ui_draw.h"
 #include "ui_btn.h"
 #include "ui_tile.h"
@@ -16,6 +17,10 @@ extern app_manager_t g_app_mgr;
 
 // ⚡ 锚定在 0x20034000 的 48KB 运行池
 static uint8_t s_app_ram_pool[APP_RAM_SIZE] __attribute__((aligned(32), section(".app_pool_sec")));
+
+/* 逻辑分析仪 (la_usb.c) 复用整个 plugin RAM 池当 32KB 采样缓冲。
+ * 引擎活跃期间 app_loader_load_papp 直接拒绝加载, 空闲 60 秒自动释放。 */
+uint8_t *app_loader_ram_pool(void) { return s_app_ram_pool; }
 
 static const app_plugin_t *s_active_plugin = NULL;
 static volatile bool       s_plugin_running = false;
@@ -332,6 +337,14 @@ bool app_loader_load_papp(const char *filepath) {
         return false;
     }
     printf("[PAPP] f_open OK\r\n");
+
+    /* 逻辑分析仪引擎活跃时整个 plugin RAM 池被用作 32KB 采样缓冲,
+     * 必须拒绝加载 (LA 空闲 60 秒后自动释放)。 */
+    if (la_usb_pool_active()) {
+        printf("[PAPP] LA engine active, refuse to load plugin\r\n");
+        f_close(&fil);
+        return false;
+    }
 
     UINT br = 0;
     FRESULT res = f_read(&fil, s_app_ram_pool, APP_RAM_SIZE, &br);

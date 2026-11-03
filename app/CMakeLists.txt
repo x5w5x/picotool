@@ -24,6 +24,8 @@ add_library(appmgr STATIC
     app_sd_msc.c
     swd_flasher.c
     app_adc.c
+    app_la.c
+    la_usb.c
     app_pwm.c
     app_i2c_spi.c
     app_pinout.c
@@ -48,6 +50,7 @@ target_include_directories(appmgr PUBLIC
     # ui/ 是 app/ 的兄弟目录,app_base.h 直接 #include "ui_tile.h"
     ${CMAKE_CURRENT_LIST_DIR}/../ui
     ${CMAKE_CURRENT_LIST_DIR}/../fun
+    ${CMAKE_CURRENT_LIST_DIR}/../pio
     # app_led.c 通过 ui_btn.h / ui_draw.h 链上 chinese.h → Drivers/
     ${CMAKE_CURRENT_LIST_DIR}/../Drivers
      ${CMAKE_CURRENT_LIST_DIR}/../fatfs

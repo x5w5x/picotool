@@ -1,0 +1,1507 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pico 逻辑分析仪</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --line:#dcdfe4; --text:#1f2328; --muted:#6b7280;
+    --accent:#185fa5; --danger:#a32d2d; --ok:#0f6e56;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{font-family:var(--font);font-size:13px;color:var(--text);background:var(--bg);
+       display:flex;flex-direction:column;overflow:hidden}
+
+  header{height:48px;flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:0 14px;
+         background:var(--panel);border-bottom:1px solid var(--line)}
+  .brand{font-weight:500;font-size:14px;letter-spacing:.2px}
+  .brand span{color:var(--muted);font-weight:400;margin-left:6px;font-size:12px}
+  .spacer{flex:1}
+
+  .pill{font-size:12px;padding:3px 9px;border-radius:20px;background:#eef0f3;color:var(--muted)}
+  .pill.on{background:#e6f1fb;color:var(--accent)}
+  .pill.err{background:#fcebeb;color:var(--danger)}
+
+  button{font-family:var(--font);font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer;
+         border:1px solid var(--line);background:#fff;color:var(--text);transition:background .12s}
+  button:hover{background:#f1f3f6}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.primary:hover{background:#134a80}
+  button.primary:disabled{background:var(--accent)}
+
+  select{font-family:var(--font);font-size:12px;padding:5px 6px;border-radius:6px;
+         border:1px solid var(--line);background:#fff;color:var(--text);width:100%}
+  input[type=text]{font-family:var(--mono);font-size:12px;padding:5px 6px;border-radius:6px;
+         border:1px solid var(--line);background:#fff;color:var(--text);width:100%;margin-top:4px}
+
+  .body{flex:1;display:grid;grid-template-columns:250px 1fr;min-height:0}
+  aside{background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;padding:10px 12px 18px}
+  aside section{padding:12px 0;border-bottom:1px solid #eef0f3}
+  aside section:last-of-type{border-bottom:none}
+  h3{margin:0 0 9px;font-size:11px;font-weight:500;color:var(--muted);
+     text-transform:uppercase;letter-spacing:.6px}
+  label{display:block;margin-bottom:8px;font-size:12px;color:var(--muted)}
+  label select{margin-top:4px}
+  .row{display:flex;gap:6px}
+  .row button{flex:1}
+  .hint{font-size:11px;color:var(--muted);line-height:1.6;margin-top:-2px;font-family:var(--mono)}
+  .hint b{color:var(--text);font-weight:500}
+
+  .progress{height:3px;background:#eef0f3;border-radius:2px;margin-top:9px;overflow:hidden}
+  .progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s}
+
+  #measure{font-family:var(--mono);font-size:11.5px;line-height:1.75;color:var(--muted);min-height:34px}
+  #measure b{color:var(--text);font-weight:500}
+
+  #log{margin-top:10px;font-size:11px;color:var(--danger);line-height:1.6;white-space:pre-wrap}
+
+  main{position:relative;min-width:0;background:#fff;overflow:hidden}
+  canvas{display:block;position:absolute;inset:0;width:100%;height:100%;cursor:crosshair}
+
+  footer{height:26px;flex:0 0 auto;display:flex;align-items:center;gap:16px;padding:0 14px;
+         background:var(--panel);border-top:1px solid var(--line);font-size:11.5px;color:var(--muted);
+         font-family:var(--mono)}
+  footer b{color:var(--text);font-weight:500}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">Pico·LA<span>逻辑分析仪</span></div>
+  <div class="spacer"></div>
+  <button id="btnConnect">连接设备</button>
+  <span id="connState" class="pill">未连接</span>
+</header>
+
+<div class="body">
+  <aside>
+    <section>
+      <h3>采样</h3>
+      <label>模式
+        <select id="capMode">
+          <option value="0">单次（最高 120 MHz）</option>
+          <option value="1">连续滚动（RLE 开约 1 MHz / 关约 300 kHz，受 USB 吞吐限制）</option>
+        </select>
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer">RLE 压缩
+        <input type="checkbox" id="rleChk" checked
+               title="固件侧压缩采样流，静态/低翻转信号可大幅提升连续采样率与传输速度（需固件 ver>=3）">
+      </label>
+      <label>采样率
+        <select id="rate">
+          <option value="2">120 MHz（实验）</option>
+          <option value="3">80 MHz（实验）</option>
+          <option value="4">60 MHz（实验）</option>
+          <option value="6">40 MHz（实验）</option>
+          <option value="8">30 MHz（实验）</option>
+          <option value="12">20 MHz</option>
+          <option value="24">10 MHz</option>
+          <option value="48">5 MHz</option>
+          <option value="120">2 MHz</option>
+          <option value="240" selected>1 MHz</option>
+          <option value="480">500 kHz</option>
+          <option value="960">250 kHz</option>
+          <option value="2400">100 kHz</option>
+          <option value="4800">50 kHz</option>
+          <option value="24000">10 kHz</option>
+        </select>
+      </label>
+      <div class="hint">20 MHz 以上为实验档：PIO 采样率 = 240 MHz ÷ 分频，高频下 DMA/FIFO 可能来不及搬而丢点，且 32768 点只覆盖很短时间，建议先用 ≤20 MHz 验证。</div>
+      <div class="hint" id="winHint">深度 <b>32768 点</b></div>
+    </section>
+
+    <section>
+      <h3>触发</h3>
+      <label>模式
+        <select id="trigMode">
+          <option value="0">立即（采满即停）</option>
+          <option value="2">上升沿</option>
+          <option value="3">下降沿</option>
+          <option value="1">电平</option>
+        </select>
+      </label>
+      <label>通道
+        <select id="trigCh">
+          <option value="0">CH0</option><option value="1">CH1</option>
+          <option value="2">CH2</option><option value="3">CH3</option>
+        </select>
+      </label>
+      <label>电平
+        <select id="trigLvl">
+          <option value="1">高</option>
+          <option value="0">低</option>
+        </select>
+      </label>
+      <div class="hint" style="margin-top:4px">PIO 硬件电平触发 · 触发点固定第 0 点</div>
+    </section>
+
+    <section>
+      <div class="row">
+        <button id="btnCap" class="primary" disabled>开始采集</button>
+        <button id="btnStop" disabled>停止</button>
+      </div>
+      <div class="progress"><i id="bar"></i></div>
+    </section>
+
+    <section>
+      <h3>测量</h3>
+      <div id="measure">点击波形放光标 A，再点一次放 B</div>
+    </section>
+
+    <section>
+      <h3>解码</h3>
+      <label>协议
+        <select id="decProto">
+          <option value="none">关闭</option>
+          <option value="uart">UART</option>
+          <option value="i2c">I2C</option>
+          <option value="spi">SPI</option>
+        </select>
+      </label>
+      <div id="decOpts"></div>
+      <div class="hint" id="decInfo" style="margin-top:8px">—</div>
+    </section>
+
+    <section>
+      <h3>操作</h3>
+      <div class="row">
+        <button id="btnZin">放大</button>
+        <button id="btnZout">缩小</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button id="btnFit">全览</button>
+        <button id="btnTrig">回到触发</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button id="btnCsv">导出 CSV</button>
+      </div>
+    </section>
+
+    <div id="log"></div>
+  </aside>
+
+  <main><canvas id="wave"></canvas></main>
+</div>
+
+<footer>
+  <span>采样点 <b id="fTotal">—</b></span>
+  <span>触发位置 <b id="fTrig">—</b></span>
+  <span>采样率 <b id="fRate">—</b></span>
+  <span>窗口 <b id="fWin">—</b></span>
+  <span id="fHint" style="margin-left:auto">滚轮缩放 · 拖动平移 · 双击全览</span>
+</footer>
+
+<script>
+"use strict";
+
+/* ===================== 常量 ===================== */
+const CLK = 240e6;   // RP2040 超频 240MHz, PIO 按此分频
+const MAGIC_IN  = 0xA5;
+const MAGIC_OUT = 0x5A;
+const CHUNK = 1024;
+const DEPTH = 32768;
+
+const COLORS = ["#185fa5","#d85a30","#0f6e56","#7f77dd","#ba7517","#d4537e","#639922","#5f5e5a"];
+
+/* ===================== 状态 ===================== */
+let port = null, writer = null, reader = null, keepReading = false;
+let pending = null;                 // 当前等待响应的请求
+let rxq = new Uint8Array(0);        // 串口接收累积缓冲
+
+let samples = null;                 // Uint8Array，每字节 8 位（低 4 位 = CH0~CH3 = GP4~GP7）
+let total = 0, trigOff = 0, divNow = 240;
+// 固件字节序：ver>=2 的固件 PIO 用右移打包，内存里天然是时间正序；
+// ver==1 的旧固件用左移，每个 32bit word 内 4 个点是倒的，需要上位机反转。
+let fwVer = 1;
+let rleAvail = false;    // 固件 >= ver 3 支持 RLE (0x0A 命令)
+let rleOn = false;       // 本会话 RLE 是否已下发使能
+let rleSent = null;      // 已下发给固件的 RLE 状态 (null=未知), 避免重复下发
+let rleActive = false;   // 当前数据是不是压缩流 (决定 readChunk 是否跳过屏蔽)
+
+/* RLE 展开。格式 (固件压缩, 值域 0~15):
+ *   0x00~0x7F 字面量: 1 字节 = 1 样本
+ *   0x80~0xFF 游程: 低 7 位 = count-1, 后跟 1 字节值
+ * 返回展开后的样本数。 */
+function rleExpand(buf){
+  let o = 0;
+  const out = new Uint8Array(40000);
+  for (let i = 0; i < buf.length; ){
+    const b = buf[i++];
+    if (b & 0x80){
+      const n = (b & 0x7F) + 1;
+      const v = buf[i++] & 0x0F;
+      out.fill(v, o, o + n);
+      o += n;
+    } else {
+      out[o++] = b & 0x0F;
+    }
+  }
+  return { data: out.subarray(0, o), n: o };
+}
+let needDescramble = true;
+let view = { start: 0, len: 0 };
+let cursors = [null, null];
+let capturing = false, abortFlag = false;
+
+/* ===================== DOM ===================== */
+const $ = id => document.getElementById(id);
+const canvas = $("wave"), ctx = canvas.getContext("2d");
+const logEl = $("log"), barEl = $("bar");
+
+let cw = 0, ch = 0, dpr = 1;
+
+/* ===================== 协议 ===================== */
+function crc8(bytes){
+  let c = 0;
+  for (let i = 0; i < bytes.length; i++){
+    c ^= bytes[i];
+    for (let k = 0; k < 8; k++)
+      c = (c & 0x80) ? (((c << 1) ^ 0x07) & 0xFF) : ((c << 1) & 0xFF);
+  }
+  return c;
+}
+
+function buildFrame(cmd, payload){
+  // 下行只有 1 字节长度（payload 最长 5 字节），上行才是 2 字节长度
+  const body = [cmd, payload.length & 0xFF, ...payload];
+  return new Uint8Array([MAGIC_IN, ...body, crc8(body)]);
+}
+
+function feed(chunk){
+  const q = new Uint8Array(rxq.length + chunk.length);
+  q.set(rxq, 0);
+  q.set(chunk, rxq.length);
+  rxq = q;
+  parseRx();
+}
+
+function parseRx(){
+  for (;;){
+    let i = -1;
+    for (let k = 0; k < rxq.length; k++){ if (rxq[k] === MAGIC_OUT){ i = k; break; } }
+    if (i < 0){ rxq = new Uint8Array(0); return; }
+    if (i > 0) rxq = rxq.slice(i);
+    if (rxq.length < 4) return;
+
+    const cmd = rxq[1];
+    const len = rxq[2] | (rxq[3] << 8);
+    if (rxq.length < 5 + len) return;
+
+    const payload = rxq.slice(4, 4 + len);
+    const want = rxq[4 + len];
+    const body = [rxq[1], rxq[2], rxq[3], ...payload];
+
+    if (crc8(body) === want){
+      rxq = rxq.slice(5 + len);
+      onFrame(cmd, payload);
+    } else {
+      rxq = rxq.slice(1);   // 校验失败，滑动一字节重新找帧头
+    }
+  }
+}
+
+function onFrame(cmd, payload){
+  if (pending && pending.cmd === cmd){
+    const p = pending;
+    pending = null;
+    clearTimeout(p.timer);
+    p.resolve(payload);
+  }
+}
+
+function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+
+async function request(cmd, payload = [], timeout = 4000){
+  if (!port || !writer) throw new Error("设备未连接");
+  if (pending) throw new Error("上一条命令尚未完成");
+  const p = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      if (pending && pending.cmd === cmd){ pending = null; reject(new Error("设备无回包")); }
+    }, timeout);
+    pending = { cmd, resolve, reject, timer };
+  });
+  try{
+    await writer.write(buildFrame(cmd, payload));
+  }catch(e){
+    clearTimeout(pending?.timer);
+    pending = null;
+    throw e;
+  }
+  return p;
+}
+
+/* ===================== 串口 ===================== */
+async function connect(){
+  logEl.textContent = "";
+  if (!("serial" in navigator)){
+    logEl.textContent = "当前浏览器不支持 Web Serial。请用桌面版 Chrome / Edge，并通过 https 或 localhost 打开本页。";
+    return;
+  }
+  try{
+    port = await navigator.serial.requestPort();
+    resize();
+
+    // Pico 是 USB CDC 虚拟串口, 波特率参数被忽略, 直接打开握手
+    await port.open({ baudRate: 115200, bufferSize: 1 << 16 });
+    writer = port.writable.getWriter();
+    keepReading = true;
+    readLoop();
+    const id = await requestIdent(5, 900);
+    // IDENT 6 字节: 'P','I','C','O', ver, ch_count
+    fwVer = id.length >= 5 ? id[4] : 1;
+    needDescramble = fwVer < 2;   // 旧固件（ver 1）word 内字节序是倒的
+    rleAvail = fwVer >= 3;        // ver 3 起支持 RLE 压缩
+    $("rleChk").disabled = !rleAvail;
+    if (needDescramble){
+      logEl.textContent = "提示：检测到旧版固件（ver " + fwVer + "），已自动做字节序还原。" +
+                          "建议重新烧录最新 pico.uf2 以获得更高采样率。";
+    }
+
+    setConn(true, 0);
+    await pushConfig();
+  }catch(e){
+    logEl.textContent = "连接失败：" + e.message +
+      "\n请确认固件已烧录（屏幕版 App 也可正常用）。若串口被其它程序占用请先关闭，拔插一次 USB 再试。";
+    await disconnect();
+  }
+}
+
+// 刚打开端口时头几个字节偶尔会丢，重试几次再判失败
+async function requestIdent(tries = 3, timeout = 900){
+  let last = null;
+  for (let k = 0; k < tries; k++){
+    try{
+      const id = await request(0x07, [], timeout);
+      if (id && id.length >= 3 && id[0] === 0x50) return id;   // "PICO"
+      last = new Error("标识不对");
+    }catch(e){ last = e; }
+    await sleep(120);
+  }
+  throw last;
+}
+
+// ---------------------------------------------------------------
+//  只关端口，保留 port 对象，方便重新 open 换波特率
+// ---------------------------------------------------------------
+async function closePort(){
+  keepReading = false;
+  try{ await reader?.cancel(); }catch(_){}
+  try{ writer?.releaseLock(); }catch(_){}
+  try{ await port?.close(); }catch(_){}
+  writer = null; reader = null; pending = null;
+}
+
+function setConn(ok /*, baud —— CDC 不看波特率 */){
+  const el = $("connState");
+  el.className = "pill " + (ok ? "on" : "");
+  el.textContent = ok ? "已连接 · USB CDC" : "未连接";
+  $("btnConnect").textContent = ok ? "断开" : "连接设备";
+  $("btnCap").disabled = !ok;
+}
+
+async function readLoop(){
+  while (port && port.readable && keepReading){
+    reader = port.readable.getReader();
+    try{
+      for (;;){
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value && value.length) feed(value);
+      }
+    }catch(e){ /* 拔线等异常，走下面的清理 */ }
+    finally{ try{ reader.releaseLock(); }catch(_){} }
+  }
+}
+
+async function disconnect(){
+  await closePort();
+  port = null;
+  rleSent = null; rleOn = false; rleActive = false;
+  setConn(false);
+}
+
+/* ===================== 配置下发 ===================== */
+async function pushConfig(){
+  const div = +$("rate").value;
+  await request(0x01, [div & 0xFF, (div >> 8) & 0xFF, (div >> 16) & 0xFF, (div >> 24) & 0xFF]);
+
+  // RLE 压缩 (固件 ver>=3)。只在状态变化时下发——0x0A 会令旧固件 stop,
+  // 且采集中重复下发是无谓的动作
+  rleOn = rleAvail && $("rleChk").checked;
+  if (rleAvail && rleSent !== rleOn){
+    await request(0x0A, [rleOn ? 1 : 0]);
+    rleSent = rleOn;
+  }
+
+  const mode = +$("trigMode").value;
+  const chn  = +$("trigCh").value;
+  const lvl  = +$("trigLvl").value;
+  const mask = 1 << chn;
+  const val  = lvl ? mask : 0;
+  // Pico 版是 PIO WAIT 硬件电平触发, 触发点固定第 0 点; post 仅保持帧格式
+  const post = DEPTH - 1;
+  await request(0x02, [mask, val, mode, post & 0xFF, (post >> 8) & 0xFF]);
+}
+
+/* ===================== 采集 ===================== */
+const STREAM_CAP = 262144;          // 连续模式最多留 256K 点
+let streamBuf = new Uint8Array(STREAM_CAP);
+let streamLen = 0;
+
+function appendSamples(chunk){
+  if (chunk.length >= STREAM_CAP){
+    streamBuf.set(chunk.subarray(chunk.length - STREAM_CAP), 0);
+    streamLen = STREAM_CAP;
+    return;
+  }
+  const over = streamLen + chunk.length - STREAM_CAP;
+  if (over > 0){
+    streamBuf.copyWithin(0, over, streamLen);
+    streamLen -= over;
+  }
+  streamBuf.set(chunk, streamLen);
+  streamLen += chunk.length;
+}
+
+// 读采样数据。链路偶尔会丢字节，返回的包长度会比请求的短，
+// 直接写进缓冲区就会在波形里留一段空洞 —— 所以必须校验长度并重试。
+let linkRetries = 0;
+
+/* ------------------------------------------------------------------
+ * PIO 打包字节序还原（关键）
+ * ------------------------------------------------------------------
+ * 固件用 IN PINS,8 ×4 + autopush(32) 把 4 个时间样本拼进一个 32bit
+ * word，DMA 按小端写进 RAM 后，内存字节流是 [s3,s2,s1,s0] —— 也就是
+ * 每 4 个点时间上是倒着的。若不还原，波形会出现大量 1~3 点的假毛刺，
+ * UART/I2C/SPI 解码、自动测频全部错乱。
+ * 这里把每个 word 的 4 字节反转为 [s0,s1,s2,s3]，并屏蔽 bit6/bit7
+ * 4 通道固件: CH0~CH3 = GP4~GP7（GP2/GP3 留给 DAPLink SWD）；
+ * IN PINS,8 带上的 GP8~GP11 悬空位被屏蔽。
+ * 前提：off 与 n 都按 4 对齐（本页所有 READ 都满足）。
+ */
+function descramble(buf){
+  for (let i = 0; i + 3 < buf.length; i += 4){
+    const a = buf[i], b = buf[i+1], c = buf[i+2], d = buf[i+3];
+    buf[i]   = d & 0x0F;
+    buf[i+1] = c & 0x0F;
+    buf[i+2] = b & 0x0F;
+    buf[i+3] = a & 0x0F;
+  }
+  return buf;
+}
+
+// 只保留 4 个真实通道（GP8~GP11 未接信号，读到悬空值）
+function maskChannels(buf){
+  for (let i = 0; i < buf.length; i++) buf[i] &= 0x0F;
+  return buf;
+}
+
+async function readChunk(off, n, timeout = 5000, tries = 4){
+  for (let k = 0; k < tries; k++){
+    try{
+      const d = await request(0x06, [off & 0xFF, (off >> 8) & 0xFF, n & 0xFF, (n >> 8) & 0xFF], timeout);
+      if (d.length === n){
+        // 压缩流直接返回 (0x80~0xFF 是 RLE 控制字节, 不能做通道屏蔽);
+        // 原始数据按固件版本决定是否反序/屏蔽
+        if (rleActive) return d;
+        return needDescramble ? descramble(d) : maskChannels(d);
+      }
+    }catch(e){ /* 超时或校验失败，再来一次 */ }
+    linkRetries++;
+    await sleep(25);
+  }
+  throw new Error("读 0x" + off.toString(16) + " 起的 " + n + " 字节失败，链路在丢包");
+}
+
+async function doContinuous(){
+  if (capturing || !port) return;
+  capturing = true; abortFlag = false;
+  $("btnCap").disabled = true; $("btnStop").disabled = false;
+  logEl.textContent = "";
+  streamLen = 0;
+  barEl.style.width = "0%";
+
+  try{
+    await request(0x08, [1]);        // 连续乒乓模式
+    await pushConfig();
+    await request(0x03, []);         // ARM 即开跑
+
+    let lastSeq = 0;
+    const t0 = performance.now();
+    let lastT = t0, lastLen = 0, got = 0, missed = 0;
+
+    while (!abortFlag){
+      const st = await request(0x05, []);
+      const seq = st[7];
+      rleActive = rleOn && st.length > 8 && !!(st[8] & 1);
+      if (seq !== lastSeq){
+        const delta = (seq - lastSeq) & 0xFF;
+        if (lastSeq !== 0 && delta > 1) missed += delta - 1;   // 上位机没跟上
+        lastSeq = seq;
+        const half = (seq - 1) & 1;
+        const off = half * 16384;
+        // 先读进临时缓冲, 读完后再查一次 seq——半区若已被 DMA 覆写则整段
+        // 丢弃。没有这一步, 覆写会产生静默错位波形 (丢段计数抓不到)。
+        let chunk = null;
+        if (rleActive){
+          // RLE: 只读该半区的压缩流 (长度在 STATUS 的 st[9..10]), 展开后入库
+          const clen = st.length > 10 ? (st[9] | (st[10] << 8)) : 0;
+          if (clen > 0){
+            const cbuf = new Uint8Array(clen);
+            let o = 0;
+            while (o < clen){
+              const n = Math.min(CHUNK, clen - o);
+              cbuf.set(await readChunk(off + o, n, 4000, 2), o);
+              o += n;
+            }
+            const st2 = await request(0x05, []);
+            if (st2[7] === seq) chunk = rleExpand(cbuf).data;
+          }
+        } else {
+          // 固件单帧 READ 上限 1024 字节，16384 点必须分 16 块读
+          const tmp = new Uint8Array(16384);
+          let o = 0;
+          while (o < 16384){
+            const n = Math.min(CHUNK, 16384 - o);
+            tmp.set(await readChunk(off + o, n, 4000, 2), o);
+            o += n;
+          }
+          const st2 = await request(0x05, []);
+          if (st2[7] === seq) chunk = tmp;
+        }
+        if (chunk){
+          appendSamples(chunk);
+          got++;
+          samples = streamBuf; total = streamLen; trigOff = 0;
+          const win = Math.min(total, 32768);
+          view = { start: total - win, len: win };
+          updateFooter();
+          render();
+          barEl.style.width = "100%";
+        } else {
+          missed++;   // 覆写丢弃, 或固件溢出时放弃的半区
+        }
+      }
+      const now = performance.now();
+      if (now - lastT > 1000){
+        const ksa = (streamLen - lastLen) / ((now - lastT) / 1000) / 1000;
+        $("fHint").textContent = "连续中 · " + ksa.toFixed(1) + " kSa/s · 已收 " +
+                                 (streamLen / 1024).toFixed(0) + " KB · " + got + " 段" +
+                                 (missed ? " · 丢 " + missed + " 段（采样率太快）" : "");
+        lastT = now; lastLen = streamLen;
+      }
+      await sleep(8);
+    }
+    $("fHint").textContent = "已停止 · 共 " + (streamLen / 1024).toFixed(0) + " KB";
+    runDecoder();
+  }catch(e){
+    logEl.textContent = "连续采集失败：" + e.message;
+  }finally{
+    try{ await request(0x08, [0]); }catch(_){}
+    capturing = false;
+    $("btnCap").disabled = !port;
+    $("btnStop").disabled = true;
+  }
+}
+
+async function doCapture(){
+  if (capturing || !port) return;
+  if (+$("capMode").value === 1) return doContinuous();
+
+  capturing = true; abortFlag = false;
+  $("btnCap").disabled = true; $("btnStop").disabled = false;
+  barEl.style.width = "0%";
+  logEl.textContent = "";
+
+  try{
+    const div = +$("rate").value;
+    await pushConfig();
+    await request(0x03, []);
+
+    const t0 = performance.now();
+    let st = null;
+    for (;;){
+      if (abortFlag){
+        await request(0x04, []);
+        st = await request(0x05, []);   // STOP 之后必须重读，否则拿到的是采集途中的 valid=0
+        break;
+      }
+      st = await request(0x05, []);
+      const ph = st[0] & 3;
+      const vd = st[1] | (st[2] << 8);
+      $("fHint").textContent = "采集中 " + ((performance.now() - t0) / 1000).toFixed(1) +
+                               "s · phase=" + ph + " · " + vd + " 点";
+      if (ph === 3) break;
+      if (ph === 0 && performance.now() - t0 > 2000){
+        throw new Error("ARM 没有生效（phase 一直为 0），检查位流是否是最新的");
+      }
+      if (performance.now() - t0 > 40000){
+        await request(0x04, []);
+        st = await request(0x05, []);
+        break;
+      }
+      await sleep(25);
+    }
+
+    const trig  = st[3] | (st[4] << 8);
+    const flags = st.length > 8 ? st[8] : 0;
+    rleActive = !!(flags & 1) && rleOn;
+
+    let buf, total_n;
+    if (rleActive){
+      // RLE: st[1..2] 是压缩流长度, 读回来展开成 32768 (或早停的实际) 样本
+      const clen = st[1] | (st[2] << 8);
+      if (!clen){
+        throw new Error("压缩流为空（phase=" + (st[0] & 3) + "）");
+      }
+      const cbuf = new Uint8Array(clen);
+      let off = 0;
+      while (off < clen){
+        const n = Math.min(CHUNK, clen - off);
+        const d = await readChunk(off, n, 3000, 5);
+        cbuf.set(d, off);
+        off += n;
+        barEl.style.width = (off / clen * 100).toFixed(1) + "%";
+      }
+      const ex = rleExpand(cbuf);
+      if (!ex.n) throw new Error("RLE 展开得到 0 个样本，压缩流损坏");
+      buf = ex.data; total_n = ex.n;
+      logEl.textContent = "RLE: " + clen + " B → " + ex.n + " 点 (压缩 " +
+                          (ex.n / clen).toFixed(1) + "×)";
+    } else {
+      // 中途 STOP 时 valid 可能不是 4 的倍数；descramble 按 4 字节分组，
+      // 向下取整保证每个 group 都完整，避免尾部字节错位。
+      const valid = (st[1] | (st[2] << 8)) & ~3;
+      if (!valid){
+        const raw = Array.from(st).map(b => b.toString(16).padStart(2, "0")).join(" ");
+        throw new Error("缓冲区里没有数据（phase=" + (st[0] & 3) + "，STATUS 原始字节: " + raw + "）");
+      }
+      const raw = new Uint8Array(valid);
+      let off = 0;
+      while (off < valid){
+        const n = Math.min(CHUNK, valid - off);
+        const d = await readChunk(off, n, 3000, 5);
+        raw.set(d, off);
+        off += n;
+        barEl.style.width = (off / valid * 100).toFixed(1) + "%";
+      }
+      buf = raw; total_n = valid;
+    }
+
+    samples = buf; total = total_n; trigOff = trig; divNow = div;
+    cursors = [null, null];
+    view = { start: 0, len: total };
+    measureAll();
+    autoZoom();
+    runDecoder();
+    updateFooter();
+    updateMeasure();
+    render();
+  }catch(e){
+    logEl.textContent = "采集失败：" + e.message;
+  }finally{
+    capturing = false;
+    $("btnCap").disabled = !port;
+    $("btnStop").disabled = true;
+  }
+}
+
+/* ===================== 通道自动测量 ===================== */
+let chInfo = new Array(4).fill(null);
+
+function fmtHz(f){
+  if (f >= 1e6) return (f / 1e6).toFixed(2) + " MHz";
+  if (f >= 1e3) return (f / 1e3).toFixed(2) + " kHz";
+  return f.toFixed(1) + " Hz";
+}
+
+// 对每个通道统计边沿，用同向边沿的中位数算周期，抗毛刺
+function measureAll(){
+  chInfo = new Array(4).fill(null);
+  if (!samples || total < 8) return;
+
+  for (let c = 0; c < 6; c++){
+    const bit = 1 << c;
+    const edges = [];
+    for (let i = 1; i < total; i++){
+      if ((samples[i] ^ samples[i - 1]) & bit) edges.push(i);
+    }
+    if (edges.length < 4) continue;
+
+    const per = [];
+    for (let i = 2; i < edges.length; i += 2) per.push(edges[i] - edges[i - 2]);
+    if (!per.length) continue;
+    per.sort((a, b) => a - b);
+    const med = per[per.length >> 1];
+    if (med < 2) continue;
+
+    const period = med * divNow / CLK;
+    const duty = 0;
+    chInfo[c] = {
+      f: fmtHz(1 / period),
+      t: fmtTime(period),
+      n: edges.length
+    };
+  }
+}
+
+// 采完之后自动找一个能看清的窗口，别让用户面对一整块色块
+function autoZoom(){
+  if (!samples || !total) return;
+
+  let bestC = -1, bestN = 0;
+  for (let c = 0; c < 6; c++){
+    const bit = 1 << c;
+    let n = 0;
+    for (let i = 1; i < total; i++) if ((samples[i] ^ samples[i - 1]) & bit) n++;
+    if (n > bestN){ bestN = n; bestC = c; }
+  }
+  if (bestC < 0 || bestN < 4){ view = { start: 0, len: total }; return; }
+
+  const bit = 1 << bestC;
+  let first = 0, last = total - 1;
+  for (let i = 1; i < total; i++){ if ((samples[i] ^ samples[i - 1]) & bit){ first = i; break; } }
+  for (let i = total - 1; i > 0; i--){ if ((samples[i] ^ samples[i - 1]) & bit){ last = i; break; } }
+
+  const active = last - first + 1;
+  let len = Math.min(total, Math.max(512, Math.min(active + 256, 4096)));
+  let start = Math.max(0, Math.min(total - len, first - 128));
+  view = { start, len };
+}
+
+
+/* ===================== 协议解码 ===================== */
+let annotations = [];
+
+const CH_OPTS = Array.from({length: 4}, (_, i) => '<option value="' + i + '">CH' + i + '</option>').join("");
+const CH_OPTS_CS = CH_OPTS + '<option value="8">无（自由运行）</option>';
+const chLabel = i => (i >= 4 ? "无" : "CH" + i);
+
+const DECODERS = {
+  uart: { fields: [
+    { k:"ch",   n:"通道",   t:"ch",  d:0 },
+    { k:"baud", n:"波特率（填 auto 自动测）", t:"num", d:"auto" }
+  ]},
+  i2c: { fields: [
+    { k:"scl", n:"SCL", t:"ch", d:0 },
+    { k:"sda", n:"SDA", t:"ch", d:1 }
+  ]},
+  spi: { fields: [
+    { k:"sclk", n:"SCLK", t:"ch", d:0 },
+    { k:"mosi", n:"MOSI", t:"ch", d:1 },
+    { k:"cs",   n:"CS",   t:"cs", d:2 },
+    { k:"bits", n:"每帧位数", t:"num", d:8 },
+    { k:"cpha", n:"CPHA", t:"sel", o:[[0,"0（上升沿采样）"],[1,"1（下降沿采样）"]], d:0 }
+  ]}
+};
+
+function decId(p, k){ return "dec_" + p + "_" + k; }
+function decVal(p, k, def){
+  const el = $(decId(p, k));
+  return el ? el.value : def;
+}
+
+function buildDecFields(){
+  const p = $("decProto").value;
+  const box = $("decOpts");
+  box.innerHTML = "";
+  if (p === "none"){ annotations = []; $("decInfo").textContent = "—"; render(); return; }
+
+  for (const f of DECODERS[p].fields){
+    const lab = document.createElement("label");
+    lab.textContent = f.n;
+    let el;
+    if (f.t === "ch" || f.t === "cs" || f.t === "sel"){
+      el = document.createElement("select");
+      if (f.t === "ch")       el.innerHTML = CH_OPTS;
+      else if (f.t === "cs")  el.innerHTML = CH_OPTS_CS;
+      else                    el.innerHTML = f.o.map(o => '<option value="' + o[0] + '">' + o[1] + '</option>').join("");
+    } else {
+      el = document.createElement("input");
+      el.type = "text";
+    }
+    el.id = decId(p, f.k);
+    el.value = f.d;
+    el.addEventListener("change", runDecoder);
+    lab.appendChild(el);
+    lab.style.marginTop = "6px";
+    box.appendChild(lab);
+  }
+  runDecoder();
+}
+
+// ---------- UART 自动测波特率 ----------
+// UART 数据里最窄的脉冲宽度就是一个比特。随机数据下各种游程长度都有，
+// 但 1 比特游程出现次数最多（相邻比特不同的概率最高），所以取众数最稳。
+function uartAutoBaud(ch){
+  const bit = 1 << ch;
+  const g = i => (samples[i] & bit) ? 1 : 0;
+  const runs = [];
+  let start = 0;
+  for (let i = 1; i < total; i++){
+    if (g(i) !== g(i - 1)){ runs.push(i - start); start = i; }
+  }
+  if (runs.length < 6) return 0;
+  runs.shift(); runs.pop();                 // 首尾不完整，丢掉
+
+  const hist = Object.create(null);
+  for (const r of runs) hist[r] = (hist[r] || 0) + 1;
+
+  let best = 0, bestN = 0;
+  for (const k in hist){
+    if (hist[k] > bestN){ bestN = hist[k]; best = +k; }
+  }
+  if (best < 2) return 0;
+
+  const baud = CLK / (divNow * best);
+  // 归到常见档位，免得报个 114327 这种数
+  const nice = [1200,2400,4800,9600,19200,38400,57600,74880,115200,230400,460800,
+                921600,1000000,1500000,2000000,3000000];
+  for (const n of nice){
+    if (Math.abs(baud - n) / n < 0.03) return n;
+  }
+  return Math.round(baud / 100) * 100;
+}
+
+// ---------- UART ----------
+function decUart(ch, baud){
+  const bs = CLK / (divNow * baud);          // 每个比特占多少采样点
+  if (!(bs >= 2) || baud <= 0) return [];
+  const bit = 1 << ch;
+  const g = i => (samples[i] & bit) ? 1 : 0;
+
+  // 起始位之前线必须已空闲(高)至少 ~0.7 bit。背靠背帧的停止位有整整 1 bit 高，
+  // 也能通过；而帧内数据位的下降沿前面不到 1 bit 高电平，会被直接排除。
+  // 没有这个检查，'A'(0x41) 之类 bit0=1 的字节会在帧中间产生假起始位，
+  // 后续解码全部错位（解出 P/U/H 这种乱码）。
+  const IDLE = Math.max(1, Math.round(bs * 0.7));
+
+  // 第一遍：按字节解帧
+  const frames = [];
+  let i = 0;                                 // 从 0 开始：触发模式下第 0 点就是起始位
+  while (i < total - 1){
+    const edge = (i === 0) ? (g(0) === 0)
+                           : (g(i - 1) === 1 && g(i) === 0);
+    if (edge){
+      let idle = true;
+      for (let k = 1; k <= IDLE && i - k >= 0; k++){
+        if (g(i - k) !== 1){ idle = false; break; }
+      }
+      if (idle && g(Math.round(i + bs * 0.5)) === 0){
+        const s0 = i;
+        let v = 0, ok = true;
+        for (let b = 0; b < 8; b++){
+          const idx = Math.round(s0 + bs * (1.5 + b));
+          if (idx >= total){ ok = false; break; }
+          if (g(idx)) v |= 1 << b;
+        }
+        const si = Math.round(s0 + bs * 9.5);
+        const stopOk = ok && si < total && g(si) === 1;
+        if (ok){
+          frames.push({ s0, s1: Math.round(s0 + bs * 10), v, stopOk });
+          // 回到停止位中间继续找下一帧的下降沿。
+          // 不能直接跳到 end，那样会跨过下一帧起始位的跳变沿，导致后续全部错位。
+          i = Math.round(s0 + bs * 9.0);
+          continue;
+        }
+      }
+    }
+    i++;
+  }
+
+  // 第二遍：连续 OK 帧按 UTF-8 合并解码。
+  // 中文等非 ASCII 字符占 2~3 字节，合并成一个框直接显示汉字；
+  // 出现无效序列(U+FFFD)时退回逐字节 hex 显示；控制字符(\r\n 等)显示 hex。
+  const out = [];
+  let run = [];
+  const flushRun = () => {
+    if (!run.length) return;
+    let s = "";
+    try { s = new TextDecoder("utf-8").decode(new Uint8Array(run.map(f => f.v))); }
+    catch (_){ s = ""; }
+    if (s.indexOf("\uFFFD") >= 0){
+      for (const f of run){
+        out.push({ s0: f.s0, s1: f.s1, kind: "ok",
+                   text: f.v.toString(16).toUpperCase().padStart(2, "0") + " " +
+                         (f.v >= 32 && f.v < 127 ? String.fromCharCode(f.v) : ".") });
+      }
+    } else {
+      let bi = 0;
+      for (const c of s){
+        const cp = c.codePointAt(0);
+        const n = cp <= 0x7F ? 1 : cp <= 0x7FF ? 2 : cp <= 0xFFFF ? 3 : 4;
+        if (bi + n > run.length) break;
+        const f0 = run[bi], f1 = run[bi + n - 1];
+        const printable = c >= " " && c !== "\u007F";
+        out.push({ s0: f0.s0, s1: f1.s1, kind: "ok",
+                   text: printable ? c
+                       : f0.v.toString(16).toUpperCase().padStart(2, "0") });
+        bi += n;
+      }
+    }
+    run = [];
+  };
+  for (const f of frames){
+    if (f.stopOk){ run.push(f); }
+    else {
+      flushRun();
+      out.push({ s0: f.s0, s1: f.s1, kind: "err",
+                 text: f.v.toString(16).toUpperCase().padStart(2, "0") });
+    }
+  }
+  flushRun();
+  return out;
+}
+
+// ---------- I2C ----------
+function decI2c(scl, sda){
+  const out = [];
+  if (scl === sda) return out;
+  const bs = 1 << scl, bd = 1 << sda;
+  const S = i => (samples[i] & bs) ? 1 : 0;
+  const D = i => (samples[i] & bd) ? 1 : 0;
+
+  let inFrame = false, bits = 0, nbits = 0, byteStart = 0, startIdx = 0;
+
+  for (let i = 1; i < total; i++){
+    const sp = S(i - 1), sc = S(i), dp = D(i - 1), dc = D(i);
+
+    if (sp && sc && dp && !dc){                       // START
+      if (inFrame) out.push({ s0: startIdx, s1: i, text: "未结束", kind: "err" });
+      inFrame = true; bits = 0; nbits = 0; startIdx = i;
+      out.push({ s0: i, s1: i, text: "S", kind: "ctrl" });
+      continue;
+    }
+    if (sp && sc && !dp && dc){                       // STOP
+      if (inFrame){ out.push({ s0: i, s1: i, text: "P", kind: "ctrl" }); inFrame = false; }
+      continue;
+    }
+    if (!sp && sc && inFrame){                        // SCL 上升沿
+      if (nbits === 0) byteStart = i;
+      if (nbits < 8){
+        bits = (bits << 1) | D(i);
+        nbits++;
+      } else {
+        const ack = D(i) === 0;
+        out.push({ s0: byteStart, s1: i, kind: ack ? "ok" : "nak",
+                   text: bits.toString(16).toUpperCase().padStart(2, "0") + (ack ? "" : " NAK") });
+        bits = 0; nbits = 0;
+      }
+    }
+  }
+  return out;
+}
+
+// ---------- SPI ----------
+function decSpi(sclk, mosi, cs, bitsN, cpha){
+  const out = [];
+  if (sclk === mosi) return out;
+  const bk = 1 << sclk, bm = 1 << mosi, bc = (cs < 8) ? (1 << cs) : 0;
+  const K = i => (samples[i] & bk) ? 1 : 0;
+  const M = i => (samples[i] & bm) ? 1 : 0;
+  const C = i => (bc && (samples[i] & bc)) ? 1 : 0;
+  const useCs = (cs < 8);
+  const hexW = Math.max(2, Math.ceil(bitsN / 4));
+
+  let active = !useCs, v = 0, n = 0, frameStart = 0;
+
+  for (let i = 1; i < total; i++){
+    if (useCs){
+      if (C(i - 1) === 1 && C(i) === 0){ active = true; v = 0; n = 0; frameStart = i; continue; }
+      if (C(i - 1) === 0 && C(i) === 1){
+        if (active && n > 0) out.push({ s0: frameStart, s1: i, text: "残 " + n + " 位", kind: "err" });
+        active = false;
+        continue;
+      }
+    }
+    if (!active) continue;
+
+    const rising  = (K(i - 1) === 0 && K(i) === 1);
+    const falling = (K(i - 1) === 1 && K(i) === 0);
+    if (cpha ? falling : rising){
+      v = ((v << 1) | M(i)) >>> 0;
+      n++;
+      if (n >= bitsN){
+        out.push({ s0: frameStart, s1: i, kind: "ok",
+                   text: v.toString(16).toUpperCase().padStart(hexW, "0") });
+        frameStart = i; v = 0; n = 0;
+      }
+    }
+  }
+  return out;
+}
+
+function runDecoder(){
+  annotations = [];
+  const p = $("decProto").value;
+  if (p === "none" || !samples || !total){ $("decInfo").textContent = "—"; render(); return; }
+
+  if (p === "uart"){
+    const ch = +decVal("uart", "ch", 0);
+    let bv = decVal("uart", "baud", "auto");
+    let auto = "";
+    let baud;
+    if (bv === "auto" || bv === "" || bv === "0"){
+      baud = uartAutoBaud(ch);
+      if (!baud){
+        $("decInfo").textContent = "自动测速失败（跳变太少），手动填波特率试试";
+        render(); return;
+      }
+      auto = "自动测得 " + baud + " · ";
+    } else {
+      baud = +bv;
+    }
+    const bs = CLK / (divNow * baud);
+    if (!(bs >= 2)){
+      $("decInfo").textContent = auto + "采样率不够：每比特只有 " + bs.toFixed(1) + " 点";
+      render(); return;
+    }
+    annotations = decUart(ch, baud);
+    $("decInfo").dataset.auto = auto;
+  } else if (p === "i2c"){
+    annotations = decI2c(+decVal("i2c", "scl", 0), +decVal("i2c", "sda", 1));
+  } else if (p === "spi"){
+    annotations = decSpi(+decVal("spi", "sclk", 0), +decVal("spi", "mosi", 1),
+                         +decVal("spi", "cs", 2), +decVal("spi", "bits", 8),
+                         +decVal("spi", "cpha", 0));
+  }
+
+  const pre = $("decInfo").dataset.auto || "";
+  if (!annotations.length){
+    $("decInfo").textContent = pre + "没解出内容，检查通道和速率";
+  } else {
+    const pv = annotations.slice(0, 8).map(a => a.text).join(" ");
+    $("decInfo").textContent = pre + annotations.length + " 项：" + pv + (annotations.length > 8 ? " …" : "");
+  }
+  render();
+}
+
+
+
+/* ===================== 坐标换算 ===================== */
+const GUTTER = 64, RULER_H = 22, PAD_R = 10;
+
+function plotGeom(){
+  return { px: GUTTER, pw: Math.max(10, cw - GUTTER - PAD_R), py: RULER_H, ph: ch - RULER_H - 4 };
+}
+
+function sampAt(px){
+  const g = plotGeom();
+  if (!total) return 0;
+  return view.start + (px - g.px) / g.pw * view.len;
+}
+
+function xAtSample(s){
+  const g = plotGeom();
+  return g.px + (s - view.start) / view.len * g.pw;
+}
+
+/* ===================== 绘制 ===================== */
+function resize(){
+  const r = canvas.parentElement.getBoundingClientRect();
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  cw = Math.max(100, Math.floor(r.width));
+  ch = Math.max(100, Math.floor(r.height));
+  canvas.width = cw * dpr;
+  canvas.height = ch * dpr;
+  canvas.style.width = cw + "px";
+  canvas.style.height = ch + "px";
+  render();
+}
+
+function fmtTime(t){
+  const a = Math.abs(t);
+  if (a === 0) return "0 s";
+  if (a < 1e-6) return (t * 1e9).toFixed(1) + " ns";
+  if (a < 1e-3) return (t * 1e6).toFixed(2) + " µs";
+  if (a < 1)    return (t * 1e3).toFixed(2) + " ms";
+  return t.toFixed(3) + " s";
+}
+
+function niceStep(x){
+  const e = Math.pow(10, Math.floor(Math.log10(x)));
+  const m = x / e;
+  const s = m < 1.5 ? 1 : m < 3.5 ? 2 : m < 7.5 ? 5 : 10;
+  return s * e;
+}
+
+function render(){
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cw, ch);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, cw, ch);
+
+  if (!samples || !total){
+    ctx.fillStyle = "#9aa1ab";
+    ctx.font = "13px " + "system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("连接设备后点「开始采集」", cw / 2, ch / 2);
+    return;
+  }
+
+  const g = plotGeom();
+  const period = divNow / CLK;
+  const t0 = view.start * period;
+  const tSpan = view.len * period;
+
+  const laneH = (annotations && annotations.length) ? Math.min(64, Math.max(30, g.ph * 0.16)) : 0;
+  const wavePh = g.ph - laneH;
+  const rowH = wavePh / 8;
+
+  // 网格
+  const step = niceStep(tSpan / 7);
+  ctx.strokeStyle = "#eef0f3";
+  ctx.lineWidth = 1;
+  ctx.font = "11px ui-monospace, Consolas, monospace";
+  ctx.fillStyle = "#8b929c";
+  ctx.textAlign = "center";
+
+  for (let t = Math.ceil(t0 / step) * step; t <= t0 + tSpan; t += step){
+    const x = g.px + (t - t0) / tSpan * g.pw;
+    ctx.beginPath(); ctx.moveTo(x, g.py); ctx.lineTo(x, g.py + g.ph); ctx.stroke();
+    ctx.fillText(fmtTime(t), x, 14);
+  }
+
+  // 通道行
+  for (let c = 0; c < 6; c++){
+    const yTop = g.py + c * rowH;
+    if (c > 0){
+      ctx.strokeStyle = "#f3f4f6";
+      ctx.beginPath(); ctx.moveTo(g.px, yTop); ctx.lineTo(g.px + g.pw, yTop); ctx.stroke();
+    }
+    ctx.fillStyle = COLORS[c];
+    ctx.font = "11px ui-monospace, Consolas, monospace";
+    ctx.textAlign = "left";
+    ctx.fillText("CH" + c, 6, yTop + rowH / 2 - 2);
+    if (chInfo[c]){
+      ctx.fillStyle = "#8b929c";
+      ctx.font = "10px ui-monospace, Consolas, monospace";
+      ctx.fillText(chInfo[c].f, 6, yTop + rowH / 2 + 11);
+    }
+  }
+
+  // 波形
+  const spp = view.len / g.pw;
+
+  if (spp > 4){
+    ctx.fillStyle = "#b4b2a9";
+    ctx.font = "11px ui-monospace, Consolas, monospace";
+    ctx.textAlign = "right";
+    ctx.fillText("×" + spp.toFixed(0) + " 压缩 · 滚轮放大看细节", g.px + g.pw - 4, g.py + 12);
+  }
+
+  for (let c = 0; c < 6; c++){
+    const bit = 1 << c;
+    const yTop = g.py + c * rowH;
+    const yH = yTop + rowH * 0.28;
+    const yL = yTop + rowH * 0.72;
+
+    if (spp >= 1){
+      ctx.fillStyle = COLORS[c];
+      let pHi = null, pLo = null;
+      for (let x = 0; x < g.pw; x++){
+        let i0 = Math.floor(view.start + x * spp);
+        let i1 = Math.floor(view.start + (x + 1) * spp);
+        if (i1 <= i0) i1 = i0 + 1;
+        if (i0 >= total) break;
+        if (i1 > total) i1 = total;
+        let hi = false, lo = false;
+        for (let i = Math.max(0, i0); i < i1; i++){
+          if (samples[i] & bit) hi = true; else lo = true;
+          if (hi && lo) break;
+        }
+        if (!hi && !lo) continue;
+
+        // 关键：每列要和上一列的区间连起来。只画本列的话，
+        // 1~2 点/像素时绝大多数列只含单一电平，竖直跳变沿就丢了，
+        // 波形会变成一排断开的短横线。
+        const cTop = hi ? yH : yL;
+        const cBot = lo ? yL : yH;
+        const t = (pHi === null) ? cTop : Math.min(pHi ? yH : yL, cTop);
+        const b = (pLo === null) ? cBot : Math.max(pLo ? yL : yH, cBot);
+        const px = Math.round(g.px + x);
+        ctx.fillRect(px, t, 1, Math.max(2, b - t));
+        pHi = hi; pLo = lo;
+      }
+    } else {
+      ctx.strokeStyle = COLORS[c];
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      let prev = null;
+      const i0 = Math.max(0, Math.floor(view.start) - 1);
+      const i1 = Math.min(total, Math.ceil(view.start + view.len) + 1);
+      for (let i = i0; i < i1; i++){
+        const x = g.px + (i - view.start) / view.len * g.pw;
+        const y = (samples[i] & bit) ? yH : yL;
+        if (prev === null) ctx.moveTo(x, y);
+        else if (y !== prev){ ctx.lineTo(x, prev); ctx.lineTo(x, y); }
+        prev = y;
+      }
+      if (prev !== null) ctx.lineTo(g.px + g.pw, prev);
+      ctx.stroke();
+    }
+  }
+
+  // 解码标注层
+  if (laneH > 0){
+    const laneY = g.py + wavePh + 3;
+    const laneBoxH = laneH - 8;
+    ctx.strokeStyle = "#e6e8ec";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(g.px, g.py + wavePh);
+    ctx.lineTo(g.px + g.pw, g.py + wavePh);
+    ctx.stroke();
+    ctx.font = "10px ui-monospace, Consolas, monospace";
+    ctx.textAlign = "left";
+
+    for (const a of annotations){
+      if (a.s1 < view.start || a.s0 > view.start + view.len) continue;
+      const x0 = Math.max(g.px, xAtSample(a.s0));
+      const x1 = Math.min(g.px + g.pw, xAtSample(a.s1));
+      const w = Math.max(2, x1 - x0);
+      let col = "#185fa5";
+      if (a.kind === "err" || a.kind === "nak") col = "#a32d2d";
+      else if (a.kind === "ctrl") col = "#854f0b";
+      ctx.fillStyle = col + "1f";
+      ctx.fillRect(x0, laneY, w, laneBoxH);
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 0.8;
+      ctx.strokeRect(x0, laneY, w, laneBoxH);
+      if (w > 30){
+        ctx.fillStyle = col;
+        ctx.fillText(a.text, x0 + 3, laneY + laneBoxH / 2 + 3);
+      }
+    }
+  }
+
+  // 触发标记
+  if (trigOff > 0 && trigOff >= view.start && trigOff <= view.start + view.len){
+    const x = xAtSample(trigOff);
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = "#a32d2d";
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, g.py); ctx.lineTo(x, g.py + g.ph); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // 光标
+  const drawCur = (idx, color, label) => {
+    if (idx == null || idx < view.start || idx > view.start + view.len) return;
+    const x = xAtSample(idx);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, g.py - 6); ctx.lineTo(x, g.py + g.ph); ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.font = "10px ui-monospace, Consolas, monospace";
+    ctx.textAlign = "center";
+    ctx.fillText(label, x, g.py - 9);
+  };
+  drawCur(cursors[0], "#7f77dd", "A");
+  drawCur(cursors[1], "#0f6e56", "B");
+}
+
+/* ===================== 交互 ===================== */
+let drag = null;
+
+canvas.addEventListener("mousedown", e => {
+  if (!total) return;
+  drag = { x: e.clientX, y: e.clientY, start: view.start, len: view.len, moved: false };
+});
+
+canvas.addEventListener("mousemove", e => {
+  if (!drag || !total) return;
+  const dx = e.clientX - drag.x;
+  if (Math.abs(dx) > 3) drag.moved = true;
+  if (drag.moved){
+    const g = plotGeom();
+    const shift = -dx / g.pw * drag.len;      // 用拖动开始时捕获的窗口宽度
+    clampView(drag.start + shift, drag.len);
+    render();
+  }
+});
+
+window.addEventListener("mouseup", e => {
+  if (!drag) return;
+  if (!drag.moved && total){
+    const r = canvas.getBoundingClientRect();
+    const s = Math.round(sampAt(e.clientX - r.left));
+    if (cursors[0] == null) cursors[0] = s;
+    else if (cursors[1] == null) cursors[1] = s;
+    else { cursors[0] = s; cursors[1] = null; }
+    updateMeasure();
+    render();
+  }
+  drag = null;
+});
+
+canvas.addEventListener("wheel", e => {
+  if (!total) return;
+  e.preventDefault();
+  const r = canvas.getBoundingClientRect();
+  const mx = e.clientX - r.left;
+  const g = plotGeom();
+  const frac = Math.min(1, Math.max(0, (mx - g.px) / g.pw));
+  let dy = e.deltaY;
+  if (e.deltaMode === 1) dy *= 16;      // 按行滚动
+  if (e.deltaMode === 2) dy *= 100;     // 按页滚动
+  const factor = Math.min(4, Math.max(0.25, Math.exp(dy * 0.0015)));
+  zoomAt(frac, factor);
+}, { passive: false });
+
+// 以鼠标位置为锚点缩放
+function zoomAt(frac, factor){
+  if (!total) return;
+  const anchor = view.start + frac * view.len;
+  let nl = Math.round(view.len * factor);
+  nl = Math.min(total, Math.max(16, nl));
+  clampView(anchor - frac * nl, nl);
+  render(); updateWin();
+}
+
+function zoomBy(factor){
+  if (!total) return;
+  zoomAt(0.5, factor);
+}
+
+function zoomToTrigger(){
+  if (!total) return;
+  const span = Math.max(64, Math.min(8192, total));
+  const target = (trigOff > 0 && trigOff < total) ? trigOff : (total >> 1);
+  clampView(target - span / 2, span);
+  render(); updateWin();
+}
+
+function updateWin(){
+  if (!total){ $("fWin").textContent = "—"; return; }
+  $("fWin").textContent = view.len + " 点 / " + fmtTime(view.len * divNow / CLK);
+}
+
+canvas.addEventListener("dblclick", () => {
+  if (!total) return;
+  view = { start: 0, len: total };
+  render();
+});
+
+function clampView(start, len){
+  len = Math.min(total, Math.max(16, len));
+  start = Math.max(0, Math.min(total - len, start));
+  view = { start, len };
+}
+
+function updateMeasure(){
+  const el = $("measure");
+  if (cursors[0] == null){ el.textContent = "点击波形放光标 A，再点一次放 B"; return; }
+  const period = divNow / CLK;
+  const ta = cursors[0] * period;
+  const lines = ["A = <b>" + fmtTime(ta) + "</b>"];
+  if (cursors[1] != null){
+    const tb = cursors[1] * period;
+    const dt = Math.abs(tb - ta);
+    lines[0] = "A = <b>" + fmtTime(ta) + "</b>";
+    lines.push("B = <b>" + fmtTime(tb) + "</b>");
+    lines.push("Δ = <b>" + fmtTime(dt) + "</b>");
+    if (dt > 0) lines.push("1/Δ = <b>" + (1 / dt).toFixed(3) + " Hz</b>");
+    lines.push("Δ点数 = <b>" + Math.abs(cursors[1] - cursors[0]) + "</b>");
+  }
+  el.innerHTML = lines.join("<br>");
+}
+
+function updateFooter(){
+  $("fTotal").textContent = total;
+  $("fTrig").textContent = trigOff;
+  $("fRate").textContent = fmtFreq(CLK / divNow);
+  updateWin();
+}
+
+function fmtFreq(f){
+  if (f >= 1e6) return (f / 1e6).toFixed(2) + " MHz";
+  if (f >= 1e3) return (f / 1e3).toFixed(2) + " kHz";
+  return f.toFixed(0) + " Hz";
+}
+
+/* ===================== 导出 ===================== */
+function exportCsv(){
+  if (!samples || !total) return;
+  const period = divNow / CLK;
+  const rows = ["# Pico logic analyzer, samples=" + total +
+                ", sample_rate_hz=" + (CLK / divNow).toFixed(3) +
+                ", trigger_index=" + trigOff];
+  rows.push("index,time_s,ch0,ch1,ch2,ch3");
+  for (let i = 0; i < total; i++){
+    const b = samples[i];
+    rows.push(i + "," + (i * period).toFixed(9) + "," +
+      ((b>>0)&1) + "," + ((b>>1)&1) + "," + ((b>>2)&1) + "," +
+      ((b>>3)&1));
+  }
+  const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "pico-la-" + new Date().toISOString().replace(/[:.]/g, "-") + ".csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ===================== 事件绑定 ===================== */
+$("btnConnect").onclick = async () => {
+  if (port) { await disconnect(); return; }
+  await connect();
+};
+$("btnCap").onclick = doCapture;
+$("btnStop").onclick = () => { abortFlag = true; };
+$("btnFit").onclick = () => { if (total) { view = { start: 0, len: total }; render(); updateWin(); } };
+$("btnZin").onclick  = () => zoomBy(0.5);
+$("btnZout").onclick = () => zoomBy(2.0);
+$("btnTrig").onclick = zoomToTrigger;
+$("btnCsv").onclick = exportCsv;
+
+function refreshHint(){
+  const div = +$("rate").value;
+  $("winHint").innerHTML = "深度 <b>32768 点</b> · 窗口 <b>" + fmtTime(DEPTH * div / CLK) + "</b>";
+}
+
+$("decProto").onchange = buildDecFields;
+
+$("capMode").onchange = () => {
+  const cont = +$("capMode").value === 1;
+  if (cont){
+    // RLE 开启时 USB 只传压缩流, 吞吐需求降低, 允许更高采样率。
+    // 1 MHz 是考虑 STATUS+分块 READ 往返的务实上限; 数据翻转太频繁
+    // 压缩比差时仍会丢段(界面有提示), 属正常现象
+    const limit = rleOn ? 1e6 : 300e3;
+    if (CLK / +$("rate").value > limit){
+      const cand = rleOn ? ["480", "960", "2400", "4800", "24000"]   // 500k/250k/100k/50k/10k
+                         : ["2400", "4800", "24000"];                // 100k / 50k / 10k
+      let pick = "24000";
+      for (const d of cand){ if (CLK / +d <= limit){ pick = d; break; } }
+      $("rate").value = pick;
+      $("rate").onchange();
+      logEl.textContent = "连续模式受 USB 吞吐限制，采样率已自动降到 " +
+                          (CLK / +pick / 1000).toFixed(0) + " kHz";
+    } else {
+      logEl.textContent = "";
+    }
+  } else {
+    logEl.textContent = "";
+  }
+};
+
+$("rate").onchange = () => {
+  refreshHint();
+  if (port) pushConfig().catch(e => logEl.textContent = e.message);
+};
+
+new ResizeObserver(resize).observe(canvas.parentElement);
+window.addEventListener("load", () => {
+  resize();
+  refreshHint();
+  buildDecFields();
+});
+</script>
+</body>
+</html>

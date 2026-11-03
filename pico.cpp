@@ -39,7 +39,9 @@
 #include "app_swd_probe.h"
 #include "app_sd_msc.h"
 #include "app_adc.h"
+#include "app_la.h"
 #include "app_pwm.h"
+#include "la_usb.h"
 #include "app_i2c_spi.h"
 #include "app_pinout.h"
 #include "app_audio.h"
@@ -151,6 +153,10 @@ void app_ui_custom_init(void)
     // app_manager_register(&g_app_mgr, app_led_get_instance());
     // app_manager_register(&g_app_mgr, app_template_get_instance());
      app_manager_register(&g_app_mgr, app_settings_get_instance());
+    // 逻辑分析仪屏幕版已下架：缩放/解码/采集体验远弱于网页上位机
+    // (web/index.html, USB CDC 协议同 TangNano 版)。代码保留在 app_la.c，
+    // 需要时取消下面注释即可恢复。
+    // app_manager_register(&g_app_mgr, app_la_get_instance());
 
     // app_manager_register(&g_app_mgr, app_uart_term_get_instance());
     // app_manager_register(&g_app_mgr, app_swd_probe_get_instance());
@@ -179,7 +185,7 @@ void app_ui_custom_init(void)
     ui_status_bar_init(&g_status_bar, 0, 0, LCD_WIDTH, 32, "多功能嵌入式终端", on_status_bar_click);
 
 
-
+    
     // ui_status_bar_init(&g_status_bar, 0, 0, LCD_WIDTH, 32, " ", on_status_bar_click);
     // 4. 初始化更新按键 (X:54, Y:280, W:75, H:36)
     ui_btn_init(&g_btn_sl, 54, 280, 75, 36, "更新", on_btn_click);
@@ -275,7 +281,7 @@ static void render_custom_scene(ui_tile_t *tile)
         {
             ui_draw_string(tile, 30, text_y, "主频:", FONT_20, 0x4208, SCREEN_BG_COLOR);
             ui_draw_string(tile, 75, text_y, " 240MHz/60M", FONT_16, 0x03DF, SCREEN_BG_COLOR);
-        }
+        } 
 
         // 8. 更新模式提示文本 (Y: 256)
         text_y = 256;
@@ -428,6 +434,9 @@ esp_send_string("#PWM:204\r\n"); //80%亮度
 
         // B. App 后台轮询更新
         app_manager_update(&g_app_mgr, now);
+
+        // B2. 逻辑分析仪 USB 上位机协议轮询 (与屏幕 App 互不干扰)
+        la_usb_poll();
 
         // C. 心跳指示灯 (500ms 翻转)
         if (sys_led_blink&& now - last_led_tick >= 500)
