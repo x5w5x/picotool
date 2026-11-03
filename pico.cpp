@@ -309,7 +309,7 @@ static void render_custom_scene(ui_tile_t *tile)
     // ---------------- 图层 3: 顶部常驻状态栏 (最顶层保护) ----------------
     ui_status_bar_draw(tile, &g_status_bar);
 }
- 
+  
 static void sys_process_keyboard_line(const char *line)
 {
     if (strncmp(line, "#KB:D,", 6) != 0) return;
