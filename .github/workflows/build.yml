@@ -25,6 +25,9 @@ jobs:
           path: pico-sdk
           submodules: recursive
 
+      - name: Clean stale build cache
+        run: rm -rf build
+
       - name: Configure
         env:
           PICO_SDK_PATH: ${{ github.workspace }}/pico-sdk

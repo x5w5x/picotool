@@ -1,0 +1,14 @@
+# 构建产物（CMakeCache.txt 记录本机绝对路径，绝不能进 git，
+# 否则 CI / 换机编译会因 cache 目录不匹配直接报错）
+build/
+*/build/
+plugins/*/build/
+
+# IDE / 编辑器
+.vscode/
+.idea/
+*.swp
+
+# 临时文件
+*.tmp
+~$*
